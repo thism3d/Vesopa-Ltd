@@ -143,7 +143,7 @@ Map<String, Object?> salePayload(Bill bill, {required String office, required St
           'amount_minor': t.amountMinor,
           'gratuity_minor': t.tipMinor,
           'reference': t.reference,
-          'entry_mode': t.kind == 'tap' ? 'contactless' : (t.kind == 'machine' ? 'terminal' : null),
+          'entry_mode': switch (t.kind) { 'tap' => 'contactless', 'machine' => 'terminal', 'qr' => 'online', _ => null },
         },
     ],
   };

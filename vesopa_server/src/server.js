@@ -349,6 +349,9 @@ const tapPhones = require('./tap').tapRoutes({
 // (dinein.js settleIntent), as well as from the tracker and the sweep.
 const dojoEventHooks = [];
 dojoEventHooks.push((e) => tapPhones.onDojoEvent(e));
+const qrPay = require('./qr_pay').qrPayRoutes({ pool, broadcast, secret: JWT_SECRET });
+dojoEventHooks.push((e) => qrPay.onDojoEvent(e));
+tapPhones.qrSettings = qrPay.phoneSettings;
 // Vesopa's own subscriptions (vesopaepos.com, the "Vesopa" Dojo account) share
 // this webhook address (2026-10-24). A verified event naming a payment intent
 // is passed on to vesopaepos.com on the same box, which only uses the id to
@@ -523,6 +526,9 @@ app.use(expressKiosk);
 // Vesopa Tap: phones that are tills. Its phone routes take a terminal token,
 // its back-office routes a session, and /api/tap/register a Vesopa ID token.
 app.use(tapPhones);
+// QR Pay: the customer pays the bill on their own phone, on the venue's
+// menu address (src/qr_pay.js). Built with the webhook hooks above.
+app.use(qrPay);
 // Bringing a catalogue in from a spreadsheet. Mounted after the CRUD routes
 // it writes through, so nothing here can shadow /api/products.
 app.use('/api', importRoutes({ pool, broadcast, secret: JWT_SECRET }));

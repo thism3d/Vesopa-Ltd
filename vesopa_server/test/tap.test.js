@@ -80,6 +80,11 @@ const pool = {
       return [row ? [row] : []];
     }
     if (s.startsWith('SELECT dojo_key_enc FROM epos_express_settings')) return [[]];
+    if (s.startsWith('SELECT demo_of FROM offices')) return [[{ demo_of: null }]];
+    if (s.startsWith('SELECT environment FROM epos_dojo_settings')) {
+      const row = settings.get(args[0]);
+      return [row ? [{ environment: row.environment }] : []];
+    }
     if (s.startsWith('SELECT * FROM epos_tap_payments')) {
       const row = payments.get(args[0]);
       return [row && row.office === args[1] ? [{ ...row }] : []];

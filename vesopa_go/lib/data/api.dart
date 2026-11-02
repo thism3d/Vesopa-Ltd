@@ -188,6 +188,28 @@ class TapApi {
 
   Future<Map<String, dynamic>> tapConfig() => _send('GET', '/api/tap/config');
 
+  // ---- QR Pay (server qr_pay.js) ---------------------------------------------
+
+  /// A QR payment for one tender; the same [id] again answers the same payment.
+  Future<Map<String, dynamic>> qrCreate({
+    required String id,
+    required int amountMinor,
+    String? billRef,
+    String? billName,
+    String? customerName,
+  }) =>
+      _send('POST', '/api/tap/qr', {
+        'id': id,
+        'amount_minor': amountMinor,
+        if (billRef != null) 'bill_ref': billRef,
+        if (billName != null && billName.isNotEmpty) 'bill_name': billName,
+        if (customerName != null && customerName.isNotEmpty) 'customer_name': customerName,
+      });
+
+  Future<Map<String, dynamic>> qrStatus(String id) => _send('GET', '/api/tap/qr/${Uri.encodeComponent(id)}');
+  Future<Map<String, dynamic>> qrCancel(String id) => _send('POST', '/api/tap/qr/${Uri.encodeComponent(id)}/cancel', const {});
+  Future<void> qrEmail(String id, String email) => _send('POST', '/api/tap/qr/${Uri.encodeComponent(id)}/email', {'email': email});
+
   /// The till's settings Go follows: consolidate lines, the idle screen.
   Future<Map<String, dynamic>> tillSettings() => _send('GET', '/api/till-settings/public?office=$_o');
 

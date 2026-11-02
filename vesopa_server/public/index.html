@@ -4519,6 +4519,23 @@
               </div>
               <p class="muted small">Saving a live key checks it with Dojo first. Online payments also need the menu's "Pay by card online" switch (Online menu).</p>
             </div>
+            <!-- QR Pay (2026-11-02): customers pay their own bill from a QR code
+                 on Vesopa Go, on the key above. -->
+            <div class="card rd-card" style="max-width:760px;margin-top:14px" id="qrpay-card">
+              <h3>QR Pay <span class="pill" id="qrpay-env"></span></h3>
+              <p class="small">Vesopa Go shows a QR code for the bill. The customer scans it and pays on their own phone by card, Apple Pay or Google Pay, on Dojo's secure page at <b id="qrpay-address">your menu address</b>. Go sees the payment the moment Dojo confirms it. It uses the Online checkout key above.</p>
+              <p class="small" id="qrpay-state"></p>
+              <label class="check"><input type="checkbox" id="qrpay-enabled"> <span><b>Offer QR Pay on Vesopa Go</b><br><span class="small muted">The QR Pay key beside Tap to Pay on the payment screen.</span></span></label>
+              <label class="check"><input type="checkbox" id="qrpay-email"> <span><b>Email the pay link</b><br><span class="small muted">Staff can send the link to the customer's email, prefilled for a member.</span></span></label>
+              <label class="check"><input type="checkbox" id="qrpay-bill"> <span><b>Print the QR code on bills</b><br><span class="small muted">A bill printed from Vesopa Go carries a "Scan to pay" code for what is left to pay.</span></span></label>
+              <label style="max-width:260px">A link stays open for (minutes)
+                <input type="number" id="qrpay-minutes" min="5" max="240" step="5" value="30">
+              </label>
+              <div class="row" style="gap:8px;margin-top:10px">
+                <button class="btn primary" type="button" id="qrpay-save">Save</button>
+                <span class="small" id="qrpay-msg" role="status"></span>
+              </div>
+            </div>
           </div>
           <!-- Teya, the second card acquirer (2026-10-19). Off until a manager
                turns it on; Dojo stays the default for the tills and the menu. -->

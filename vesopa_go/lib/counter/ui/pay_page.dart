@@ -22,6 +22,7 @@ import '../data/lite_state.dart';
 import 'package:vesopa_go/data/bill_math.dart';
 import 'package:vesopa_go/ui/pages/member_sheet.dart';
 
+import 'qr_pay_page.dart';
 import 'receipt_print.dart';
 import 'receipt_view.dart';
 import 'sale_panel.dart' show discountBill;
@@ -48,6 +49,32 @@ class _PayPageState extends ConsumerState<PayPage> {
   int _presetTip = 0;
 
   Bill? get _bill => ref.read(tapProvider).bills[widget.billId];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _takeQrBill(ref.read(qrBillPaymentsProvider)[widget.billId]);
+    });
+  }
+
+  /// Payments made from this bill's printed QR code, put on the bill.
+  void _takeQrBill(List<QrBillPayment>? paid) {
+    for (final p in paid ?? const <QrBillPayment>[]) {
+      final bill = _bill;
+      if (bill == null || _done != null) return;
+      ref.read(qrBillPaymentsProvider.notifier).taken(widget.billId, p.id);
+      if (bill.tenders.any((t) => t.id == 'qr-${p.intentId}') || bill.dueMinor <= 0) continue;
+      _take(Tender(
+        id: 'qr-${p.intentId}',
+        amountMinor: p.amountMinor.clamp(1, bill.dueMinor),
+        kind: 'qr',
+        at: DateTime.now(),
+        clerk: ref.read(tapProvider).clerk?.name ?? '',
+        reference: 'qr:${p.intentId}',
+      ));
+    }
+  }
 
   /// The first money in sends anything with a kitchen or bar station to it.
   void _sendFirst(Bill bill) {
@@ -98,6 +125,9 @@ class _PayPageState extends ConsumerState<PayPage> {
     if (via == 'tap') {
       final why = await payments.whyUnavailable();
       if (why != null) {
+        // A test venue (the Kitchen, a practice copy) may pretend, so the
+        // whole sale can be tried on an iPad (owner, 2026-11-02).
+        if (ref.read(tapProvider).config.testVenue) return _testTap(why, amount ?? bill.dueMinor);
         if (mounted) setState(() => _problem = '$why Use the card machine or cash.');
         return;
       }
@@ -154,6 +184,77 @@ class _PayPageState extends ConsumerState<PayPage> {
             PayResult.paid => null,
           });
     }
+  }
+
+  /// A pretend Tap to Pay on a device without it, at a test venue only: the
+  /// customer's screens as for a real one, and the tender marked as a test.
+  Future<void> _testTap(String why, int amount) async {
+    final bill = _bill;
+    if (bill == null || !mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Test Tap to Pay'),
+        content: Text('$why\n\nThis is a test venue, so a pretend payment of ${money(amount)} can be taken instead. No card is read and no money moves.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          FilledButton(key: const ValueKey('test-tap-go'), onPressed: () => Navigator.pop(c, true), child: const Text('Take a test payment')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    _sendFirst(bill);
+    setState(() {
+      _via = 'tap';
+      _problem = null;
+      _cardAmount = amount.clamp(1, bill.dueMinor);
+      _tip = _presetTip;
+      _presetTip = 0;
+      _step = PayStep.waitingForCard;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 1600));
+    if (!mounted) return;
+    setState(() => _step = PayStep.confirming);
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+    setState(() => _step = null);
+    final id = 'test-${DateTime.now().microsecondsSinceEpoch}';
+    _take(Tender(id: id, amountMinor: _cardAmount, tipMinor: _tip, kind: 'tap', at: DateTime.now(), clerk: ref.read(tapProvider).clerk?.name ?? '', reference: 'test:$id'));
+  }
+
+  /// QR Pay: the customer scans and pays on their own phone.
+  Future<void> _qr(int amount) async {
+    final bill = _bill;
+    if (bill == null) return;
+    final config = ref.read(tapProvider).config;
+    if (!config.qrPay.available) {
+      setState(() => _problem = 'QR Pay needs an online card key. Set one in the back office under Card Payments, Online checkout, and switch QR Pay on there.');
+      return;
+    }
+    setState(() => _problem = null);
+    _sendFirst(bill);
+    // A member's email, for the Email link key.
+    String? email;
+    final member = bill.member;
+    if (member != null && member.number.isNotEmpty) {
+      try {
+        final rows = await ref.read(apiProvider).customers(member.number);
+        for (final r in rows) {
+          if (r is Map && '${r['id']}' == member.id) email = r['email'] as String?;
+        }
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    final paid = await showQrPay(context, bill: bill, amountMinor: amount.clamp(1, bill.dueMinor), customerName: member?.name, customerEmail: email);
+    if (paid == null || !mounted) return;
+    _take(Tender(
+      id: 'qr-${paid.intentId}',
+      amountMinor: paid.amountMinor,
+      kind: 'qr',
+      at: DateTime.now(),
+      clerk: ref.read(tapProvider).clerk?.name ?? '',
+      reference: 'qr:${paid.intentId}',
+    ));
   }
 
   /// A card taken on a machine Go is not connected to (the till's Manual
@@ -236,6 +337,7 @@ class _PayPageState extends ConsumerState<PayPage> {
     // The customer's screens stay dark whatever the appearance.
     if (_step != null) return Theme(data: Tp.theme(Brightness.dark), child: TapPrompt(amountMinor: _cardAmount + _tip, step: _step!, onMachine: _via == 'machine'));
 
+    ref.listen(qrBillPaymentsProvider.select((m) => m[widget.billId]), (_, paid) => _takeQrBill(paid));
     final bill = ref.watch(tapProvider.select((s) => s.bills[widget.billId]));
     final settings = ref.watch(liteSettingsProvider);
     final config = ref.watch(tapProvider.select((s) => s.config));
@@ -258,6 +360,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         cardLabel: 'Card',
         otherCard: teya ? null : (amount) => _card(other, amount: amount),
         otherCardLabel: other == 'machine' ? 'Card machine' : 'Tap to Pay',
+        qrPay: _qr,
         manualCard: _manualCard,
         split: _split,
         voucher: () => askVoucher(context, ref, bill),

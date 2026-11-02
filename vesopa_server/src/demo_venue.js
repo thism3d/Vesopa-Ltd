@@ -72,10 +72,19 @@ const SETUP = [
   // print category has to be rewritten.
   { table: 'bo_products', links: { print_category_id: 'bo_print_categories' } },
 
+  // A screen's top and bottom bars are screens too, and a button can open
+  // another screen or a modifier group copied after it: those are put right
+  // once everything is in (LATE_LINKS). Left as they were, 224 of Pontardawe
+  // RFC's practice buttons opened the LIVE venue's screens, and its bars were
+  // the live ones -- the practice venue looked nothing like the real one in
+  // Vesopa Go (owner, 2026-11-02).
   { table: 'epos_screens' },
   { table: 'epos_screen_buttons', links: { screen_id: 'epos_screens' } },
   { table: 'epos_modifier_groups', links: { screen_id: 'epos_screens' } },
   { table: 'epos_product_modifiers', links: { group_id: 'epos_modifier_groups' } },
+  { table: 'epos_screen_schedules', links: { screen_id: 'epos_screens' } },
+  // Vesopa Go's own arrangement of a screen for phones or tablets.
+  { table: 'epos_go_layouts', links: { screen_id: 'epos_screens' }, dropUnlinked: true },
 
   { table: 'floor_rooms' },
   // public_id is in a QR code on a table and is unique across every venue, so
@@ -104,7 +113,16 @@ const SETUP = [
   { table: 'bo_mix_match_products', links: { mix_match_id: 'bo_mix_match' } },
 
   { table: 'epos_kitchen_screens' },
-  { table: 'epos_express_settings' },
+  // Never the venue's own online Dojo key: a practice venue taking a payment
+  // on it would be real money (2026-11-02). It pays on the sandbox instead.
+  { table: 'epos_express_settings', fresh: { dojo_key_enc: () => null, dojo_key_hint: () => null, board_token: fresh(16) } },
+  { table: 'epos_tap_settings' },
+  { table: 'bo_pack_sizes' },
+  { table: 'bo_finalise_keys' },
+  { table: 'bo_till_names' },
+  // What the venue has switched on (memberships, events): the till and Go
+  // show their keys by it.
+  { table: 'bo_venue_modules' },
 
   // The public menu. A practice venue must not answer on the real venue's
   // address, and should not be reachable from the street at all -- so the slug
@@ -121,10 +139,34 @@ const SETUP = [
   { table: 'dinein_item_meals', links: { item_id: 'dinein_items' } },
   { table: 'dinein_qr_designs' },
 
-  // Settings only. The scheme's members are customers and are never copied --
-  // see PRACTICE, and the note on privacy below.
   { table: 'epos_loyalty_settings' },
   { table: 'epos_loyalty_tiers' },
+  { table: 'epos_loyalty_schemes' },
+  // The members, so the practice venue finds the same people (owner,
+  // 2026-11-02: "completely same synced"). Names, card and member numbers,
+  // points, memberships, photos and phone numbers come; their email
+  // addresses, passwords, sign-ins and home addresses never do, so a
+  // rehearsal can never email or sign in as a real member. New ids: the live
+  // ones are unique across every venue.
+  {
+    table: 'epos_customers',
+    links: { scheme_id: 'epos_loyalty_schemes' },
+    fresh: {
+      id: () => crypto.randomUUID(),
+      email: () => null,
+      password_hash: () => null,
+      password_set_at: () => null,
+      vesopa_sub: () => null,
+      address_line1: () => null,
+      address_line2: () => null,
+      town: () => null,
+      postcode: () => null,
+      notes: () => null,
+      family_head_id: () => null,
+      marketing_opt_in: () => 0,
+      renewal_reminders: () => 0,
+    },
+  },
   { table: 'epos_card_settings' },
   { table: 'epos_card_sequences' },
   // join_slug is the address a customer adds a Wallet card from: unique across
@@ -133,16 +175,41 @@ const SETUP = [
 
   // Only the training accounts. A practice venue holding every real clerk's PIN
   // would be a copy of the venue's credentials for the sake of a rehearsal.
-  { table: 'bo_clarks', where: 'COALESCE(training, 0) = 1' },
+  {
+    table: 'bo_clarks',
+    where: 'COALESCE(training, 0) = 1',
+    links: { permission_group_id: 'epos_permission_groups' },
+  },
+];
+
+/**
+ * Ids that point at a row copied LATER than the row holding them, or at a row
+ * of the same table: written as they were, then rewritten here once every
+ * table is in. One UPDATE per column, mapping every old id at once, so a new
+ * id that happens to equal another old one is never rewritten twice. An id
+ * with no copy becomes NULL: never a pointer into the live venue.
+ */
+const LATE_LINKS = [
+  ['epos_screens', 'top_bar_id', 'epos_screens'],
+  ['epos_screens', 'bottom_bar_id', 'epos_screens'],
+  ['epos_screen_buttons', 'target_screen_id', 'epos_screens'],
+  ['epos_screen_buttons', 'modifier_group_id', 'epos_modifier_groups'],
+  ['epos_till_settings', 'home_screen_id', 'epos_screens'],
+  ['epos_till_settings', 'top_bar_screen_id', 'epos_screens'],
+  ['epos_till_settings', 'bottom_bar_screen_id', 'epos_screens'],
+  ['epos_till_settings', 'pay_top_bar_screen_id', 'epos_screens'],
+  ['epos_till_settings', 'pay_bottom_bar_screen_id', 'epos_screens'],
+  ['bo_clarks', 'default_screen_id', 'epos_screens'],
 ];
 
 /**
  * What a reset empties: everything a practice session PRODUCES.
  *
  * Deliberately also the list of what is never cloned in the first place. A
- * practice venue starts with no sales, no customers and no gift cards, because
- * a trainee rehearsing on copies of real people's names, balances and card
- * numbers is a data-protection incident waiting for somebody to notice.
+ * practice venue starts with no sales and no gift cards. Its members are the
+ * one exception (owner, 2026-11-02, so the practice venue finds the same
+ * people): they come without email addresses, passwords or home addresses, so
+ * nothing done in practice can reach a real member.
  */
 const PRACTICE = [
   'epos_payments',
@@ -164,7 +231,8 @@ const PRACTICE = [
   'epos_express_prints',
   'epos_express_counters',
   'epos_loyalty_txns',
-  'epos_customers',
+  // Not epos_customers: since 2026-11-02 the members are copied in as setup
+  // (contact details left out), so a reset keeps them and a refresh renews them.
   'epos_gift_card_txns',
   'epos_gift_cards',
   'epos_deposits',
@@ -184,6 +252,13 @@ const PRACTICE = [
 
 const shapeCache = new Map();
 
+/**
+ * epos_customers carries the CUSTOMER's address in `email` and the venue's in
+ * `email_key`. Read the usual way, a clone looked for members whose own email
+ * was the venue's, and a reset deleted none of them.
+ */
+const TENANT_OVERRIDE = { epos_customers: 'email_key' };
+
 async function shapeOf(db, table) {
   if (shapeCache.has(table)) return shapeCache.get(table);
   const [rows] = await db.query(
@@ -200,7 +275,10 @@ async function shapeOf(db, table) {
   const auto = rows.find((r) => String(r.extra || '').includes('auto_increment'));
   // In preference order: the two string keys first, because they are the tenant
   // key proper; office_id is a foreign key that only some tables carry.
-  const tenant = ['office', 'email', 'office_id'].find((c) => names.includes(c)) || null;
+  // A table whose `email` is somebody's own address names its venue otherwise.
+  const own = TENANT_OVERRIDE[table];
+  const tenant = (own && names.includes(own) ? own : null)
+    || ['office', 'email', 'office_id'].find((c) => names.includes(c)) || null;
   const shape = {
     columns: names,
     auto: auto ? auto.name : null,
@@ -314,6 +392,12 @@ async function copyTable(db, entry, ctx) {
   const columnList = copied.map((c) => `\`${c}\``).join(', ');
 
   for (const row of source) {
+    // A row whose key IS the link (a Go layout of a screen that was not
+    // copied) has nothing to belong to, and is left out.
+    if (entry.dropUnlinked && Object.entries(entry.links || {}).some(([c, parent]) => {
+      const m = ctx.ids.get(parent);
+      return row[c] != null && !(m && m.has(row[c]));
+    })) continue;
     const values = copied.map((column) => {
       // Generated before anything else is considered: a column that is unique
       // across every venue is never the tenant key and never a link, and
@@ -381,8 +465,30 @@ async function cloneSetup(db, { fromEmail, toEmail }) {
   for (const entry of SETUP) {
     report.push(await copyTable(db, entry, ctx));
   }
+  for (const [table, column, parent] of LATE_LINKS) {
+    await relink(db, ctx, table, column, parent);
+  }
   await db.execute('UPDATE offices SET demo_refreshed_at = NOW() WHERE id = ?', [demo.id]);
   return report;
+}
+
+/** Point one column of the practice venue's rows at its own copies (LATE_LINKS). */
+async function relink(db, ctx, table, column, parent) {
+  const shape = await shapeOf(db, table);
+  if (!shape || !shape.tenant || !shape.columns.includes(column)) return;
+  const value = shape.tenantIsId ? ctx.toId : ctx.toEmail;
+  const map = ctx.ids.get(parent) || new Map();
+  const pairs = [...map.entries()];
+  if (pairs.length) {
+    const cases = pairs.map(() => 'WHEN ? THEN ?').join(' ');
+    await db.execute(
+      `UPDATE \`${table}\` SET \`${column}\` = CASE \`${column}\` ${cases} ELSE NULL END
+        WHERE \`${shape.tenant}\` = ? AND \`${column}\` IS NOT NULL AND \`${column}\` <> 0`,
+      [...pairs.flat(), value]
+    );
+  } else {
+    await db.execute(`UPDATE \`${table}\` SET \`${column}\` = NULL WHERE \`${shape.tenant}\` = ? AND \`${column}\` <> 0`, [value]);
+  }
 }
 
 /** Empty a practice venue's own setup, so a refresh replaces rather than doubles. */

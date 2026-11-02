@@ -15069,6 +15069,41 @@ async function loadOnlineCheckout() {
       say(e.message + ' Nothing was saved.', false);
     }
   };
+  loadQrPay();
+}
+
+/** QR Pay on Vesopa Go (2026-11-02), under Online checkout. */
+async function loadQrPay() {
+  const say = (t, ok) => { const el = $('qrpay-msg'); el.textContent = t || ''; el.style.color = ok ? '#06784f' : '#b42318'; el.style.fontWeight = '600'; };
+  const render = (v) => {
+    $('qrpay-enabled').checked = !!v.enabled;
+    $('qrpay-email').checked = !!v.email_link;
+    $('qrpay-bill').checked = !!v.on_bill;
+    $('qrpay-minutes').value = v.expires_minutes || 30;
+    if (v.pay_address) $('qrpay-address').textContent = v.pay_address.replace(/^https:\/\//, '') + '/pay';
+    const pill = $('qrpay-env');
+    pill.textContent = v.environment === 'live' ? 'live' : v.environment === 'sandbox' ? 'sandbox' : 'no key';
+    pill.className = 'pill ' + (v.environment === 'live' ? 'amber' : v.environment === 'sandbox' ? 'on' : '');
+    $('qrpay-state').innerHTML = !v.environment
+      ? 'No online key yet, so Go cannot offer QR Pay. Choose one above.'
+      : v.environment === 'sandbox' ? 'Test money only: customers see "TEST PAYMENT" and use test cards.' : 'Real payments into this venue\'s Dojo account.';
+  };
+  try { render(await api('/qr-pay/settings')); } catch (e) { say(e.message, false); return; }
+  $('qrpay-save').onclick = async () => {
+    try {
+      render(await api('/qr-pay/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          enabled: $('qrpay-enabled').checked,
+          email_link: $('qrpay-email').checked,
+          on_bill: $('qrpay-bill').checked,
+          expires_minutes: Number($('qrpay-minutes').value) || 30,
+        }),
+      }));
+      render(await api('/qr-pay/settings'));
+      say('Saved. Vesopa Go picks this up straight away.', true);
+    } catch (e) { say(e.message, false); }
+  };
 }
 
 // ---- Teya (2026-10-19) ---------------------------------------------------------

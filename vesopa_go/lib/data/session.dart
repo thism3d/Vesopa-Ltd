@@ -52,6 +52,28 @@ import 'venue_data.dart';
 
 enum Phase { booting, welcome, setup, locked, ready }
 
+/// QR Pay as the back office set it (server qr_pay.js).
+@immutable
+class QrPaySettings {
+  const QrPaySettings({this.available = false, this.emailLink = true, this.onBill = false, this.environment});
+  final bool available;
+  final bool emailLink;
+  final bool onBill;
+
+  /// 'live' or 'sandbox': which money the venue's online key takes.
+  final String? environment;
+
+  factory QrPaySettings.fromJson(Object? raw) {
+    final j = raw is Map ? raw : const {};
+    return QrPaySettings(
+      available: j['available'] == true,
+      emailLink: j['email_link'] != false,
+      onBill: j['on_bill'] == true,
+      environment: j['environment'] as String?,
+    );
+  }
+}
+
 /// The venue's Vesopa Go settings from the back office (tips on by default).
 @immutable
 class TapConfig {
@@ -82,8 +104,19 @@ class TapConfig {
     this.modules,
     this.cashNotes = const [],
     this.fontSlug = '',
+    this.qrPay = const QrPaySettings(),
+    this.testVenue = false,
   });
   final String environment;
+
+  /// QR Pay (back office, Card Payments > Online checkout): the customer pays
+  /// the bill on their own phone.
+  final QrPaySettings qrPay;
+
+  /// A venue that takes no real money (its card machine on Dojo's sandbox, or
+  /// a practice copy): Go may take a pretend Tap to Pay where the device has
+  /// none, such as an iPad (owner, 2026-11-02).
+  final bool testVenue;
   final bool tips;
   final List<double> tipPercents;
   final List<double> servicePercents;
@@ -203,6 +236,8 @@ class TapConfig {
       modules: j['modules'] is List ? {for (final m in j['modules'] as List) '$m'} : null,
       cashNotes: j['notes'] is List ? j['notes'] as List : const [],
       fontSlug: '${till['font_family'] ?? ''}'.trim(),
+      qrPay: QrPaySettings.fromJson(j['qr_pay']),
+      testVenue: j['test_venue'] == true,
       goLayouts: {
         for (final form in const ['tablet', 'phone'])
           if (j['layouts'] is Map && (j['layouts'] as Map)[form] is Map) form: Map<String, dynamic>.from((j['layouts'] as Map)[form] as Map),
@@ -353,6 +388,38 @@ final paymentsProvider = Provider<PaymentService>((ref) {
 });
 
 final tapProvider = NotifierProvider<TapSession, TapState>(TapSession.new);
+
+/// A QR Pay payment made from a printed bill's code, waiting to go on its
+/// bill (the pay page takes it as a tender the next time the bill is open,
+/// or at once when it is).
+@immutable
+class QrBillPayment {
+  const QrBillPayment({required this.id, required this.billRef, required this.intentId, required this.amountMinor});
+  final String id;
+  final String billRef;
+  final String intentId;
+  final int amountMinor;
+}
+
+/// Bill id to the QR payments made from its printed code.
+final qrBillPaymentsProvider = NotifierProvider<QrBillPayments, Map<String, List<QrBillPayment>>>(QrBillPayments.new);
+
+class QrBillPayments extends Notifier<Map<String, List<QrBillPayment>>> {
+  @override
+  Map<String, List<QrBillPayment>> build() => const {};
+
+  void add(QrBillPayment p) {
+    final now = [...?state[p.billRef]];
+    if (now.any((x) => x.id == p.id)) return;
+    state = {...state, p.billRef: [...now, p]};
+  }
+
+  /// Taken onto the bill: forgotten.
+  void taken(String billRef, String id) {
+    final left = [for (final x in state[billRef] ?? const <QrBillPayment>[]) if (x.id != id) x];
+    state = {...state, billRef: left};
+  }
+}
 
 /// What Continue with Vesopa answered when the login runs several sites.
 class SiteChoice {
@@ -734,7 +801,11 @@ class TapSession extends Notifier<TapState> {
       return;
     }
     final type = '${msg['type'] ?? ''}';
-    if (type == 'open-bills.updated') {
+    if (type == 'qrpay.updated') {
+      // A printed bill's QR code paid: found and put on its bill.
+      final id = '${msg['id'] ?? ''}';
+      if (msg['status'] == 'paid' && id.startsWith('bill-')) unawaited(_qrBillPaid(id));
+    } else if (type == 'open-bills.updated') {
       unawaited(pullBills());
     } else if (type.startsWith('kitchen')) {
       unawaited(_checkKitchen());
@@ -743,6 +814,21 @@ class TapSession extends Notifier<TapState> {
       _menuSoon?.cancel();
       _menuSoon = Timer(const Duration(seconds: 2), () => unawaited(refresh()));
     }
+  }
+
+  Future<void> _qrBillPaid(String id) async {
+    try {
+      final p = await ref.read(apiProvider).qrStatus(id);
+      final bill = '${p['bill_ref'] ?? ''}';
+      if (p['status'] != 'paid' || bill.isEmpty) return;
+      ref.read(qrBillPaymentsProvider.notifier).add(QrBillPayment(
+            id: id,
+            billRef: bill,
+            intentId: '${p['intent_id'] ?? id}',
+            amountMinor: (p['amount_minor'] as num?)?.toInt() ?? 0,
+          ));
+      state = state.copyWith(message: 'A bill was paid by QR: ${money((p['amount_minor'] as num?)?.toInt() ?? 0)}. Open it to close it.');
+    } catch (_) {}
   }
 
   void _liveLost() {

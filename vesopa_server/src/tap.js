@@ -260,6 +260,19 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     }
   }
 
+  /** A practice venue, or one whose own card machine is on Dojo's sandbox. */
+  async function isTestVenue(office) {
+    try {
+      const [[o]] = await pool.query('SELECT demo_of FROM offices WHERE contact_email = ?', [office]);
+      if (o && o.demo_of != null) return true;
+      const [[d]] = await pool.query('SELECT environment FROM epos_dojo_settings WHERE office = ?', [office]);
+      return !!d && d.environment !== 'live';
+    } catch (e) {
+      if (e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ER_NO_SUCH_TABLE') return false;
+      throw e;
+    }
+  }
+
   /** The settings, or a 403 when the venue has switched Vesopa Tap off. */
   async function requireOn(office) {
     const s = await settingsFor(office);
@@ -653,6 +666,12 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
         // Go at all: it is licensed per venue, none unless offered (licences.js).
         go: await goOptionsFor(pool, req.office),
         go_licensed: await goLicensed(req.office),
+        // QR Pay (qr_pay.js): whether this venue can take it, and how.
+        qr_pay: typeof router.qrSettings === 'function' ? await router.qrSettings(req.office) : { available: false },
+        // A venue that takes no real money (its card machine on Dojo's
+        // sandbox, or a practice copy): Go may take a pretend Tap to Pay on a
+        // device without it, such as an iPad (owner, 2026-11-02).
+        test_venue: await isTestVenue(req.office),
         // Dojo's partner ids, shown on the card machine page as the till shows them.
         software_house_id: partnerIds('').softwareHouseId,
         reseller_id: partnerIds('').resellerId,

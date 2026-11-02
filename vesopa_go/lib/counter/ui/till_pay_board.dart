@@ -1,9 +1,11 @@
 /// The till's payment page (vesopa_epos lib/ui/payment_page.dart), as the owner
 /// asked on 2026-10-28: what is left to pay and what has been taken at the
-/// top; Cash and Card as the two big tender keys; Manual card and Split bill;
-/// the venue's own banknote pictures (tap a note to take it); the other
-/// tenders and tools as a grid; and the number pad with Exact and the next
-/// note up on the right. A "Check" tab shows the bill as it will print.
+/// top; Cash and Card as the two big tender keys; Manual card, the other way
+/// to take a card and QR Pay (2026-11-02: QR Pay where Split bill was, Split
+/// bill first in the grid and the grid filled to eight); the venue's own
+/// banknote pictures (tap a note to take it); the other tenders and tools as
+/// a grid; and the number pad with Exact and the next note up on the right.
+/// A "Check" tab shows the bill as it will print.
 ///
 /// On a phone the same keys stack in one column, the pad last.
 library;
@@ -48,6 +50,7 @@ class PayActions {
     this.cardLabel = 'Card',
     this.otherCard,
     this.otherCardLabel,
+    this.qrPay,
   });
 
   final void Function(int tenderedMinor) cash;
@@ -68,6 +71,9 @@ class PayActions {
   /// The other way to take a card (the machine, or Tap to Pay), if any.
   final void Function(int amountMinor)? otherCard;
   final String? otherCardLabel;
+
+  /// QR Pay: the customer pays [amountMinor] on their own phone.
+  final void Function(int amountMinor)? qrPay;
 }
 
 class TillPayBoard extends StatefulWidget {
@@ -117,6 +123,11 @@ class _TillPayBoardState extends State<TillPayBoard> {
       if (v >= _due) return v;
     }
     return null;
+  }
+
+  Future<void> _split() async {
+    final share = await widget.actions.split();
+    if (share != null && mounted) setState(() => _entered = share);
   }
 
   void _then(void Function() f) {
@@ -173,15 +184,10 @@ class _TillPayBoardState extends State<TillPayBoard> {
         Expanded(child: _ToolKey(label: a.otherCardLabel ?? 'Other card', onTap: () => _then(() => a.otherCard!(_amount.clamp(1, _due))))),
         const SizedBox(width: 10),
       ],
-      Expanded(
-        child: _ToolKey(
-          label: 'Split bill',
-          onTap: () async {
-            final share = await a.split();
-            if (share != null && mounted) setState(() => _entered = share);
-          },
-        ),
-      ),
+      if (a.qrPay != null)
+        Expanded(child: _ToolKey(key: const ValueKey('pay-qr'), label: 'QR Pay', icon: Icons.qr_code_2_rounded, onTap: () => _then(() => a.qrPay!(_amount.clamp(1, _due)))))
+      else
+        Expanded(child: _ToolKey(label: 'Split bill', onTap: _split)),
     ]);
 
     final notes = widget.allowCash && widget.notes.isNotEmpty
@@ -200,9 +206,11 @@ class _TillPayBoardState extends State<TillPayBoard> {
           ])
         : const SizedBox.shrink();
 
-    // The till's order: Gift Card, Voucher, Deposit, Points, then Discount,
+    // Split bill first (it moved from beside Manual card for QR Pay), then
+    // the till's order: Gift Card, Voucher, Deposit, Points, then Discount,
     // Customer, Gratuity, Print bill.
-    final grid = [
+    final grid = <(String, VoidCallback)>[
+      if (a.qrPay != null) ('Split bill', _split),
       if (a.giftCard != null) ('Gift Card', a.giftCard!),
       ('Voucher', a.voucher),
       if (a.deposit != null) ('Deposit', a.deposit!),
@@ -213,8 +221,9 @@ class _TillPayBoardState extends State<TillPayBoard> {
       ('Print bill', a.printBill),
     ];
     final tools = LayoutBuilder(builder: (context, box) {
-      // One row on an iPad when they fit, three to a row on a phone.
-      final cols = wide ? (grid.length <= 5 ? grid.length : 4) : 3;
+      // One row on an iPad when they fit, else rows of four (five for nine),
+      // three to a row on a phone.
+      final cols = wide ? (grid.length <= 5 ? grid.length : (grid.length == 9 ? 5 : 4)) : 3;
       final w = (box.maxWidth - 10 * (cols - 1)) / cols;
       return Wrap(spacing: 10, runSpacing: 10, children: [
         for (final (label, onTap) in grid) SizedBox(width: w, height: 64, child: _ToolKey(label: label, onTap: onTap)),
@@ -307,9 +316,10 @@ class _TenderKey extends StatelessWidget {
 }
 
 class _ToolKey extends StatelessWidget {
-  const _ToolKey({required this.label, required this.onTap});
+  const _ToolKey({super.key, required this.label, required this.onTap, this.icon});
   final String label;
   final VoidCallback? onTap;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -323,7 +333,10 @@ class _ToolKey extends StatelessWidget {
             child: Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: FitText(label, maxLines: 2, minSize: 12, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, height: 1.1, fontWeight: FontWeight.w600)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (icon != null) ...[Icon(icon, size: 22), const SizedBox(width: 8)],
+                  Flexible(child: FitText(label, maxLines: 2, minSize: 12, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, height: 1.1, fontWeight: FontWeight.w600))),
+                ]),
               ),
             ),
           ),

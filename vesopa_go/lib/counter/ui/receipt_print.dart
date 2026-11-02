@@ -46,11 +46,21 @@ Future<void> setReceiptPrinter(String v) async {
 /// One printed line: centred, or a left and right pair, optionally bold.
 @immutable
 class PrintLine {
-  const PrintLine(this.left, [this.right = '', this.centre = false, this.bold = false]);
+  const PrintLine(this.left, [this.right = '', this.centre = false, this.bold = false]) : qr = null;
+
+  /// A QR code of [data], centred (a bill's "Scan to pay", QR Pay).
+  const PrintLine.qr(String data)
+      : qr = data,
+        left = '',
+        right = '',
+        centre = true,
+        bold = false;
+
   final String left;
   final String right;
   final bool centre;
   final bool bold;
+  final String? qr;
 
   String text([int cols = _cols]) {
     if (centre) {
@@ -107,6 +117,20 @@ Uint8List escPos(List<PrintLine> lines) {
   final out = BytesBuilder();
   out.add([0x1B, 0x40, 0x1B, 0x74, 0x00]); // initialise, code page 437
   for (final l in lines) {
+    final qr = l.qr;
+    if (qr != null) {
+      // GS ( k: model 2, module size 6, error level M, store, print; centred.
+      final data = utf8.encode(qr);
+      final n = data.length + 3;
+      out.add([0x1B, 0x61, 0x01]);
+      out.add([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
+      out.add([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x06]);
+      out.add([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]);
+      out.add([0x1D, 0x28, 0x6B, n & 0xFF, n >> 8, 0x31, 0x50, 0x30, ...data]);
+      out.add([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]);
+      out.add([0x0A, 0x1B, 0x61, 0x00]);
+      continue;
+    }
     if (l.bold) out.add([0x1B, 0x45, 0x01]);
     for (final c in l.text().runes) {
       out.addByte(c == 0xA3 ? 0x9C : (c < 0x80 ? c : 0x3F));
@@ -145,8 +169,11 @@ Future<Uint8List> receiptPdf(List<PrintLine> lines, PdfPageFormat format) async 
   final width = roll ? format.width : 90 * PdfPageFormat.mm;
   // 42 characters to a line, as the till's printers: sized to fill the width.
   final size = ((width - 8 * PdfPageFormat.mm) / (42 * 0.6)).clamp(6.0, 10.0);
+  pw.Widget line(PrintLine l) => l.qr != null
+      ? pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.symmetric(vertical: 6), child: pw.BarcodeWidget(barcode: pw.Barcode.qrCode(), data: l.qr!, width: 34 * PdfPageFormat.mm, height: 34 * PdfPageFormat.mm)))
+      : pw.Text(l.text(), style: pw.TextStyle(font: l.bold ? bold : font, fontSize: size));
   pw.Widget body() => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        for (final l in lines) pw.Text(l.text(), style: pw.TextStyle(font: l.bold ? bold : font, fontSize: size)),
+        for (final l in lines) line(l),
       ]);
   if (roll) {
     doc.addPage(pw.Page(
@@ -163,7 +190,7 @@ Future<Uint8List> receiptPdf(List<PrintLine> lines, PdfPageFormat format) async 
         for (final l in lines)
           pw.Padding(
             padding: pw.EdgeInsets.only(left: inset),
-            child: pw.Text(l.text(), style: pw.TextStyle(font: l.bold ? bold : font, fontSize: size)),
+            child: line(l),
           ),
       ],
     ));
@@ -240,8 +267,35 @@ List<PrintLine> billLines(Bill bill, TapState s) {
   ];
 }
 
-Future<void> printBill(BuildContext context, WidgetRef ref, Bill bill) =>
-    _print(context, ref, billLines(bill, ref.read(tapProvider)), 'Bill ${bill.name}');
+/// The bill, with a "Scan to pay" QR Pay code for what is left when the venue
+/// prints one (back office, QR Pay). No code when it cannot be made: the bill
+/// still prints.
+Future<void> printBill(BuildContext context, WidgetRef ref, Bill bill) async {
+  final s = ref.read(tapProvider);
+  final lines = billLines(bill, s);
+  if (s.config.qrPay.available && s.config.qrPay.onBill && bill.dueMinor >= 30) {
+    try {
+      final p = await ref.read(apiProvider).qrCreate(
+            id: 'bill-${bill.id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '')}-${bill.dueMinor}',
+            amountMinor: bill.dueMinor,
+            billRef: bill.id,
+            billName: bill.name,
+            customerName: bill.member?.name,
+          );
+      final url = p['url'] as String?;
+      if (url != null) {
+        lines.addAll([
+          const PrintLine(''),
+          const PrintLine('SCAN TO PAY', '', true, true),
+          PrintLine.qr(url),
+          const PrintLine('Card, Apple Pay or Google Pay', '', true),
+        ]);
+      }
+    } catch (_) {}
+  }
+  if (!context.mounted) return;
+  await _print(context, ref, lines, 'Bill ${bill.name}');
+}
 
 Future<void> _print(BuildContext context, WidgetRef ref, List<PrintLine> lines, String name) async {
   final s = ref.read(tapProvider);
