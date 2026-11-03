@@ -82,14 +82,22 @@ final class DojoTapToPayBridge {
       switch call.method {
       case "activate":
         let dojo = sdkFor(args["env"] as? String ?? "staging")
-        let first = try await dojo.activateTerminal(secret)
-        if first != .operational {
-          // Not ready yet: wait until Dojo says the terminal is operational.
-          let now = try await dojo.getTerminalActivationStatus(notifyWhenOperational: true, secret: secret)
-          if now == .failed {
-            result(FlutterError(code: "dojo", message: "Dojo could not activate this iPhone for Tap to Pay.", details: nil))
-            return
+        do {
+          let first = try await dojo.activateTerminal(secret)
+          if first != .operational {
+            // Not ready yet: wait until Dojo says the terminal is operational.
+            let now = try await dojo.getTerminalActivationStatus(notifyWhenOperational: true, secret: secret)
+            if now == .failed {
+              dojo.deactiveTerminal()
+              result(FlutterError(code: "dojo", message: "Dojo could not activate this iPhone for Tap to Pay.", details: nil))
+              return
+            }
           }
+        } catch {
+          // Dojo's guide: after a failed activation, deactivate so the next
+          // try starts clean rather than on a half-activated terminal.
+          dojo.deactiveTerminal()
+          throw error
         }
         result(nil)
 

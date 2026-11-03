@@ -119,7 +119,8 @@ class DojoTapToPay implements PaymentService {
     switch (step) {
       case 'activate':
         return 'Dojo would not switch on Tap to Pay for this iPhone$code. '
-            'The venue\'s Dojo account needs Tap to Pay on iPhone turned on by Dojo for its ${_env == 'production' ? 'live' : 'test'} key. '
+            'Either Apple has not yet given this version of Vesopa Go its Tap to Pay permission, '
+            'or Dojo has not turned Tap to Pay on iPhone on for the venue\'s ${_env == 'production' ? 'live' : 'test'} key. '
             'Use the card machine or QR Pay for now.';
       case 'link':
         return 'This iPhone could not be linked to Tap to Pay$code. Accept Apple\'s Tap to Pay terms with the venue\'s Apple ID, then try again.';

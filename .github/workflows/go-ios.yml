@@ -126,6 +126,29 @@ jobs:
           rm -f "$S/dist.key.pem" "$S/dist.p12"
           "$RUNNER_TEMP/asc/bin/python" vesopa_go/tool/testflight.py sign-project "$S/profiles.json"
 
+      # Tap to Pay on iPhone is a managed entitlement: Apple's API may not list
+      # it among the App ID's capabilities even once granted, but the App Store
+      # profile Apple just made carries it. So the profile decides: if it has
+      # the key, the app is signed with it; if not, the run says so plainly.
+      - name: Tap to Pay from the App Store profile
+        if: inputs.testflight_build == '' && !inputs.listing_only
+        working-directory: vesopa_go/ios/Runner
+        run: |
+          KEY=com.apple.developer.proximity-reader.payment.acceptance
+          found=""
+          for p in "$RUNNER_TEMP"/signing/*.mobileprovision; do
+            security cms -D -i "$p" > "$RUNNER_TEMP/profile.plist" 2>/dev/null || continue
+            echo "Profile $(basename "$p") entitlements: $(/usr/libexec/PlistBuddy -c 'Print :Entitlements' "$RUNNER_TEMP/profile.plist" | grep -o '^ *[a-z][a-zA-Z0-9.-]* =' | tr -d ' =' | tr '\n' ' ')"
+            if /usr/libexec/PlistBuddy -c "Print :Entitlements:$KEY" "$RUNNER_TEMP/profile.plist" >/dev/null 2>&1; then found=yes; fi
+          done
+          if [ -n "$found" ]; then
+            /usr/libexec/PlistBuddy -c "Add :$KEY bool true" Runner.entitlements 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :$KEY true" Runner.entitlements
+            echo "Tap to Pay on iPhone: in the App Store profile, signed in."
+          else
+            echo "::warning::Tap to Pay on iPhone is NOT in the App Store profile, so this build cannot take Tap to Pay (Dojo activation fails). Apple must grant the distribution entitlement and it must be ticked on the App ID com.vesopa.go (Certificates, Identifiers & Profiles > Identifiers > Additional Capabilities)."
+          fi
+          echo "Signed with: $(/usr/libexec/PlistBuddy -c Print Runner.entitlements | grep -o 'com.apple[^ ]*' | tr '\n' ' ')"
+
       - name: Archive
         if: inputs.testflight_build == '' && !inputs.listing_only
         working-directory: vesopa_go
