@@ -47,10 +47,23 @@ class Shell extends ConsumerStatefulWidget {
 }
 
 class _ShellState extends ConsumerState<Shell> {
+  // Apple: configure again each time the app becomes frontmost.
+  late final AppLifecycleListener _life = AppLifecycleListener(onResume: () {
+    if (!mounted || kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+    final pay = ref.read(paymentsProvider);
+    if (pay is DojoTapToPay && MediaQuery.sizeOf(context).shortestSide < 600) pay.prepare(again: true);
+  });
+
+  @override
+  void dispose() {
+    _life.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
+    _life;
     // Tap to Pay on iPhone, readied as the app opens (Apple's guidance), so
     // the first customer is not kept waiting on "Getting ready".
     WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -55,6 +55,10 @@ final class DojoTapToPayBridge {
       result(supported)
       return
     }
+    if call.method == "showEducation" {
+      await showEducation(result)
+      return
+    }
     guard supported else {
       result(FlutterError(code: "unsupported", message: "Tap to Pay needs an iPhone XS or newer on iOS 16.7 or later.", details: nil))
       return
@@ -138,6 +142,36 @@ final class DojoTapToPayBridge {
     return made
   }
 
+  #endif
+
+  /// Apple's own "how to use Tap to Pay on iPhone" for merchants
+  /// (ProximityReaderDiscovery, iOS 18), kept up to date and in the right
+  /// language by Apple. Apple's guidelines ask for it in the app's settings
+  /// and after the terms are accepted.
+  @MainActor
+  private func showEducation(_ result: @escaping FlutterResult) async {
+    guard #available(iOS 18.0, *) else {
+      result(FlutterError(code: "unsupported", message: "Apple's Tap to Pay guide needs iOS 18 or later.", details: nil))
+      return
+    }
+    guard let root = UIApplication.shared.connectedScenes
+      .compactMap({ ($0 as? UIWindowScene)?.keyWindow?.rootViewController }).first else {
+      result(FlutterError(code: "no_window", message: "No screen to show the guide on.", details: nil))
+      return
+    }
+    var top = root
+    while let shown = top.presentedViewController { top = shown }
+    do {
+      let discovery = ProximityReaderDiscovery()
+      let content = try await discovery.content(for: ProximityReaderDiscovery.Topic.payment(.howToTap))
+      try await discovery.presentContent(content, from: top)
+      result(nil)
+    } catch {
+      result(FlutterError(code: "guide", message: error.localizedDescription, details: nil))
+    }
+  }
+
+  #if canImport(DojoTapToPayOniPhoneSDK)
   @available(iOS 16.7, *)
   private func current() throws -> DojoTapToPayOniPhone {
     guard let made = sdk as? DojoTapToPayOniPhone else {

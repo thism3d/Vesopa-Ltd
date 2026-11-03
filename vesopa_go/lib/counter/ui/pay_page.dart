@@ -8,7 +8,9 @@
 /// to pay, so a round of £22.28 can be a £20 note and a card.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
@@ -246,6 +248,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         (icon: Icons.manage_search_rounded, label: 'Check payment status', onPressed: _checkResult, primary: true),
       if (r != PayResult.uncertain) ...[
         (icon: Icons.refresh_rounded, label: 'Try again', onPressed: () => then(() => _card(_via, amount: again)), primary: true),
+        if (!(other == 'tap' && _isIpad(context) && !ref.read(tapProvider).config.testVenue))
         (
           icon: other == 'machine' ? Icons.point_of_sale_rounded : Icons.contactless_rounded,
           label: other == 'machine' ? 'Use the card machine' : 'Use Tap to Pay',
@@ -254,9 +257,12 @@ class _PayPageState extends ConsumerState<PayPage> {
         ),
         (icon: Icons.qr_code_2_rounded, label: 'QR Pay', onPressed: () => then(() => _qr(again)), primary: false),
       ],
+      (icon: Icons.support_agent_rounded, label: 'Get help', onPressed: () => launchUrl(Uri.parse('https://go.vesopa.com/support/'), mode: LaunchMode.externalApplication), primary: false),
       (icon: Icons.close_rounded, label: 'Close', onPressed: _closeResult, primary: false),
     ];
   }
+
+  bool _isIpad(BuildContext context) => defaultTargetPlatform == TargetPlatform.iOS && MediaQuery.sizeOf(context).shortestSide >= 600;
 
   /// A pretend Tap to Pay on a device without it, at a test venue only: the
   /// customer's screens as for a real one, and the tender marked as a test.
@@ -468,8 +474,10 @@ class _PayPageState extends ConsumerState<PayPage> {
         cash: _cash,
         card: (amount) => _card(via, amount: amount),
         cardLabel: 'Card',
-        otherCard: teya ? null : (amount) => _card(other, amount: amount),
-        otherCardLabel: other == 'machine' ? 'Card machine' : 'Tap to Pay',
+        // Tap to Pay on iPhone is not in iPadOS (Apple's guidelines): an
+        // iPad offers it only as a test venue's pretend payment.
+        otherCard: teya || (other == 'tap' && _isIpad(context) && !config.testVenue) ? null : (amount) => _card(other, amount: amount),
+        otherCardLabel: other == 'machine' ? 'Card machine' : (_isIpad(context) ? 'Test payment' : 'Tap to Pay'),
         qrPay: _qr,
         manualCard: _manualCard,
         split: _split,

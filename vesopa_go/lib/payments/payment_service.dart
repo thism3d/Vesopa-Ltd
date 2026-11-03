@@ -193,13 +193,65 @@ class DojoTapToPay implements PaymentService {
   /// prepare the reader early, so the customer is not kept waiting): a fresh
   /// secret and the activation, in the background. Errors are ignored here;
   /// the payment itself will try again and say what is wrong.
-  Future<void> prepare() async {
+  Future<void> prepare({bool again = false}) async {
+    if (again) _active = false;
     if (!Platform.isIOS || _active) return;
     try {
       final secret = await _freshSecret();
       await _channel.invokeMethod('activate', {'secret': secret, 'env': _env});
       _active = true;
     } catch (_) {}
+  }
+
+  /// Tap to Pay on iPhone set up before the first customer (Apple: the
+  /// merchant accepts the terms before checkout): the secret, the activation,
+  /// and Apple's terms sheet when the venue's account is not linked yet.
+  /// Null when ready, else what is wrong.
+  Future<String?> setUp() async {
+    if (!Platform.isIOS) return 'Tap to Pay on iPhone is for iPhone.';
+    final why = await whyUnavailable();
+    if (why != null) return why;
+    try {
+      final secret = await _freshSecret();
+      await _channel.invokeMethod('activate', {'secret': secret, 'env': _env});
+      _active = true;
+      if (!(await _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret}) ?? false)) {
+        await _channel.invokeMethod('linkAccount', {'secret': secret});
+      }
+      return null;
+    } on TapApiError catch (e) {
+      return e.message;
+    } on PlatformException catch (e) {
+      _active = false;
+      return e.message ?? e.code;
+    }
+  }
+
+  /// Whether Apple's terms have been accepted for the venue's account.
+  Future<bool?> isLinked() async {
+    if (!Platform.isIOS) return null;
+    try {
+      final secret = await _freshSecret();
+      if (!_active) {
+        await _channel.invokeMethod('activate', {'secret': secret, 'env': _env});
+        _active = true;
+      }
+      return await _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret});
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Apple's own guide to taking a payment with Tap to Pay on iPhone.
+  Future<String?> showGuide() async {
+    try {
+      await _channel.invokeMethod('showEducation');
+      return null;
+    } on PlatformException catch (e) {
+      return e.message ?? e.code;
+    } on MissingPluginException {
+      return 'This build has no Tap to Pay in it.';
+    }
   }
 
   /// The venue's Dojo card machine: the server starts it, the customer uses

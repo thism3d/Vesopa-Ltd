@@ -1,15 +1,18 @@
 /// More: this phone, Tap to Pay, staff cards, signing out.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/api.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
 import '../../nfc/staff_card.dart';
 import '../../payments/payment_service.dart';
+import '../tap_to_pay_mark.dart';
 import '../theme.dart';
 
 class MorePage extends ConsumerStatefulWidget {
@@ -113,13 +116,7 @@ class _MorePageState extends ConsumerState<MorePage> {
         ),
       ),
       const SizedBox(height: 12),
-      Card(
-        child: ListTile(
-          leading: Icon(Icons.contactless_rounded, color: context.goLimeInk),
-          title: const Text('Tap to Pay'),
-          subtitle: Text(_tapStatus ?? 'Checking…'),
-        ),
-      ),
+      _TapToPayCard(status: _tapStatus),
       const SizedBox(height: 12),
       Card(
         child: ListTile(
@@ -181,5 +178,119 @@ class _MorePageState extends ConsumerState<MorePage> {
         child: Text('Sign this phone out of ${s.venue?.name ?? 'the venue'}', style: t.bodyMedium?.copyWith(color: Tp.danger)),
       ),
     ]);
+  }
+}
+
+/// Tap to Pay on iPhone in Settings, as Apple's guidelines ask: set it up
+/// (Apple's terms, accepted by the venue's account holder) before the first
+/// customer, see whether it is ready, and Apple's own guide to taking a
+/// payment, always here. The guide opens by itself after the first set-up.
+class _TapToPayCard extends ConsumerStatefulWidget {
+  const _TapToPayCard({this.status});
+  final String? status;
+
+  @override
+  ConsumerState<_TapToPayCard> createState() => _TapToPayCardState();
+}
+
+class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
+  bool? _linked;
+  bool _busy = false;
+  String? _note;
+
+  bool get _iPhone => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+  @override
+  void initState() {
+    super.initState();
+    final pay = ref.read(paymentsProvider);
+    if (pay is DojoTapToPay && _iPhone) {
+      pay.isLinked().then((v) {
+        if (mounted) setState(() => _linked = v);
+      });
+    }
+  }
+
+  Future<void> _setUp() async {
+    final pay = ref.read(paymentsProvider);
+    if (pay is! DojoTapToPay) return;
+    setState(() {
+      _busy = true;
+      _note = 'Setting up Tap to Pay on iPhone…';
+    });
+    final why = await pay.setUp();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _note = why ?? 'Ready. Customers can tap a card, phone or watch on the top of this iPhone.';
+      if (why == null) _linked = true;
+    });
+    if (why == null) {
+      final p = await SharedPreferences.getInstance();
+      if (p.getBool('go_ttp_guide_seen') != true) {
+        await p.setBool('go_ttp_guide_seen', true);
+        await _guide();
+      }
+    }
+  }
+
+  Future<void> _guide() async {
+    final pay = ref.read(paymentsProvider);
+    if (pay is! DojoTapToPay) return;
+    final why = await pay.showGuide();
+    if (why != null && mounted) setState(() => _note = why);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final tablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+    if (!_iPhone || tablet) {
+      return Card(
+        child: ListTile(
+          leading: Icon(Icons.contactless_rounded, color: context.goLimeInk),
+          title: const Text('Tap to Pay'),
+          subtitle: Text(_iPhone
+              ? 'Tap to Pay on iPhone works on iPhone only, not iPad. Use the card machine or QR Pay here.'
+              : (widget.status ?? 'Checking…')),
+        ),
+      );
+    }
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            TapToPayMark(size: 30, color: context.goLimeInk),
+            const SizedBox(width: 14),
+            Expanded(child: Text('Tap to Pay on iPhone', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
+          ]),
+          const SizedBox(height: 8),
+          Text(
+            _linked == true
+                ? 'Set up. Customers tap a contactless card, iPhone, Android phone or watch on the top of this iPhone.'
+                : _linked == false
+                    ? "Not set up yet. The venue's account holder accepts Apple's terms once, then any iPhone at the venue can take payments."
+                    : (widget.status ?? 'Checking…'),
+            style: t.bodyMedium,
+          ),
+          if (_note != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_note!, style: t.bodySmall?.copyWith(color: context.goMuted))),
+          const SizedBox(height: 12),
+          Wrap(spacing: 10, runSpacing: 10, children: [
+            if (_linked != true)
+              FilledButton.icon(
+                onPressed: _busy ? null : _setUp,
+                icon: const TapToPayMark(size: 20),
+                label: const Text('Set up Tap to Pay on iPhone'),
+              ),
+            OutlinedButton.icon(
+              onPressed: _guide,
+              icon: const Icon(Icons.school_rounded),
+              label: const Text('How to use Tap to Pay on iPhone'),
+            ),
+          ]),
+        ]),
+      ),
+    );
   }
 }

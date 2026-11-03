@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import '../../config/constants.dart' show apiBase;
 import '../../data/models.dart';
 import '../../ui/fit_text.dart';
+import '../../ui/tap_to_pay_mark.dart';
 import '../../ui/theme.dart';
 
 /// A banknote key from the back office (Settings, Cash denominations).
@@ -181,7 +182,7 @@ class _TillPayBoardState extends State<TillPayBoard> {
       Expanded(child: _ToolKey(label: 'Manual card', icon: Icons.keyboard_alt_rounded, onTap: () => _then(() => a.manualCard(_amount.clamp(1, _due))))),
       const SizedBox(width: 10),
       if (a.otherCard != null) ...[
-        Expanded(child: _ToolKey(label: a.otherCardLabel ?? 'Other card', icon: a.otherCardLabel == 'Tap to Pay' ? Icons.contactless_rounded : Icons.point_of_sale_rounded, onTap: () => _then(() => a.otherCard!(_amount.clamp(1, _due))))),
+        Expanded(child: _ToolKey(label: a.otherCardLabel ?? 'Other card', icon: a.otherCardLabel == 'Card machine' ? Icons.point_of_sale_rounded : null, mark: a.otherCardLabel == 'Card machine' ? null : const TapToPayMark(size: 22), onTap: () => _then(() => a.otherCard!(_amount.clamp(1, _due))))),
         const SizedBox(width: 10),
       ],
       if (a.qrPay != null)
@@ -329,10 +330,13 @@ const _toolIcons = <String, IconData>{
 };
 
 class _ToolKey extends StatelessWidget {
-  const _ToolKey({super.key, required this.label, required this.onTap, this.icon});
+  const _ToolKey({super.key, required this.label, required this.onTap, this.icon, this.mark});
   final String label;
   final VoidCallback? onTap;
   final IconData? icon;
+
+  /// A drawn mark in place of [icon] (Tap to Pay's, Apple's symbol).
+  final Widget? mark;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -347,7 +351,7 @@ class _ToolKey extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  if (icon != null) ...[Icon(icon, size: 22), const SizedBox(width: 8)],
+                  if (mark != null) ...[mark!, const SizedBox(width: 8)] else if (icon != null) ...[Icon(icon, size: 22), const SizedBox(width: 8)],
                   Flexible(child: FitText(label, maxLines: 2, minSize: 12, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, height: 1.1, fontWeight: FontWeight.w600))),
                 ]),
               ),
