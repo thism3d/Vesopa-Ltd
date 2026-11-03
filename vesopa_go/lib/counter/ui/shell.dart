@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, Tar
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
+import 'package:vesopa_go/data/recent_venues.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/ui/pages/bill.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
@@ -316,11 +317,48 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
       ]),
       _group('Venue', [
+        // The venue's own logo (the club crest at Pontardawe RFC), Go's mark
+        // when it has none.
+        ListTile(
+          leading: const SizedBox(width: 48, height: 48, child: Center(child: VenueMark(height: 44, maxWidth: 48))),
+          title: Text(s.venue?.name ?? '', style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text(s.demo ? 'Demo: nothing is real' : 'Signed in on this device'),
+        ),
         ListTile(
           leading: const Icon(Icons.sync_rounded),
           title: const Text('Refresh the menu and staff'),
           onTap: s.demo ? null : () => ref.read(tapProvider.notifier).refresh(),
         ),
+        if (!s.demo)
+          ListTile(
+            leading: const Icon(Icons.switch_account_rounded),
+            title: const Text('Switch venue or account'),
+            subtitle: const Text('Sign in to another venue or with another Vesopa account'),
+            onTap: () async {
+              if (s.pendingSync > 0) {
+                // Never switch away from sales the back office has not had yet.
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('${s.pendingSync} sales are still waiting to send. Switch once they have.'),
+                ));
+                return;
+              }
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (c) => AlertDialog(
+                  title: const Text('Switch venue or account?'),
+                  content: Text('This device signs out of ${s.venue?.name ?? 'this venue'} and gives its licence back. '
+                      'Then choose the Vesopa account and venue to sign in to.'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                    FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Switch')),
+                  ],
+                ),
+              );
+              if (ok != true) return;
+              RecentVenues.switchOnOpen = true;
+              await ref.read(tapProvider.notifier).forgetPhone();
+            },
+          ),
         ListTile(
           leading: const Icon(Icons.logout_rounded, color: Tp.danger),
           title: Text(s.demo ? 'Leave the demo' : 'Forget this device'),

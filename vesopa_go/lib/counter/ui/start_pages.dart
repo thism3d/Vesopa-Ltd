@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/config/constants.dart' show apiBase;
 import 'package:vesopa_go/data/api.dart';
 import 'package:vesopa_go/data/models.dart';
+import 'package:vesopa_go/data/recent_venues.dart';
 import 'package:vesopa_go/data/clerk_auth.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/data/vesopa_sso.dart';
@@ -28,6 +29,7 @@ import 'package:vesopa_go/ui/theme.dart';
 import '../data/lite_demo.dart';
 import 'package:vesopa_go/data/demo_venue.dart';
 import 'brand.dart';
+import 'intro_tour.dart';
 
 class LiteWelcomePage extends ConsumerStatefulWidget {
   const LiteWelcomePage({super.key});
@@ -38,15 +40,31 @@ class LiteWelcomePage extends ConsumerStatefulWidget {
 class _LiteWelcomePageState extends ConsumerState<LiteWelcomePage> {
   bool _busy = false;
   String? _error;
+  List<RecentVenue> _recent = const [];
 
-  Future<void> _signIn() async {
+  @override
+  void initState() {
+    super.initState();
+    RecentVenues.load().then((v) {
+      if (mounted) setState(() => _recent = v);
+    });
+    // From the menu's "Switch venue or account": straight to Vesopa's picker.
+    if (RecentVenues.switchOnOpen) {
+      RecentVenues.switchOnOpen = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _signIn(selectAccount: true);
+      });
+    }
+  }
+
+  Future<void> _signIn({bool selectAccount = false}) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       final sso = await ref.read(apiProvider).signInClient();
-      final idToken = await VesopaSso(issuer: sso.issuer, clientId: sso.clientId).authorize();
+      final idToken = await VesopaSso(issuer: sso.issuer, clientId: sso.clientId).authorize(selectAccount: selectAccount || _recent.isNotEmpty);
       if (!mounted) return;
       await commissionDevice(context, ref, idToken);
     } on SsoFailed catch (e) {
@@ -61,35 +79,101 @@ class _LiteWelcomePageState extends ConsumerState<LiteWelcomePage> {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
+    final actions = <Widget>[
+      if (_error != null) ...[
+        Text(_error!, textAlign: TextAlign.center, style: t.bodyMedium?.copyWith(color: Tp.danger)),
+        const SizedBox(height: 12),
+      ],
+      VesopaSignInButton(onPressed: _busy ? null : () => _signIn(), busy: _busy),
+      const SizedBox(height: 12),
+      SizedBox(
+        height: 52,
+        child: OutlinedButton.icon(
+          onPressed: _busy ? null : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RegisterPage())),
+          icon: const Icon(Icons.storefront_rounded),
+          label: const Text('Register a new venue'),
+        ),
+      ),
+      if (_recent.isNotEmpty) ...[
+        const SizedBox(height: 18),
+        Text('Signed in here before', textAlign: TextAlign.center, style: t.labelLarge?.copyWith(color: t.bodySmall?.color)),
+        const SizedBox(height: 8),
+        Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
+          for (final v in _recent)
+            ActionChip(
+              avatar: const CustomPaint(size: Size(18, 18), painter: VesopaMarkPainter()),
+              label: Text(v.name),
+              onPressed: _busy ? null : () => _signIn(selectAccount: true),
+            ),
+        ]),
+      ],
+    ];
     return Scaffold(
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 460),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                const Spacer(),
-                const Align(alignment: Alignment.centerLeft, child: GoMark(size: 72)),
-                const SizedBox(height: 24),
-                const Align(alignment: Alignment.centerLeft, child: GoWordmark(size: 32, mark: false)),
-                const SizedBox(height: 10),
-                Text('Lightweight on hardware, heavyweight on features. A fast till for bars, pop-ups, '
-                    'stalls and beer gardens, on a phone, a tablet or a handheld card terminal.',
-                    style: t.titleMedium?.copyWith(color: t.bodySmall?.color)),
-                const Spacer(flex: 2),
-                if (_error != null) ...[Text(_error!, style: t.bodyMedium?.copyWith(color: Tp.danger)), const SizedBox(height: 12)],
-                FilledButton.icon(
-                  onPressed: _busy ? null : _signIn,
-                  icon: _busy ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2.5)) : const Icon(Icons.login_rounded),
-                  label: const Text('Continue with Vesopa'),
+        child: LayoutBuilder(builder: (context, box) {
+          final wide = box.maxWidth >= 900 && box.maxWidth > box.maxHeight;
+          final brand = Row(
+            mainAxisAlignment: wide ? MainAxisAlignment.start : MainAxisAlignment.center,
+            children: const [GoMark(size: 44), SizedBox(width: 12), GoWordmark(size: 28, mark: false)],
+          );
+          final tagline = Text('A fast till for bars, clubs, pop-ups and beer gardens, on a phone, a tablet or a handheld terminal.',
+              textAlign: wide ? TextAlign.left : TextAlign.center,
+              style: t.titleMedium?.copyWith(color: t.bodySmall?.color, height: 1.35));
+          if (wide) {
+            // iPad on its side, a big tablet or a desktop window: the films on
+            // the left as large as the height allows, signing in on the right.
+            final scene = math.min(box.maxHeight * 0.56, (box.maxWidth - 520) * 0.82).clamp(260.0, 620.0);
+            return Row(children: [
+              Expanded(child: Center(child: Padding(padding: const EdgeInsets.all(24), child: IntroTour(sceneSize: scene)))),
+              SizedBox(
+                width: 440,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 48, 40, 32),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: box.maxHeight - 80),
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      brand,
+                      const SizedBox(height: 14),
+                      tagline,
+                      const SizedBox(height: 36),
+                      ...actions,
+                      ..._demo(),
+                    ]),
+                  ),
                 ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RegisterPage())),
-                  icon: const Icon(Icons.storefront_rounded),
-                  label: const Text('Register a new venue'),
+              ),
+            ]);
+          }
+          // Phones and an upright iPad: one centred column; the films sized
+          // so the buttons still sit on the first screen.
+          final scene = math.min(box.maxWidth - 64, box.maxHeight * 0.36).clamp(180.0, 460.0);
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: box.maxHeight),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      brand,
+                      SizedBox(height: box.maxHeight < 700 ? 8 : 14),
+                      IntroTour(sceneSize: scene, compact: box.maxHeight < 760),
+                      SizedBox(height: box.maxHeight < 700 ? 14 : 24),
+                      ...actions,
+                      ..._demo(),
+                    ]),
+                  ),
                 ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  List<Widget> _demo() => [
                 // The demo is gone from the store builds (owner, 2026-10-28):
                 // reviewers sign in to The Vesopa Kitchen. It stays in a
                 // developer build, where the tests drive it, and in the web
@@ -108,13 +192,7 @@ class _LiteWelcomePageState extends ConsumerState<LiteWelcomePage> {
                           ),
                   child: const Text('Try the demo'),
                 ),
-              ]),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+              ];
 }
 
 /// Nobody signed on: the venue's wallpaper behind the staff and the PIN pad,
