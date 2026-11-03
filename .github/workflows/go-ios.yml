@@ -104,6 +104,8 @@ jobs:
         if: inputs.testflight_build == '' && !inputs.listing_only
         env:
           ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+          # The one long-lived CI certificate's key: reused every run, never revoked.
+          ASC_DIST_KEY_PEM: ${{ secrets.ASC_DIST_KEY_PEM }}
         run: |
           S="$RUNNER_TEMP/signing"
           "$RUNNER_TEMP/asc/bin/python" vesopa_go/tool/testflight.py signing "$S"

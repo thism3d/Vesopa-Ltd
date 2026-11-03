@@ -120,37 +120,8 @@ def cmd_signing(out_dir):
     out.mkdir(parents=True, exist_ok=True)
     c = asc.Client()
 
-    old = set()
-    for p in c.all("/v1/profiles", **{"filter[profileType]": "IOS_APP_STORE", "limit": "200"}):
-        name = p["attributes"].get("name", "")
-        if name.startswith(asc.CI_PREFIX):
-            m = re.search(r"cert ([A-Z0-9]+)$", name)
-            if m:
-                old.add(m.group(1))
-            try:
-                c.delete(f"/v1/profiles/{p['id']}")
-            except asc.AppleError as e:
-                asc.note(f"  old profile {name}: {e.detail()}")
-    for cid in old:
-        try:
-            c.delete(f"/v1/certificates/{cid}")
-            asc.note(f"  revoked the previous run's certificate {cid}")
-        except asc.AppleError as e:
-            asc.note(f"  previous certificate {cid}: {e.detail()}")
-
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    csr = (x509.CertificateSigningRequestBuilder()
-           .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, asc.CI_PREFIX)]))
-           .sign(key, hashes.SHA256()))
-    try:
-        cert = c.post("/v1/certificates", {"data": {"type": "certificates", "attributes": {
-            "certificateType": "DISTRIBUTION", "csrContent": csr.public_bytes(serialization.Encoding.PEM).decode()}}})["data"]
-    except asc.AppleError as e:
-        raise SystemExit(f"Apple would not make a distribution certificate: {e.detail()}")
-    asc.note(f"  distribution certificate {cert['id']}")
-    (out / "dist.key.pem").write_bytes(key.private_bytes(
-        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
-    (out / "dist.cer").write_bytes(base64.b64decode(cert["attributes"]["certificateContent"]))
+    # One long-lived certificate, never revoked (app_store_connect.py).
+    cert = {"id": asc.ci_certificate(c, out)}
 
     bundles = [b for b in c.all("/v1/bundleIds", **{"filter[identifier]": APP_ID}) if b["attributes"]["identifier"] == APP_ID]
     if not bundles:

@@ -392,6 +392,102 @@ def cmd_prepare(venue_name):
 CI_PREFIX = "Vesopa CI"
 
 
+def ci_certificate(c, out):
+    """The distribution certificate every run signs with, written to out as
+    dist.key.pem and dist.cer; returns Apple's certificate id.
+
+    ONE LONG-LIVED CERTIFICATE (owner, 2026-11-03: "every build should not
+    show this", Apple's "Your Certificate Has Been Revoked" email). Its private
+    key is the GitHub secret ASC_DIST_KEY_PEM, so every run finds the same
+    certificate at Apple and reuses it; nothing is revoked. A new one is made
+    from the same key only when none matches it or it has under a month left.
+    Old runs' certificates (from before the secret) are left to expire, unless
+    Apple's limit stops the first long-lived one being made: then the oldest
+    CI one goes, once.
+
+    Without the secret: the old way (a key per run, the previous run's
+    certificate revoked), with a warning saying which email that causes.
+    """
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+    import base64
+    import datetime as dt
+
+    pem = os.environ.get("ASC_DIST_KEY_PEM", "").strip()
+    key = serialization.load_pem_private_key(pem.encode(), password=None) if pem else None
+
+    def pub(k):
+        return k.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+
+    def write(cert_obj, der):
+        (out / "dist.key.pem").write_bytes(key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        (out / "dist.cer").write_bytes(der)
+        return cert_obj["id"]
+
+    # Profiles from earlier runs name their certificates; the profiles go
+    # every run (they are cheap, Apple sends no email, and a new one carries
+    # any capability granted since, like Tap to Pay).
+    old_certs = set()
+    for p in c.all("/v1/profiles", **{"filter[profileType]": "IOS_APP_STORE", "limit": "200"}):
+        name = p["attributes"].get("name", "")
+        if name.startswith(CI_PREFIX):
+            m = re.search(r"cert ([A-Z0-9]+)$", name)
+            if m:
+                old_certs.add(m.group(1))
+            try:
+                c.delete(f"/v1/profiles/{p['id']}")
+            except AppleError as e:
+                note(f"  old profile {name}: {e.detail()}")
+
+    if key is not None:
+        soon = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=30)
+        for cert in c.all("/v1/certificates", **{"filter[certificateType]": "DISTRIBUTION", "limit": "200"}):
+            der = base64.b64decode(cert["attributes"].get("certificateContent") or "")
+            if not der:
+                continue
+            x = x509.load_der_x509_certificate(der)
+            if x.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo) != pub(key):
+                continue
+            expires = x.not_valid_after_utc if hasattr(x, "not_valid_after_utc") else x.not_valid_after.replace(tzinfo=dt.timezone.utc)
+            if expires < soon:
+                note(f"  CI certificate {cert['id']} ends {expires:%Y-%m-%d}: making its successor")
+                continue
+            note(f"  distribution certificate {cert['id']} (kept, until {expires:%Y-%m-%d}; nothing revoked)")
+            return write(cert, der)
+    else:
+        # A key for this run only. Nothing is revoked unless Apple's limit
+        # stops the new certificate (below): then one old CI one goes, and
+        # Apple emails about it.
+        note("  ASC_DIST_KEY_PEM is not set: a certificate for this run. Set the secret so every run reuses one.")
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    csr = (x509.CertificateSigningRequestBuilder()
+           .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, CI_PREFIX)]))
+           .sign(key, hashes.SHA256()))
+    body = {"data": {"type": "certificates", "attributes": {
+        "certificateType": "DISTRIBUTION", "csrContent": csr.public_bytes(serialization.Encoding.PEM).decode()}}}
+    try:
+        cert = c.post("/v1/certificates", body)["data"]
+    except AppleError as first:
+        # At Apple's limit with old per-run certificates still about: let the
+        # oldest of those go, once, and try again.
+        if not old_certs:
+            raise SystemExit(f"Apple would not make a distribution certificate: {first.detail()}\n"
+                             "If the team is at its limit, revoke an unused one in Certificates, Identifiers & Profiles.")
+        cid = sorted(old_certs)[0]
+        try:
+            c.delete(f"/v1/certificates/{cid}")
+            note(f"  at Apple's limit: revoked an old per-run certificate {cid}, once")
+        except AppleError as e:
+            raise SystemExit(f"Apple would not make a distribution certificate ({first.detail()}), and {cid} could not go: {e.detail()}")
+        cert = c.post("/v1/certificates", body)["data"]
+    note(f"  distribution certificate {cert['id']} (new, from ASC_DIST_KEY_PEM: later runs reuse it)")
+    return write(cert, base64.b64decode(cert["attributes"]["certificateContent"]))
+
+
 def cmd_signing(venue_name, out_dir):
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
@@ -405,45 +501,7 @@ def cmd_signing(venue_name, out_dir):
     out.mkdir(parents=True, exist_ok=True)
     c = Client()
 
-    # What earlier runs left: their profiles name their certificates.
-    old_certs = set()
-    for p in c.all("/v1/profiles", **{"filter[profileType]": "IOS_APP_STORE", "limit": "200"}):
-        name = p["attributes"].get("name", "")
-        if name.startswith(CI_PREFIX):
-            m = re.search(r"cert ([A-Z0-9]+)$", name)
-            if m:
-                old_certs.add(m.group(1))
-            try:
-                c.delete(f"/v1/profiles/{p['id']}")
-            except AppleError as e:
-                note(f"  old profile {name}: {e.detail()}")
-    for cid in old_certs:
-        try:
-            c.delete(f"/v1/certificates/{cid}")
-            note(f"  revoked the previous run's certificate {cid}")
-        except AppleError as e:
-            note(f"  previous certificate {cid}: {e.detail()}")
-
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    csr = (
-        x509.CertificateSigningRequestBuilder()
-        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, CI_PREFIX)]))
-        .sign(key, hashes.SHA256())
-    )
-    try:
-        cert = c.post("/v1/certificates", {"data": {"type": "certificates", "attributes": {
-            "certificateType": "DISTRIBUTION",
-            "csrContent": csr.public_bytes(serialization.Encoding.PEM).decode(),
-        }}})["data"]
-    except AppleError as e:
-        raise SystemExit(
-            f"Apple would not make a distribution certificate: {e.detail()}\n"
-            "If the team is at its limit, revoke an unused one in Certificates, Identifiers & Profiles."
-        )
-    note(f"  distribution certificate {cert['id']}")
-    (out / "dist.key.pem").write_bytes(key.private_bytes(
-        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
-    (out / "dist.cer").write_bytes(base64.b64decode(cert["attributes"]["certificateContent"]))
+    cert = {"id": ci_certificate(c, out)}
 
     profiles = {}
     for identifier in (v["app_id"], f"{v['app_id']}.watchkitapp"):
