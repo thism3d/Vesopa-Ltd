@@ -36,8 +36,9 @@ class VesopaSso {
       base64Url.encode(List<int>.generate(bytes, (_) => _random.nextInt(256))).replaceAll('=', '');
 
   /// The whole round trip; returns the ID token. [signUp] opens Vesopa's
-  /// create-an-account page first (registering a new venue).
-  Future<String> authorize({bool signUp = false}) async {
+  /// create-an-account page first (registering a new venue); [selectAccount]
+  /// asks Vesopa to show its account picker (switching venue or account).
+  Future<String> authorize({bool signUp = false, bool selectAccount = false}) async {
     final verifier = _randomString(32);
     final challenge = base64Url.encode(sha256.convert(ascii.encode(verifier)).bytes).replaceAll('=', '');
     final state = _randomString(16);
@@ -47,7 +48,7 @@ class VesopaSso {
     // answering on the app's own address. The loopback port below left
     // Safari's in-app view on a blank http://127.0.0.1 page on an iPad
     // (2026-10-27): that view runs outside the app and the hand-back stalled.
-    if (Platform.isIOS) return _authorizeApple(signUp: signUp, verifier: verifier, challenge: challenge, state: state, nonce: nonce);
+    if (Platform.isIOS) return _authorizeApple(signUp: signUp, selectAccount: selectAccount, verifier: verifier, challenge: challenge, state: state, nonce: nonce);
 
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final redirectUri = 'http://127.0.0.1:${server.port}/callback';
@@ -61,7 +62,7 @@ class VesopaSso {
         'nonce': nonce,
         'code_challenge': challenge,
         'code_challenge_method': 'S256',
-        if (signUp) 'prompt': 'create',
+        if (signUp) 'prompt': 'create' else if (selectAccount) 'prompt': 'select_account',
       });
       final opened = await launchUrl(
         url,
@@ -101,7 +102,7 @@ class VesopaSso {
     }
   }
 
-  Future<String> _authorizeApple({required bool signUp, required String verifier, required String challenge, required String state, required String nonce}) async {
+  Future<String> _authorizeApple({required bool signUp, bool selectAccount = false, required String verifier, required String challenge, required String state, required String nonce}) async {
     final url = Uri.parse('$issuer/oauth/authorize').replace(queryParameters: {
       'response_type': 'code',
       'client_id': clientId,
@@ -111,7 +112,7 @@ class VesopaSso {
       'nonce': nonce,
       'code_challenge': challenge,
       'code_challenge_method': 'S256',
-      if (signUp) 'prompt': 'create',
+      if (signUp) 'prompt': 'create' else if (selectAccount) 'prompt': 'select_account',
     });
     final String answer;
     try {

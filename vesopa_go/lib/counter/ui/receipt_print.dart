@@ -281,6 +281,7 @@ Future<void> printBill(BuildContext context, WidgetRef ref, Bill bill) async {
             billRef: bill.id,
             billName: bill.name,
             customerName: bill.member?.name,
+            bill: bill,
           );
       final url = p['url'] as String?;
       if (url != null) {

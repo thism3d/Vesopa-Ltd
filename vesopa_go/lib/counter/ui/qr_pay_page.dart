@@ -93,6 +93,7 @@ class _QrPayPageState extends ConsumerState<QrPayPage> {
             billRef: widget.bill.id,
             billName: widget.bill.name,
             customerName: widget.customerName,
+            bill: widget.bill,
           );
       if (!mounted) return;
       setState(() => _payment = p);

@@ -197,6 +197,7 @@ class TapApi {
     String? billRef,
     String? billName,
     String? customerName,
+    Bill? bill,
   }) =>
       _send('POST', '/api/tap/qr', {
         'id': id,
@@ -204,6 +205,17 @@ class TapApi {
         if (billRef != null) 'bill_ref': billRef,
         if (billName != null && billName.isNotEmpty) 'bill_name': billName,
         if (customerName != null && customerName.isNotEmpty) 'customer_name': customerName,
+        // The lines, so the customer's page and receipt show what it is for.
+        if (bill != null) ...{
+          'items': [
+            for (final l in bill.lines)
+              {'name': l.product.name, 'qty': l.quantity, 'total_minor': l.totalMinor, 'notes': [for (final c in l.choices) c.name]},
+          ],
+          if (bill.discountMinor > 0) 'discount_minor': bill.discountMinor,
+          if (bill.serviceMinor > 0) 'service_minor': bill.serviceMinor,
+          if (bill.paidMinor > 0) 'paid_before_minor': bill.paidMinor,
+          'bill_total_minor': bill.totalMinor,
+        },
       });
 
   Future<Map<String, dynamic>> qrStatus(String id) => _send('GET', '/api/tap/qr/${Uri.encodeComponent(id)}');

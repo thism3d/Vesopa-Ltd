@@ -1,0 +1,97 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad">The back office did not answer: <%= error %></div><% } %>
+<% if (venue) { %>
+<div class="bar">
+  <span class="muted"><a href="/fleet">Fleet</a> › <%= venue.name %> · <%= venue.office %> · <a href="/venues/<%= venue.office_id %>">Venue page</a></span>
+  <span>
+    <% if (venue.venue_self) { %><span class="pill green">The venue can update its own devices</span><% } else { %><span class="pill grey">Updates set by Vesopa</span><% } %>
+    <a class="btn" href="/fleet/<%= venue.office_id %>/logs">All logs</a>
+  </span>
+</div>
+
+<form method="post" class="card">
+  <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+  <input type="hidden" name="back" value="/fleet/<%= venue.office_id %>">
+  <input type="hidden" name="bulk" value="ticked">
+  <input type="hidden" name="ids" value="<%= venue.office_id %>">
+  <div class="batch" style="border:0;padding:0">
+    <b>Move this venue</b>
+    <select name="app" aria-label="App">
+      <% for (const a of apps) { %><option value="<%= a.key %>"><%= a.short %></option><% } %>
+    </select>
+    <select name="choice" aria-label="Version">
+      <option value="follow">Follow the default</option>
+      <option value="none">No auto updates</option>
+      <% for (const a of apps) { for (const r of lists[a.key]) { %><option value="<%= r.id %>" data-app="<%= a.key %>"><%= a.short %> <%= r.version %> · <%= reach(r) %></option><% } } %>
+    </select>
+    <select name="when" aria-label="When">
+      <option value="ask">Ask on screen</option>
+      <option value="now">Install now, between sales</option>
+      <option value="at">At a time…</option>
+    </select>
+    <input type="datetime-local" name="when_at" aria-label="Install at (UK time)">
+    <button class="btn primary" type="submit" formaction="/versions" data-confirm="Move this venue's devices to this version?">Upgrade or downgrade</button>
+    <span class="sep"></span>
+    <% if (venue.venue_self) { %>
+      <button class="btn" type="submit" formaction="/fleet/self-updates" name="on" value="0">Vesopa only</button>
+    <% } else { %>
+      <button class="btn" type="submit" formaction="/fleet/self-updates" name="on" value="1" data-confirm="Let this venue move its own devices to Vesopa's default version from its back office (Devices)?">Let the venue update itself</button>
+    <% } %>
+  </div>
+  <% if (venue.pins && venue.pins.length) { %>
+    <p class="muted" style="margin:12px 0 0">Set for this venue:
+      <% for (const p of venue.pins) { %><span class="pill grey"><%= p.app %> <%= p.version || 'no auto updates' %><%= p.mode && p.mode !== 'ask' ? ' · ' + p.mode : '' %></span><% } %>
+    </p>
+  <% } %>
+</form>
+
+<section class="card flush">
+  <table class="list">
+    <thead><tr><th>Device</th><th>Apps and versions</th><th>Health</th><th>Last seen</th><th></th></tr></thead>
+    <tbody>
+    <% for (const d of devices) { const h = d.health && d.health.snapshot; %>
+      <tr>
+        <td>
+          <b><%= d.name || d.device_id %></b>
+          <small class="muted block"><%= d.kind || 'device' %><%= d.ip ? ' · ' + d.ip : '' %><%= d.signed_in_as ? ' · ' + d.signed_in_as : '' %></small>
+        </td>
+        <td><% if (!d.apps.length && d.app_version) { %><span class="pill grey"><%= d.app_version %></span><% } %><% for (const a of d.apps) { %><span class="pill grey"><%= a.app %> <%= a.version %><%= a.install === 'store' ? ' (Store)' : '' %></span><% } %></td>
+        <td><span class="pill <%= d.state.tone %>"><%= d.state.label %></span><% if (d.errors && d.errors.week) { %><small class="muted block"><%= d.errors.week %> errors this week</small><% } %></td>
+        <td><%= d.last_seen_at ? ago(d.last_seen_at) : '—' %></td>
+        <td><a class="btn" href="/fleet/<%= venue.office_id %>/logs?device=<%= encodeURIComponent(d.device_id) %>">Logs</a></td>
+      </tr>
+      <% if (h) { %>
+      <tr><td colspan="5">
+        <details class="dev">
+          <summary class="muted">Hardware and network, reported <%= ago(d.health.at) %> ▸</summary>
+          <div class="hw">
+            <div><b>This PC</b><%= h.os || '—' %><br><%= h.cpu || '' %><%= h.memory_mb ? ' · ' + Math.round(h.memory_mb / 1024) + ' GB' : '' %><%= h.disk_free_gb != null ? ' · ' + h.disk_free_gb + ' GB free' : '' %><%= h.uptime_h != null ? '<br>Up ' + h.uptime_h + ' h' : '' %></div>
+            <div><b>Online</b><%= h.online_via || '—' %><%= h.local_link ? '<br>Local link: ' + h.local_link : '' %><%= h.helper ? '<br>Network helper: ' + h.helper : '' %></div>
+            <div><b>Adapters</b><% for (const a of (h.adapters || [])) { %><%= a.name %> · <%= a.status || '' %><%= a.ipv4 ? ' · ' + a.ipv4 : '' %><%= a.category ? ' · ' + a.category : '' %><br><% } %></div>
+            <div><b>Hotspot and Bluetooth</b><%= h.hotspot ? (h.hotspot.supported === false ? 'No hotspot on this PC' : h.hotspot.on ? 'Hotspot on' + (h.hotspot.ssid ? ' (' + h.hotspot.ssid + ')' : '') + ' · ' + (h.hotspot.clients || 0) + ' joined' : 'Hotspot off') : '—' %><br>Bluetooth: <%= h.bluetooth || '—' %></div>
+            <div><b>USB, serial and printers</b><% for (const x of [...(h.printers || []), ...(h.devices || [])].slice(0, 14)) { %><%= x.name %><%= x.problem ? ' · ' + x.problem : x.status ? ' · ' + x.status : '' %><br><% } %></div>
+          </div>
+          <% if (h.warnings && h.warnings.length) { %><ul class="warn-list"><% for (const w of h.warnings) { %><li><%= w %></li><% } %></ul><% } %>
+        </details>
+      </td></tr>
+      <% } %>
+    <% } %>
+    <% if (!devices.length) { %><tr><td colspan="5" class="muted">No device has checked in from this venue in the last 60 days.</td></tr><% } %>
+    </tbody>
+  </table>
+</section>
+
+<section class="card flush">
+  <div class="pad"><b>Errors and warnings this week</b> <a class="muted" href="/fleet/<%= venue.office_id %>/logs">see all</a></div>
+  <table class="list log">
+    <thead><tr><th>When</th><th>Device</th><th>App</th><th>What</th></tr></thead>
+    <tbody>
+    <% for (const e of logs.slice(0, 40)) { %>
+      <tr><td><%= ago(e.at) %></td><td><%= e.device_name || '—' %></td><td><%= e.app || '' %> <%= e.app_version || '' %></td><td><b><%= e.action %></b> <%= e.target || '' %><%= e.status ? ' · ' + e.status : '' %><% if (e.detail) { %><div class="muted"><%= String(e.detail).slice(0, 300) %></div><% } %></td></tr>
+    <% } %>
+    <% if (!logs.length) { %><tr><td colspan="4" class="muted">Nothing went wrong this week.</td></tr><% } %>
+    </tbody>
+  </table>
+</section>
+<% } %>
+<%- include('_bottom') %>

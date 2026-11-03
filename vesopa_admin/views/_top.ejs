@@ -22,6 +22,7 @@
         ['/hosting', 'Cloud hosting', 'licences.view', 'hosting'],
         ['/subscriptions', 'Subscriptions', 'licences.view', null],
         ['/downloads', 'Downloads', 'releases.download', null],
+        ['/fleet', 'Fleet', 'versions.manage', 'epos'],
         ['/versions', 'Versions', 'versions.manage', 'epos'],
         ['/audit', 'Audit log', 'audit.view', null],
         ['/admins', 'Admins', 'admins.manage', null],
@@ -36,7 +37,10 @@
     </div>
     <form class="me" method="post" action="/signout">
       <div><b><%= me.name %></b><small><%= me.roleLabel %><%= me.apps === '*' ? '' : ' · ' + me.apps.map((a) => roles.APPS[a]).join(', ') %></small></div>
-      <button class="link" type="submit">Sign out</button>
+      <span class="me-actions">
+        <button class="link" type="submit" name="switch" value="1">Switch account</button>
+        <button class="link" type="submit">Sign out</button>
+      </span>
     </form>
   </aside>
   <main class="main">

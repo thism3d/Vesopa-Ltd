@@ -492,6 +492,17 @@ app.use('/api', timesheetRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // write through /till/devices with a terminal token, the back office reads
 // /api/devices with a session one, and they are two halves of one table.
 app.use(deviceRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Each machine's hardware and network health, the fleet for admin.vesopa.com,
+// and a venue updating its own tills when Vesopa allows it. src/device_health.js.
+app.use(require('./device_health').deviceHealthRoutes({
+  pool,
+  broadcast,
+  secret: JWT_SECRET,
+  auth: requireAuth(JWT_SECRET),
+  admin: (req, res, next) => (req.user && req.user.role === 'admin'
+    ? next()
+    : res.status(403).json({ error: 'Administrator access only' })),
+}));
 
 // Magnetic swipe cards: staff, loyalty and gift. Mounted once at the root for
 // the same reason devices is -- the tills' half and the back office's half are

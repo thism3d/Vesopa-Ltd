@@ -27,4 +27,9 @@ module.exports = {
   appVersions: (app, as) => get(`/app-versions?app=${encodeURIComponent(app)}`, as),
   setAppVersion: (app, body, as) => put(`/app-versions/${encodeURIComponent(app)}`, body, as),
   setAppUpdates: (enabled, as) => put('/app-versions-settings', { enabled: !!enabled }, as),
+  // Every device of every venue: versions, hardware health and error counts,
+  // and their error logs (src/device_health.js there, 2026-11-03).
+  fleet: (officeId, as) => get(`/fleet${officeId ? `?office_id=${Number(officeId)}` : ''}`, as),
+  fleetLogs: (q, as) => get(`/fleet/logs?${new URLSearchParams(q).toString()}`, as),
+  setVenueSelfUpdates: (ids, on, as) => put('/venue-self-updates', { office_ids: ids, on: !!on }, as),
 };

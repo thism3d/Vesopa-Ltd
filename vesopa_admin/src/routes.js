@@ -163,7 +163,8 @@ router.get('/callback', async (req, res) => {
 
 router.post('/signout', async (req, res) => {
   await session.destroy(req, res);
-  res.redirect(303, '/signin');
+  // "Switch account": signed out here, then Vesopa's account picker.
+  res.redirect(303, req.body && req.body.switch === '1' ? '/start?switch=1' : '/signin');
 });
 
 router.get('/healthz', (_req, res) => res.json({ ok: true, epos: connected('epos'), gift: connected('gift'), hosting: connected('hosting') }));
@@ -640,7 +641,8 @@ async function pinBody(app, choice) {
 router.post('/versions', signedIn, csrf, allow('versions.manage', 'epos'), async (req, res) => {
   const b = req.body || {};
   const app = VERSION_APPS.find((a) => a.key === b.app && a.key !== 'loyalty');
-  const back = `/versions?app=${app ? app.key : ''}${b.q ? `&q=${encodeURIComponent(b.q)}` : ''}${b.show ? `&show=${encodeURIComponent(b.show)}` : ''}`;
+  const back = /^\/fleet(\/\d+)?(\?[\w=&%.-]*)?$/.test(String(b.back || '')) ? String(b.back)
+    : `/versions?app=${app ? app.key : ''}${b.q ? `&q=${encodeURIComponent(b.q)}` : ''}${b.show ? `&show=${encodeURIComponent(b.show)}` : ''}`;
   if (!app) return res.redirect(303, '/versions');
   try {
     // Every row whose choice changed, grouped by what it changed to. Or, with
@@ -673,6 +675,126 @@ router.post('/versions', signedIn, csrf, allow('versions.manage', 'epos'), async
   } catch (e) {
     flash(res, 'bad', e.message);
   }
+  res.redirect(303, back);
+});
+
+// ---- Fleet: every venue's devices, versions, hardware and errors -------------
+
+/** How a device is doing, in one word for the table. */
+function deviceState(d) {
+  const lastMs = d.last_seen_at ? Date.now() - new Date(d.last_seen_at).getTime() : Infinity;
+  if (d.errors && d.errors.day > 0) return { key: 'errors', label: `${d.errors.day} error${d.errors.day === 1 ? '' : 's'} today`, tone: 'red' };
+  if (d.health && d.health.warnings > 0) return { key: 'warn', label: `${d.health.warnings} warning${d.health.warnings === 1 ? '' : 's'}`, tone: 'amber' };
+  if (d.online === false || lastMs > 30 * 60 * 1000) return { key: 'off', label: 'not seen lately', tone: 'grey' };
+  return { key: 'ok', label: 'fine', tone: 'green' };
+}
+
+async function releaseLists() {
+  const lists = {};
+  for (const a of VERSION_APPS.filter((x) => x.key !== 'loyalty')) lists[a.key] = await releases.list({ app: a.key });
+  return lists;
+}
+
+router.get('/fleet', signedIn, allow('versions.manage', 'epos'), async (req, res, next) => {
+  try {
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const show = String(req.query.show || 'all');
+    let data = { venues: [], defaults: [], updates_on: false };
+    let error = null;
+    try { data = await epos.fleet(null, req.me.email); } catch (e) { error = e.message; }
+    let venues = data.venues.map((v) => {
+      const states = v.devices.map(deviceState);
+      return {
+        ...v,
+        count: v.devices.length,
+        errors: v.errors_day,
+        warnings: v.devices.reduce((s, d) => s + ((d.health && d.health.warnings) || 0), 0),
+        offline: states.filter((s) => s.key === 'off').length,
+        versions: [...new Set(v.devices.flatMap((d) => d.apps.map((a) => `${a.app} ${a.version}`)))].sort(),
+      };
+    });
+    if (show !== 'all') venues = venues.filter((v) => v.count > 0);
+    if (q) venues = venues.filter((v) => `${v.name} ${v.office} ${v.office_id}`.toLowerCase().includes(q));
+    if (show === 'problems') venues = venues.filter((v) => v.errors || v.warnings);
+    if (show === 'offline') venues = venues.filter((v) => v.offline);
+    venues.sort((a, b) => (b.errors - a.errors) || (b.warnings - a.warnings) || (b.count - a.count) || String(a.name).localeCompare(String(b.name)));
+    const totals = {
+      venues: venues.length,
+      devices: venues.reduce((s, v) => s + v.count, 0),
+      errors: venues.reduce((s, v) => s + v.errors, 0),
+      warnings: venues.reduce((s, v) => s + v.warnings, 0),
+      offline: venues.reduce((s, v) => s + v.offline, 0),
+    };
+    page(req, res, 'fleet', {
+      title: 'Fleet', venues, totals, q, show, error, updatesOn: data.updates_on, reach: releases.reach,
+      apps: VERSION_APPS.filter((x) => x.key !== 'loyalty'), lists: await releaseLists(),
+    });
+  } catch (e) { next(e); }
+});
+
+router.get('/fleet/:id', signedIn, allow('versions.manage', 'epos'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.redirect(303, '/fleet');
+    let venue = null;
+    let error = null;
+    let logs = [];
+    try {
+      const data = await epos.fleet(id, req.me.email);
+      venue = data.venues[0] || null;
+      logs = (await epos.fleetLogs({ office_id: id, days: 7 }, req.me.email)).events || [];
+    } catch (e) { error = e.message; }
+    if (!venue && !error) return res.redirect(303, '/fleet');
+    const devices = venue ? venue.devices.map((d) => ({ ...d, state: deviceState(d) })) : [];
+    page(req, res, 'fleet_venue', {
+      title: venue ? venue.name : 'Venue', venue, devices, logs, error, reach: releases.reach,
+      apps: VERSION_APPS.filter((x) => x.key !== 'loyalty'), lists: await releaseLists(),
+    });
+  } catch (e) { next(e); }
+});
+
+router.get('/fleet/:id/logs', signedIn, allow('versions.manage', 'epos'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.redirect(303, '/fleet');
+    const device = String(req.query.device || '').slice(0, 64);
+    const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 90);
+    const level = req.query.level === 'all' ? 'all' : 'errors';
+    let events = [];
+    let error = null;
+    let venue = null;
+    try {
+      const [l, f] = await Promise.all([
+        epos.fleetLogs({ office_id: id, days, level, ...(device ? { device_id: device } : {}) }, req.me.email),
+        epos.fleet(id, req.me.email),
+      ]);
+      events = l.events || [];
+      venue = f.venues[0] || null;
+    } catch (e) { error = e.message; }
+    const named = venue && device ? (venue.devices.find((d) => d.device_id === device) || {}).name : null;
+    if (req.query.format === 'csv') {
+      const cell = (v) => `"${String(v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : v).replace(/"/g, '""')}"`;
+      res.type('text/csv').set('Content-Disposition', `attachment; filename="logs-${id}${device ? '-' + device.slice(0, 12) : ''}.csv"`);
+      return res.send(['at,app,version,device,action,target,status,detail', ...events.map((e) =>
+        [e.at, e.app, e.app_version, e.device_name, e.action, e.target, e.status, e.detail].map(cell).join(','))].join('\n'));
+    }
+    page(req, res, 'fleet_logs', { title: `Logs${named ? ' · ' + named : ''}`, venue, events, error, device, named, days, level, id });
+  } catch (e) { next(e); }
+});
+
+router.post('/fleet/self-updates', signedIn, csrf, allow('versions.manage', 'epos'), async (req, res) => {
+  const b = req.body || {};
+  const ids = [].concat(b.ids || []).map(Number).filter(Boolean);
+  const on = b.on === '1';
+  const back = /^\/fleet(\/\d+)?$/.test(String(b.back || '')) ? b.back : '/fleet';
+  try {
+    if (!ids.length) throw new Error('Tick at least one venue first.');
+    await epos.setVenueSelfUpdates(ids, on, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'versions.venue_self', app: 'epos', detail: { venues: ids, on } });
+    flash(res, 'ok', on
+      ? `${ids.length} venue${ids.length === 1 ? '' : 's'} may now move their own tills to Vesopa's approved version from their back office (Devices).`
+      : `${ids.length} venue${ids.length === 1 ? '' : 's'}: updates are set by Vesopa only.`);
+  } catch (e) { flash(res, 'bad', e.message); }
   res.redirect(303, back);
 });
 

@@ -18,6 +18,7 @@
 /// sale when a bill is paid -- the same rows a till writes.
 library;
 
+import 'recent_venues.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -713,6 +714,9 @@ class TapSession extends Notifier<TapState> {
 
   Future<void> forgetPhone() async {
     _stopTimers();
+    // Kept for the welcome screen's "Sign in again" (recent_venues.dart).
+    final venue = state.venue;
+    if (!state.demo && venue != null) await RecentVenues.remember(venue.name, state.config.markUrl);
     // Give the licence back first, while the token still works. Best effort:
     // offline, the seat frees itself after 30 days (till_seats.js).
     if (!state.demo && ref.read(apiProvider).token != null) {

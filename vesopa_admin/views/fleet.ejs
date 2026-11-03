@@ -1,0 +1,68 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad">The back office did not answer: <%= error %></div><% } %>
+<div class="stats">
+  <div class="stat"><b><%= totals.venues %></b><span>venues</span></div>
+  <div class="stat"><b><%= totals.devices %></b><span>devices</span></div>
+  <div class="stat <%= totals.errors ? 'red' : '' %>"><b><%= totals.errors %></b><span>errors today</span></div>
+  <div class="stat <%= totals.warnings ? 'amber' : '' %>"><b><%= totals.warnings %></b><span>hardware warnings</span></div>
+  <div class="stat"><b><%= totals.offline %></b><span>not seen lately</span></div>
+</div>
+<% if (!updatesOn) { %><div class="flash">Update prompts are off (<a href="/versions">Versions</a>), so devices are not told to change version yet. The fleet still shows what every device runs.</div><% } %>
+
+<div class="bar">
+  <nav class="chips">
+    <% for (const [k, t] of [['all', 'All venues'], ['devices', 'With devices'], ['problems', 'Errors or warnings'], ['offline', 'Not seen lately']]) { %>
+      <a class="chip <%= show === k ? 'on' : '' %>" href="/fleet?show=<%= k %><%= q ? '&q=' + encodeURIComponent(q) : '' %>"><%= t %></a>
+    <% } %>
+  </nav>
+  <form method="get" action="/fleet" class="inline"><input type="hidden" name="show" value="<%= show %>"><input name="q" value="<%= q %>" placeholder="Find a venue" aria-label="Find a venue"></form>
+</div>
+
+<form method="post" class="card flush" id="fleet-form">
+  <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+  <input type="hidden" name="back" value="/fleet">
+  <input type="hidden" name="bulk" value="ticked">
+  <div class="pad batch">
+    <b>With the ticked venues</b>
+    <select name="app" aria-label="App">
+      <% for (const a of apps) { %><option value="<%= a.key %>"><%= a.short %></option><% } %>
+    </select>
+    <select name="choice" aria-label="Version">
+      <option value="follow">Follow the default</option>
+      <option value="none">No auto updates</option>
+      <% for (const a of apps) { for (const r of lists[a.key]) { %><option value="<%= r.id %>" data-app="<%= a.key %>"><%= a.short %> <%= r.version %> · <%= reach(r) %></option><% } } %>
+    </select>
+    <select name="when" aria-label="When">
+      <option value="ask">Ask on screen</option>
+      <option value="now">Install now, between sales</option>
+      <option value="at">At a time…</option>
+    </select>
+    <input type="datetime-local" name="when_at" aria-label="Install at (UK time)">
+    <button class="btn primary" type="submit" formaction="/versions" data-confirm="Move every ticked venue's devices to this version? Older or newer, they install it as chosen.">Upgrade or downgrade</button>
+    <span class="sep"></span>
+    <button class="btn" type="submit" formaction="/fleet/self-updates" name="on" value="1">Let them update themselves</button>
+    <button class="btn" type="submit" formaction="/fleet/self-updates" name="on" value="0">Vesopa only</button>
+  </div>
+  <table class="list">
+    <thead><tr><th class="tick"><input type="checkbox" data-all="ids" aria-label="Tick every venue"></th><th>Venue</th><th>Devices</th><th>Versions</th><th>Health</th><th>Updates</th></tr></thead>
+    <tbody>
+    <% for (const v of venues) { %>
+      <tr>
+        <td class="tick"><input type="checkbox" name="ids" value="<%= v.office_id %>" aria-label="Tick <%= v.name %>"></td>
+        <td><a href="/fleet/<%= v.office_id %>"><b><%= v.name %></b></a><small class="muted block"><%= v.office_id %> · <%= v.office %></small></td>
+        <td><%= v.count %></td>
+        <td><% if (!v.versions.length) { %><span class="muted">none seen</span><% } else { for (const s of v.versions.slice(0, 6)) { %><span class="pill grey"><%= s %></span><% } if (v.versions.length > 6) { %><span class="muted">+<%= v.versions.length - 6 %></span><% } } %></td>
+        <td>
+          <% if (v.errors) { %><span class="pill red"><%= v.errors %> error<%= v.errors === 1 ? '' : 's' %></span><% } %>
+          <% if (v.warnings) { %><span class="pill amber"><%= v.warnings %> warning<%= v.warnings === 1 ? '' : 's' %></span><% } %>
+          <% if (v.offline) { %><span class="pill grey"><%= v.offline %> not seen</span><% } %>
+          <% if (!v.errors && !v.warnings && !v.offline && v.count) { %><span class="pill green">fine</span><% } %>
+        </td>
+        <td><% if (v.venue_self) { %><span class="pill green">venue can update</span><% } else { %><span class="muted">Vesopa</span><% } %></td>
+      </tr>
+    <% } %>
+    <% if (!venues.length) { %><tr><td colspan="6" class="muted">No venues match.</td></tr><% } %>
+    </tbody>
+  </table>
+</form>
+<%- include('_bottom') %>

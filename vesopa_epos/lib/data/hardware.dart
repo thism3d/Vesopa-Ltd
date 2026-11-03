@@ -286,4 +286,109 @@ class HardwareSnapshot {
   RadioState? radio(String kind) => radios.where((r) => r.kind == kind).firstOrNull;
   bool get helperInstalled => helperVersion != null;
   bool get helperOutdated => helperVersion != null && helperVersion != Hardware.helperVersion;
+
+  List<NetAdapter> get internet => adapters.where((a) => a.carriesInternet).toList();
+
+  /// What needs a look, in words: the page's warning box and the report the
+  /// back office and admin.vesopa.com show (HardwareReporter).
+  List<String> get warnings => [
+        if (internet.isEmpty) 'No network is carrying the internet. Sales wait on the till and go when it is back.',
+        for (final a in internet)
+          if (sharing.profiles[a.index]?.isPublic ?? false)
+            '${a.name} is set as a Public network, so Windows keeps the other tills and Go phones out. Make it Private below.',
+        if (wifiSignal != null && wifiSignal! < 40)
+          'The Wi-Fi signal is weak ($wifiSignal%). A cable, or the router nearer the till, keeps card payments steady.',
+        for (final d in devices)
+          // Only real faults: a paired Bluetooth device out of range, or one
+          // Windows remembers but is unplugged (45), is not one.
+          if (d.problem != 0 && d.problem != 45 && d.kind != 'bluetooth') '${d.name}: ${d.problemText}.',
+      ];
+
+  /// The report for the back office (POST /till/health): what this page
+  /// shows, with no MAC addresses and no hotspot passphrase.
+  Map<String, Object?> toReport({String? localLink}) => {
+        'os': '${Platform.operatingSystem} ${Platform.operatingSystemVersion}'.trim(),
+        'cpu': '${Platform.numberOfProcessors} cores',
+        'online_via': internet.isEmpty ? 'offline' : internet.first.name,
+        'adapters': [
+          for (final a in adapters)
+            {
+              'name': a.name,
+              'kind': a.kind,
+              'status': a.up ? 'up' : 'down',
+              'ipv4': a.ips.where((ip) => ip.contains('.')).firstOrNull,
+              'gateway': a.gateway,
+              'speed': a.speedMbps > 0 ? '${a.speedMbps} Mb/s' : null,
+              'category': sharing.profiles[a.index]?.category,
+              if (a.kind == 'wifi' && wifiSsid != null) 'ssid': wifiSsid,
+              if (a.kind == 'wifi' && wifiSignal != null) 'signal': wifiSignal,
+            },
+        ],
+        'hotspot': {
+          'supported': hotspot.supported,
+          'on': hotspot.on,
+          'ssid': hotspot.on ? hotspot.ssid : null,
+          'clients': hotspot.clients.length,
+        },
+        'bluetooth': radio('bluetooth') == null ? 'none' : radio('bluetooth')!.on ? 'on' : 'off',
+        'devices': [
+          for (final d in devices)
+            {'name': d.name, 'kind': d.kind, 'status': d.working ? 'ok' : 'fault', if (d.problem != 0 && d.problem != 45) 'problem': d.problemText},
+        ],
+        'warnings': warnings,
+        'helper': helperVersion ?? 'not installed',
+        'local_link': ?localLink,
+      };
+}
+
+/// Sends this PC's hardware report to the back office every ten minutes, and
+/// soon after a start, so admin.vesopa.com and the venue's Devices page show
+/// what Settings > Network and hardware shows. Best effort: offline, or an
+/// older back office, and nothing is sent until the next turn.
+class HardwareReporter {
+  HardwareReporter._();
+  static Timer? _timer;
+
+  static void start({
+    required String apiBase,
+    required String token,
+    required String deviceId,
+    required String app,
+    required String appVersion,
+    String? deviceName,
+    String? Function()? localLink,
+  }) {
+    if (!Hardware.supported || token.isEmpty) return;
+    _timer?.cancel();
+    Future<void> send() async {
+      try {
+        final s = await Hardware.instance.snapshot();
+        final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+        try {
+          final req = await client.postUrl(Uri.parse('$apiBase/till/health'));
+          req.headers
+            ..contentType = ContentType.json
+            ..set(HttpHeaders.authorizationHeader, 'Bearer $token');
+          req.write(jsonEncode({
+            'device_id': deviceId,
+            'app': app,
+            'app_version': appVersion,
+            'device_name': deviceName ?? Platform.localHostname,
+            'snapshot': s.toReport(localLink: localLink?.call()),
+          }));
+          await (await req.close().timeout(const Duration(seconds: 15))).drain<void>();
+        } finally {
+          client.close();
+        }
+      } catch (_) {}
+    }
+
+    Timer(const Duration(seconds: 45), send);
+    _timer = Timer.periodic(const Duration(minutes: 10), (_) => send());
+  }
+
+  static void stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
 }

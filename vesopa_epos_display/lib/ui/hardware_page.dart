@@ -177,19 +177,8 @@ class _HardwarePageState extends State<HardwarePage> {
   // ---- summary -------------------------------------------------------------
 
   Widget _summary(HardwareSnapshot s) {
-    final internet = s.adapters.where((a) => a.carriesInternet).toList();
-    final warnings = <String>[
-      if (internet.isEmpty) 'No network is carrying the internet. Sales wait on the till and go when it is back.',
-      for (final a in internet)
-        if (s.sharing.profiles[a.index]?.isPublic ?? false)
-          '${a.name} is set as a Public network, so Windows keeps the other tills and Go phones out. Make it Private below.',
-      if (s.wifiSignal != null && s.wifiSignal! < 40)
-        'The Wi-Fi signal is weak (${s.wifiSignal}%). A cable, or the router nearer the till, keeps card payments steady.',
-      for (final d in s.devices)
-        // Only real faults: a paired Bluetooth device out of range, or one
-        // Windows remembers but is unplugged (45), is not one.
-        if (d.problem != 0 && d.problem != 45 && d.kind != 'bluetooth') '${d.name}: ${d.problemText}.',
-    ];
+    final internet = s.internet;
+    final warnings = s.warnings;
     final chips = <Widget>[
       _chip(Icons.public, internet.isEmpty ? 'Offline' : 'Online via ${internet.first.name}',
           internet.isEmpty ? _C.red : _C.green),

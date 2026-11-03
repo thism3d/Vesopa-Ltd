@@ -30,3 +30,18 @@ document.querySelectorAll('[data-when]').forEach((s) => {
   s.addEventListener('change', sync);
   sync();
 });
+
+// Fleet: the version list shows only the chosen app's versions.
+document.querySelectorAll('.batch select[name=app]').forEach((appSel) => {
+  const choice = appSel.form.querySelector('select[name=choice]');
+  const when = appSel.form.querySelector('select[name=when]');
+  const at = appSel.form.querySelector('input[name=when_at]');
+  const sync = () => {
+    for (const o of choice.options) if (o.dataset.app) o.hidden = o.dataset.app !== appSel.value;
+    if (choice.selectedOptions[0] && choice.selectedOptions[0].hidden) choice.value = 'follow';
+    if (at) at.hidden = when.value !== 'at';
+  };
+  appSel.addEventListener('change', sync);
+  when.addEventListener('change', sync);
+  sync();
+});

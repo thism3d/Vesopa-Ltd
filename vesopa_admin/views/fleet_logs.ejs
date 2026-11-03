@@ -1,0 +1,37 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad">The back office did not answer: <%= error %></div><% } %>
+<div class="bar">
+  <span class="muted"><a href="/fleet">Fleet</a> › <a href="/fleet/<%= id %>"><%= venue ? venue.name : 'Venue' %></a> › <%= named || 'every device' %></span>
+  <nav class="chips">
+    <% const base = `/fleet/${id}/logs?${device ? 'device=' + encodeURIComponent(device) + '&' : ''}`; %>
+    <a class="chip <%= level === 'errors' ? 'on' : '' %>" href="<%= base %>level=errors&days=<%= days %>">Errors and warnings</a>
+    <a class="chip <%= level === 'all' ? 'on' : '' %>" href="<%= base %>level=all&days=<%= days %>">Everything</a>
+    <% for (const d of [1, 7, 30, 90]) { %><a class="chip <%= days === d ? 'on' : '' %>" href="<%= base %>level=<%= level %>&days=<%= d %>"><%= d === 1 ? 'Today' : d + ' days' %></a><% } %>
+    <a class="chip" href="<%= base %>level=<%= level %>&days=<%= days %>&format=csv">Download CSV</a>
+  </nav>
+</div>
+<% if (venue && venue.devices.length) { %>
+<div class="chips" style="margin-bottom:12px">
+  <a class="chip <%= !device ? 'on' : '' %>" href="/fleet/<%= id %>/logs?level=<%= level %>&days=<%= days %>">All devices</a>
+  <% for (const d of venue.devices) { %><a class="chip <%= device === d.device_id ? 'on' : '' %>" href="/fleet/<%= id %>/logs?device=<%= encodeURIComponent(d.device_id) %>&level=<%= level %>&days=<%= days %>"><%= d.name || d.device_id.slice(0, 8) %></a><% } %>
+</div>
+<% } %>
+<section class="card flush">
+  <table class="list log">
+    <thead><tr><th>When</th><th>Device</th><th>App</th><th>Who</th><th>What</th><th>Detail</th></tr></thead>
+    <tbody>
+    <% for (const e of events) { %>
+      <tr>
+        <td title="<%= e.at %>"><%= when ? when(e.at) : e.at %></td>
+        <td><%= e.device_name || '—' %></td>
+        <td><%= e.app || '' %> <%= e.app_version || '' %></td>
+        <td><%= e.actor || '' %></td>
+        <td><b class="<%= e.action === 'error' || e.action === 'crash' ? 'red' : '' %>"><%= e.action %></b> <%= e.target || '' %><%= e.status ? ' · ' + e.status : '' %></td>
+        <td class="detail"><%= e.detail ? String(e.detail).slice(0, 600) : '' %></td>
+      </tr>
+    <% } %>
+    <% if (!events.length) { %><tr><td colspan="6" class="muted">Nothing in this range.</td></tr><% } %>
+    </tbody>
+  </table>
+</section>
+<%- include('_bottom') %>

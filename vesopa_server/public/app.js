@@ -13956,8 +13956,67 @@ async function loadAppInstalls() {
     : '<p class="muted small">No Vesopa app has checked in from this venue in the last 60 days.</p>';
 }
 
+/**
+ * Hardware and network health from each machine (POST /till/health), and the
+ * venue's own "update the tills" when Vesopa allows it (device_health.js).
+ */
+async function loadDeviceHealth() {
+  const box = $('devices-health');
+  if (!box) return;
+  let d;
+  try { d = await api('/devices/health'); } catch (e) { box.innerHTML = '<p class="muted small">' + esc(e.message) + '</p>'; return; }
+  const self = $('app-update-self');
+  if (self) {
+    self.hidden = !d.can_update;
+    if (d.can_update) {
+      self.innerHTML = '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">'
+        + '<b>Update to Vesopa\'s latest version</b>'
+        + '<select id="self-app"><option value="till">Vesopa EPOS tills</option><option value="kitchen">Kitchen screens</option><option value="display">Customer displays</option><option value="express">Express kiosks</option></select>'
+        + '<select id="self-when"><option value="ask">Ask on each machine</option><option value="now">Now, between sales</option><option value="at">At a time</option></select>'
+        + '<input type="datetime-local" id="self-at" hidden>'
+        + '<button class="btn primary" id="self-go">Update</button></div>'
+        + '<p class="muted small">Each machine downloads Vesopa\'s approved version and installs it as chosen. Sales on the machine are never interrupted.</p>';
+      $('self-when').onchange = () => { $('self-at').hidden = $('self-when').value !== 'at'; };
+      $('self-go').onclick = async () => {
+        const mode = $('self-when').value;
+        const at = $('self-at').value;
+        if (mode === 'at' && !at) return toast('Choose when to install', 'error');
+        if (!confirm('Update every ' + $('self-app').selectedOptions[0].textContent.toLowerCase() + ' to Vesopa\'s latest version?')) return;
+        try {
+          const r = await api('/app-installs/update', { method: 'POST', body: JSON.stringify({ app: $('self-app').value, mode, install_at: mode === 'at' ? new Date(at).toISOString() : null }) });
+          toast('Moving to ' + r.version + (mode === 'now' ? ' now' : mode === 'at' ? ' at the time chosen' : ': each machine asks'), 'success');
+          loadAppInstalls().catch(() => {});
+        } catch (e) { toast(e.message, 'error'); }
+      };
+    }
+  }
+  if (!d.devices.length) {
+    box.innerHTML = '<p class="muted small">No machine has sent its hardware report yet. Tills from version 1.16.39 send one every ten minutes.</p>';
+    return;
+  }
+  const when = (x) => new Date(x).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  box.innerHTML = d.devices.map((x) => {
+    const h = x.snapshot || {};
+    const warn = (h.warnings || []).map((w) => '<li>' + esc(w) + '</li>').join('');
+    const adapters = (h.adapters || []).map((a) => esc(a.name) + ' &middot; ' + esc(a.status || '') + (a.ipv4 ? ' &middot; ' + esc(a.ipv4) : '') + (a.category ? ' &middot; ' + esc(a.category) : '')).join('<br>');
+    const hot = h.hotspot ? (h.hotspot.supported === false ? 'No hotspot on this PC' : h.hotspot.on ? 'On' + (h.hotspot.ssid ? ' (' + esc(h.hotspot.ssid) + ')' : '') + ' &middot; ' + (h.hotspot.clients || 0) + ' joined' : 'Off') : '&mdash;';
+    const usb = [...(h.printers || []), ...(h.devices || [])].slice(0, 12).map((u) => esc(u.name) + (u.problem ? ' <span class="pill amber">' + esc(u.problem) + '</span>' : '')).join('<br>');
+    return '<details class="hw-row"' + (x.warnings ? ' open' : '') + '><summary><b>' + esc(x.device_name || x.device_id) + '</b> <span class="muted small">'
+      + esc(APP_NAMES[x.app] || x.app || '') + ' ' + esc(x.app_version || '') + ' &middot; ' + esc(when(x.updated_at)) + '</span> '
+      + (x.warnings ? '<span class="pill amber">' + x.warnings + ' to look at</span>' : '<span class="pill on">All fine</span>') + '</summary>'
+      + '<div class="hw-grid">'
+      + '<div><b>This PC</b>' + esc(h.os || '—') + (h.memory_mb ? ' &middot; ' + Math.round(h.memory_mb / 1024) + ' GB' : '') + (h.disk_free_gb != null ? ' &middot; ' + h.disk_free_gb + ' GB free' : '') + '</div>'
+      + '<div><b>Online through</b>' + esc(h.online_via || '—') + (h.local_link ? '<br>Local link: ' + esc(h.local_link) : '') + '</div>'
+      + '<div><b>Adapters</b>' + (adapters || '&mdash;') + '</div>'
+      + '<div><b>Hotspot</b>' + hot + '<br><b style="margin-top:6px">Bluetooth</b>' + esc(h.bluetooth || '—') + '</div>'
+      + '<div><b>USB, serial and printers</b>' + (usb || '&mdash;') + '</div>'
+      + '</div>' + (warn ? '<ul class="hw-warn">' + warn + '</ul>' : '') + '</details>';
+  }).join('');
+}
+
 async function loadDevices() {
   loadAppInstalls().catch(() => {});
+  loadDeviceHealth().catch(() => {});
   if (typeof loadLan === 'function') loadLan().catch(() => {});
   let rows = [];
   try {

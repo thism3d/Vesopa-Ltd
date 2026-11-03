@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/constants.dart';
 import '../data/display_link.dart';
+import '../data/hardware.dart';
 import '../data/lan/lan_service.dart';
 import '../data/lan/offline_money.dart';
 import '../data/app_update.dart';
@@ -477,9 +478,26 @@ class _PosShellState extends ConsumerState<PosShell> {
     final registry = ref.read(deviceRegistryProvider);
     if (!registry.canRegister) return;
 
+    // The hardware report for the back office and admin.vesopa.com, every ten
+    // minutes, under the same machine id as the device list.
+    final machineId = await terminalDeviceId();
+    HardwareReporter.start(
+      apiBase: registry.apiBase,
+      token: registry.terminalToken ?? '',
+      deviceId: machineId,
+      app: 'till',
+      appVersion: VesopaBrand.appVersion,
+      deviceName: terminalName,
+      localLink: () => LanService.instance.node?.isHub == true
+          ? 'main till'
+          : LanService.instance.node?.linked == true
+              ? 'linked'
+              : 'waiting',
+    );
+
     await registry.register(
       describeDevices(
-        terminalDeviceId: await terminalDeviceId(),
+        terminalDeviceId: machineId,
         terminalName: terminalName,
         appVersion: VesopaBrand.appVersion,
         signedInAs: session.email,

@@ -65,7 +65,9 @@ nav.links a:hover { color: var(--text); }
 .store svg { width: 28px; height: 28px; fill: currentColor; flex: none; }
 .store small { display: block; font-size: 11.5px; font-weight: 600; color: #4a4f43; }
 .fine { color: var(--muted); font-size: 13.5px; margin-top: 16px; }
-.scroll-cue { position: absolute; z-index: 3; left: 50%; bottom: 28px; width: 26px; height: 42px; margin-left: -13px; border: 2px solid rgba(255,255,255,.35); border-radius: 14px; }
+.scroll-cue { position: absolute; z-index: 3; left: 50%; bottom: 28px; width: 26px; height: 42px; margin-left: -13px; border: 2px solid rgba(255,255,255,.35); border-radius: 14px; transition: opacity .4s var(--ease), transform .4s var(--ease); }
+.scrolled .scroll-cue { opacity: 0; transform: translateY(10px); pointer-events: none; }
+@media (max-height: 620px), (max-width: 900px) { .scroll-cue { display: none; } }
 .scroll-cue span { position: absolute; left: 50%; top: 8px; width: 4px; height: 8px; margin-left: -2px; border-radius: 2px; background: var(--lime); animation: cue 1.8s var(--ease) infinite; }
 @keyframes cue { 0% { opacity: 0; transform: translateY(0); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(14px); } }
 
@@ -83,6 +85,26 @@ section { position: relative; }
 .device.phone .frame { width: 260px; aspect-ratio: 393 / 852; border-radius: 40px; }
 .device.tablet .frame { width: 520px; aspect-ratio: 1180 / 820; border-radius: 26px; }
 .device .frame video, .device .frame img { width: 100%; height: 100%; object-fit: cover; }
+/* iPhone and iPad: never Safari's own play button over a film. When Low
+   Power Mode stops autoplay, the still frame (the poster) is what shows. */
+video::-webkit-media-controls, video::-webkit-media-controls-start-playback-button, video::-webkit-media-controls-overlay-play-button { display: none !important; -webkit-appearance: none; }
+video { pointer-events: none; }
+
+/* ---- a sale, step by step ---- */
+.flow { padding: 60px 0 110px; }
+.steps-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 60px; align-items: start; }
+.steps-phone { position: sticky; top: 12vh; display: grid; justify-items: center; gap: 22px; }
+.steps-phone .device.phone .frame { width: 280px; }
+.steps-phone .frame img { position: absolute; inset: 0; opacity: 0; transform: scale(1.04); transition: opacity .6s var(--ease), transform .8s var(--ease); }
+.steps-phone .frame img.on { opacity: 1; transform: none; }
+.steps-bar { width: 160px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.steps-bar i { display: block; height: 100%; width: 20%; background: var(--lime); border-radius: 2px; transition: width .6s var(--ease); }
+.steps-list { list-style: none; margin: 0; padding: 18vh 0 22vh; }
+.step { min-height: 46vh; padding: 26px 0; opacity: .32; transform: translateX(-6px); transition: opacity .5s var(--ease), transform .5s var(--ease); }
+.step.on { opacity: 1; transform: none; }
+.step span { color: var(--lime); font-weight: 900; letter-spacing: .1em; font-size: 14px; }
+.step h3 { font-size: clamp(26px, 3vw, 38px); margin: 8px 0 10px; letter-spacing: -.02em; }
+.step p { color: var(--muted); font-size: 18px; max-width: 460px; margin: 0; }
 .device figcaption { text-align: center; color: var(--muted); font-size: 14px; margin-top: 18px; }
 .tilt { transition: transform .8s var(--ease); transform-style: preserve-3d; will-change: transform; }
 
@@ -93,8 +115,11 @@ section { position: relative; }
 .card h3 { margin: 16px 0 6px; font-size: 19px; }
 .card p { margin: 0; color: var(--muted); font-size: 15.5px; }
 
-.gallery { padding: 20px 0 30px; overflow: hidden; }
-.rail { display: flex; gap: 26px; align-items: center; padding: 40px 6vw; width: max-content; will-change: transform; }
+.gallery { padding: 20px 0 30px; }
+.rail { display: flex; gap: 26px; align-items: center; padding: 40px 6vw; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; cursor: grab; outline: none; }
+.rail::-webkit-scrollbar { display: none; }
+.rail.dragging { cursor: grabbing; scroll-snap-type: none; }
+.rail img { scroll-snap-align: center; flex: none; user-select: none; -webkit-user-drag: none; }
 .rail img { height: 420px; width: auto; border-radius: 22px; border: 1px solid var(--line); box-shadow: 0 30px 70px rgba(0,0,0,.55); }
 .rail img.tall { height: 520px; border-radius: 34px; }
 
@@ -160,6 +185,12 @@ footer.bottom small { width: 100%; font-size: 12px; opacity: .75; }
   .hero-fallback { top: 4vh; transform: none; right: 4%; width: 92%; }
   .hero-copy { padding-top: 46vh; padding-bottom: 60px; }
   .rail img { height: 300px; }
+  .tilt { transform: none !important; }
+  .steps-grid { grid-template-columns: 1fr; gap: 0; }
+  .steps-phone { top: 64px; z-index: 2; padding: 10px 0 16px; background: linear-gradient(var(--bg) 82%, transparent); }
+  .steps-phone .device.phone .frame { width: 132px; border-radius: 22px; box-shadow: 0 0 0 4px #121410, 0 20px 40px rgba(0,0,0,.6); }
+  .steps-list { padding: 4vh 0 10vh; }
+  .step { min-height: 34vh; }
   .rail img.tall { height: 380px; }
   .watch, .features, .pay, .network, .get { padding: 80px 0; }
 }

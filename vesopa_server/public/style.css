@@ -7937,3 +7937,11 @@ tr.ls-off td { opacity: .55; }
 .sm-site input[type=color] { width: 38px; height: 34px; padding: 2px; border-radius: 8px; }
 .sm-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 18px; }
 .sm-add input { flex: 1 1 200px; }
+
+/* Devices: hardware and network health (2026-11-03). */
+.hw-row { border-top: 1px solid var(--line, #e5e5e5); padding: 10px 0; }
+.hw-row > summary { cursor: pointer; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hw-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; font-size: 13px; }
+.hw-grid > div { border: 1px solid var(--line, #e5e5e5); border-radius: 10px; padding: 10px 12px; }
+.hw-grid b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; opacity: .65; margin-bottom: 4px; }
+.hw-warn { margin: 8px 0 0; padding-left: 18px; color: #b26b00; font-size: 13px; }

@@ -176,3 +176,21 @@ details.help summary { cursor: pointer; }
 code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 13px; }
 .bulk .when { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .bulk .when input[type=datetime-local] { min-width: 210px; }
+
+/* ---- Fleet (2026-11-03) ---- */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+.stat b { display: block; font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 13px; }
+.stat.red b { color: var(--red); } .stat.amber b { color: var(--amber); }
+.batch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.batch .sep { flex: 1; }
+.me-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.hw { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 10px 0 4px; }
+.hw div { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+.hw b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; }
+.warn-list { margin: 6px 0 0; padding-left: 18px; color: var(--amber); font-size: 13px; }
+.log td { font-size: 13px; vertical-align: top; }
+.log td.detail { max-width: 520px; word-break: break-word; color: var(--muted); }
+details.dev > summary { cursor: pointer; list-style: none; }
+details.dev > summary::-webkit-details-marker { display: none; }

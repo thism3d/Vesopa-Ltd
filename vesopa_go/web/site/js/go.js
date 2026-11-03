@@ -34,25 +34,79 @@
       var p = ((r.top + r.height / 2) - vh / 2) / vh; // -0.5 .. 0.5 across the screen
       el.style.transform = reduced ? '' : 'rotateX(' + (p * 14).toFixed(2) + 'deg) rotateY(' + (p * -8).toFixed(2) + 'deg) translateZ(0)';
     });
-    if (rail && !reduced) {
-      var rr = rail.parentElement.getBoundingClientRect();
-      var q = (vh - rr.top) / (vh + rr.height); // 0 entering .. 1 leaving
-      var travel = Math.max(0, rail.scrollWidth - window.innerWidth);
-      rail.style.transform = 'translate3d(' + (-q * travel).toFixed(1) + 'px,0,0)';
-    }
+    root.classList.toggle('scrolled', window.scrollY > 40);
   }
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('resize', onScroll);
   onScroll();
 
-  // Films play only on screen (and not at all with reduced motion).
+  // Films play by themselves as they come on screen, and stop when they
+  // leave (not at all with reduced motion). No controls, ever: if the phone
+  // will not autoplay (iPhone Low Power Mode), the still frame stays.
   document.querySelectorAll('video').forEach(function (v) {
+    v.muted = true;
+    v.controls = false;
     if (reduced) { v.removeAttribute('autoplay'); v.pause(); return; }
     if (!io) return;
     new IntersectionObserver(function (es) {
       es.forEach(function (e) { if (e.isIntersecting) { v.play().catch(function () {}); } else { v.pause(); } });
-    }).observe(v);
+    }, { threshold: 0.25 }).observe(v);
   });
+
+  // ---- the screenshot row: swipe, drag, or let it drift -----------------
+  if (rail) {
+    var held = false, seen = false, startX = 0, startLeft = 0, moved = false;
+    if (io) new IntersectionObserver(function (es) { seen = es[0].isIntersecting; }).observe(rail);
+    rail.addEventListener('pointerdown', function (e) {
+      held = true; moved = false;
+      if (e.pointerType !== 'mouse') return; // touch scrolls natively
+      startX = e.clientX; startLeft = rail.scrollLeft;
+      rail.classList.add('dragging');
+      rail.setPointerCapture(e.pointerId);
+    });
+    rail.addEventListener('pointermove', function (e) {
+      if (!rail.classList.contains('dragging')) return;
+      var dx = e.clientX - startX;
+      if (Math.abs(dx) > 3) moved = true;
+      rail.scrollLeft = startLeft - dx;
+    });
+    function release() { held = false; rail.classList.remove('dragging'); }
+    rail.addEventListener('pointerup', release);
+    rail.addEventListener('pointercancel', release);
+    rail.addEventListener('mouseleave', function () { held = false; });
+    rail.addEventListener('click', function (e) { if (moved) e.preventDefault(); }, true);
+    var drift = 0.35, last = 0;
+    (function tick(t) {
+      if (!reduced && seen && !held && document.visibilityState === 'visible') {
+        var max = rail.scrollWidth - rail.clientWidth;
+        if (max > 0) {
+          if (rail.scrollLeft >= max - 1) drift = -Math.abs(drift);
+          if (rail.scrollLeft <= 0) drift = Math.abs(drift);
+          rail.scrollLeft += drift * Math.min(2, (t - last) / 16 || 1);
+        }
+      }
+      last = t;
+      requestAnimationFrame(tick);
+    })(0);
+  }
+
+  // ---- a sale, step by step: the step in the middle of the screen leads --
+  var steps = Array.prototype.slice.call(document.querySelectorAll('.step'));
+  var shots = Array.prototype.slice.call(document.querySelectorAll('.steps-phone .frame img'));
+  var bar = document.querySelector('.steps-bar i');
+  function showStep(i) {
+    steps.forEach(function (s, k) { s.classList.toggle('on', k === i); });
+    shots.forEach(function (s, k) { s.classList.toggle('on', k === i); });
+    if (bar) bar.style.width = ((i + 1) / steps.length * 100) + '%';
+  }
+  if (steps.length && io) {
+    var stepIo = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) showStep(Number(e.target.getAttribute('data-i'))); });
+    }, { rootMargin: '-45% 0px -45% 0px' });
+    steps.forEach(function (s) { stepIo.observe(s); });
+  } else {
+    steps.forEach(function (s) { s.classList.add('on'); });
+  }
 
   // ---- the 3D stage ----------------------------------------------------
   var canvas = document.getElementById('stage');

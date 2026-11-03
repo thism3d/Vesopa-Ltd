@@ -14,6 +14,8 @@ import '../../nfc/staff_card.dart';
 import '../../payments/payment_service.dart';
 import '../tap_to_pay_mark.dart';
 import '../theme.dart';
+import '../../data/recent_venues.dart';
+import '../go_frame.dart' show VenueMark;
 import 'connection_page.dart';
 
 class MorePage extends ConsumerStatefulWidget {
@@ -107,7 +109,9 @@ class _MorePageState extends ConsumerState<MorePage> {
     return ListView(padding: const EdgeInsets.all(16), children: [
       Card(
         child: ListTile(
-          leading: const TapMark(size: 40),
+          // The venue's own logo (the club crest at Pontardawe RFC), Go's mark
+          // when it has none.
+          leading: const SizedBox(width: 48, height: 48, child: Center(child: VenueMark(height: 44, maxWidth: 48))),
           title: Text(s.venue?.name ?? ''),
           subtitle: Text(s.demo
               ? 'Demo: nothing is real'
@@ -170,6 +174,36 @@ class _MorePageState extends ConsumerState<MorePage> {
         icon: const Icon(Icons.lock_rounded),
         label: const Text('Sign off'),
       ),
+      const SizedBox(height: 10),
+      if (!s.demo)
+        OutlinedButton.icon(
+          onPressed: () async {
+            if (s.pendingSync > 0) {
+              // Never switch away from sales the back office has not had yet.
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('${s.pendingSync} sales are still waiting to send. Switch once they have (Refresh staff and menu).'),
+              ));
+              return;
+            }
+            final ok = await showDialog<bool>(
+              context: context,
+              builder: (c) => AlertDialog(
+                title: const Text('Switch venue or account?'),
+                content: Text('This phone signs out of ${s.venue?.name ?? 'this venue'} and gives its till licence back. '
+                    'Then choose the Vesopa account and venue to sign in to.'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                  FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Switch')),
+                ],
+              ),
+            );
+            if (ok != true) return;
+            RecentVenues.switchOnOpen = true;
+            await ref.read(tapProvider.notifier).forgetPhone();
+          },
+          icon: const Icon(Icons.switch_account_rounded),
+          label: const Text('Switch venue or account'),
+        ),
       const SizedBox(height: 10),
       TextButton(
         onPressed: () async {

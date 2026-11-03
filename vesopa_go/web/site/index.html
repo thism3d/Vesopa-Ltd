@@ -14,7 +14,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
-<link rel="stylesheet" href="/style.css?v=5">
+<link rel="stylesheet" href="/style.css?v=6">
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Vesopa Go","operatingSystem":"iOS, iPadOS, Android","applicationCategory":"BusinessApplication","offers":{"@type":"Offer","price":"0","priceCurrency":"GBP"},"publisher":{"@type":"Organization","name":"Vesopa Software Ltd","url":"https://vesopasoftware.com"}}
 </script>
@@ -60,22 +60,42 @@
       <div class="section-head reveal">
         <p class="eyebrow">Inside the app</p>
         <h2>Every step of the payment, <em>on screen.</em></h2>
-        <p>The same five steps as the Windows till: starting, present card, PIN, processing, complete. The customer sees where to hold their card, the clerk sees exactly where the payment has got to, and a decline comes with another way to pay.</p>
+        <p>The same five steps as the Windows till: starting, present card, PIN, processing, complete. The customer sees where to hold their card, and the clerk sees exactly where the payment has got to.</p>
       </div>
       <div class="films">
         <figure class="device phone tilt reveal">
-          <div class="frame"><video autoplay muted loop playsinline preload="metadata" poster="/media/pay-iphone.webp"><source src="/media/pay-iphone.mp4" type="video/mp4"></video></div>
+          <div class="frame"><video autoplay muted loop playsinline disablepictureinpicture disableremoteplayback preload="metadata" poster="/media/pay-iphone.webp"><source src="/media/pay-iphone.mp4" type="video/mp4"></video></div>
           <figcaption>Tap to Pay on iPhone: approved</figcaption>
         </figure>
         <figure class="device tablet tilt reveal">
-          <div class="frame"><video autoplay muted loop playsinline preload="metadata" poster="/media/pay-ipad.webp"><source src="/media/pay-ipad.mp4" type="video/mp4"></video></div>
+          <div class="frame"><video autoplay muted loop playsinline disablepictureinpicture disableremoteplayback preload="metadata" poster="/media/pay-ipad.webp"><source src="/media/pay-ipad.mp4" type="video/mp4"></video></div>
           <figcaption>On iPad, with the venue's card machine or QR Pay</figcaption>
         </figure>
-        <figure class="device phone tilt reveal">
-          <div class="frame"><video autoplay muted loop playsinline preload="metadata" poster="/media/declined-iphone.webp"><source src="/media/declined-iphone.mp4" type="video/mp4"></video></div>
-          <figcaption>Declined: try again, or pay another way</figcaption>
-        </figure>
       </div>
+    </div>
+  </section>
+
+  <!-- A sale, step by step: the phone stays put and its screen changes as
+       each step scrolls past. -->
+  <section class="flow" id="flow">
+    <div class="wrap steps-grid">
+      <div class="steps-phone" aria-hidden="true">
+        <figure class="device phone"><div class="frame">
+          <img class="on" src="/img/shots/iphone-01-sale.webp" alt="" width="430" height="932">
+          <img src="/img/shots/iphone-04-check.webp" alt="" width="430" height="932" loading="lazy">
+          <img src="/img/shots/iphone-02-pay.webp" alt="" width="430" height="932" loading="lazy">
+          <img src="/img/shots/iphone-03-qr-pay.webp" alt="" width="430" height="932" loading="lazy">
+          <img src="/img/shots/iphone-05-approved.webp" alt="" width="430" height="932" loading="lazy">
+        </div></figure>
+        <div class="steps-bar"><i></i></div>
+      </div>
+      <ol class="steps-list">
+        <li class="step on" data-i="0"><span>01</span><h3>Take the order</h3><p>The till's own buttons and colours, on the phone. Tap, add a note, choose the options the kitchen needs.</p></li>
+        <li class="step" data-i="1"><span>02</span><h3>Check the bill</h3><p>Seats, deals and discounts, exactly as the till works them out. Split it, print it, or send it to the till.</p></li>
+        <li class="step" data-i="2"><span>03</span><h3>Choose how to pay</h3><p>Cash, Tap to Pay, the venue's card machine, QR Pay, a gift card or a voucher: the till's own pay screen.</p></li>
+        <li class="step" data-i="3"><span>04</span><h3>Or let them scan</h3><p>QR Pay puts the bill on the customer's own phone, with every item listed, and closes it the moment it's paid.</p></li>
+        <li class="step" data-i="4"><span>05</span><h3>Done, and in the books</h3><p>Approved in seconds. The sale is in the back office at once, with the receipt printed, emailed or shown.</p></li>
+      </ol>
     </div>
   </section>
 
@@ -96,9 +116,9 @@
     </div>
   </section>
 
-  <!-- The screenshots, on a row that tilts as it passes. -->
+  <!-- The screenshots: a row to swipe or drag, drifting by itself until touched. -->
   <section class="gallery" aria-label="Screenshots">
-    <div class="rail" id="rail">
+    <div class="rail" id="rail" tabindex="0">
       <img src="/img/shots/ipad-01-sale.webp" alt="A sale on iPad: the till's buttons and the bill" loading="lazy" width="1366" height="1024">
       <img class="tall" src="/img/shots/iphone-02-pay.webp" alt="The pay screen on iPhone" loading="lazy" width="430" height="932">
       <img src="/img/shots/ipad-04-check.webp" alt="The bill, like the till's, on iPad" loading="lazy" width="1366" height="1024">
@@ -178,6 +198,6 @@
 </div></footer>
 
 <script src="/js/three.min.js" defer></script>
-<script src="/js/go.js?v=5" defer></script>
+<script src="/js/go.js?v=6" defer></script>
 </body>
 </html>
