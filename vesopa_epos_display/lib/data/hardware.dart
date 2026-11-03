@@ -19,7 +19,7 @@ class Hardware {
   static const _channel = MethodChannel('vesopa/hardware');
 
   /// The helper this build carries; nethelper.cpp's kVersion.
-  static const helperVersion = '1';
+  static const helperVersion = '2';
 
   static bool get supported => Platform.isWindows;
 

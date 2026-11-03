@@ -7,7 +7,7 @@ project(vesopa_nethelper LANGUAGES CXX)
 add_executable(vesopa_nethelper "nethelper.cpp")
 apply_standard_settings(vesopa_nethelper)
 target_compile_definitions(vesopa_nethelper PRIVATE "NOMINMAX")
-target_link_libraries(vesopa_nethelper PRIVATE "advapi32.lib" "shell32.lib" "ole32.lib")
+target_link_libraries(vesopa_nethelper PRIVATE "advapi32.lib" "shell32.lib" "ole32.lib" "cfgmgr32.lib")
 set_target_properties(vesopa_nethelper PROPERTIES LINK_FLAGS "/SUBSYSTEM:CONSOLE")
 install(TARGETS vesopa_nethelper RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)

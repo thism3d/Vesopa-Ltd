@@ -9,6 +9,7 @@
 //                                   and starts the service (the till runs this
 //                                   once, elevated)
 //   vesopa_nethelper.exe uninstall  stops and removes the service
+//   vesopa_nethelper.exe run ...    one command, now, with the caller's rights
 //   (no argument)                   the service itself, started by Windows
 //
 // SAFETY. The service runs as LocalSystem, so it only does what is listed in
@@ -18,9 +19,11 @@
 // Program Files, where only an administrator can replace it.
 
 #include <windows.h>
+#include <cfgmgr32.h>
 #include <sddl.h>
 #include <shlobj.h>
 
+#include <cstdio>
 #include <cwctype>
 #include <string>
 #include <vector>
@@ -32,7 +35,7 @@ constexpr wchar_t kDisplay[] = L"Vesopa network helper";
 constexpr wchar_t kPipe[] = L"\\\\.\\pipe\\vesopa-nethelper";
 // Bump with any change to what Handle() understands; the till offers to
 // update the helper when its own copy is newer.
-constexpr char kVersion[] = "1";
+constexpr char kVersion[] = "2";
 
 SERVICE_STATUS_HANDLE g_status_handle = nullptr;
 SERVICE_STATUS g_status{};
@@ -124,6 +127,10 @@ std::string Handle(const std::string& request) {
   const std::string arg = words.size() > 1 ? words[1] : std::string();
   const std::string arg2 = words.size() > 2 ? words[2] : std::string();
 
+  // Each command takes exactly its own words; anything more is refused.
+  const size_t want = cmd == "ping" ? 1 : cmd == "sharing" ? 3 : 2;
+  if (words.size() != want) return "error bad request";
+
   if (cmd == "ping") return std::string("ok ") + kVersion;
 
   if (cmd == "adapter-restart" || cmd == "adapter-on" || cmd == "adapter-off") {
@@ -137,6 +144,11 @@ std::string Handle(const std::string& request) {
 
   if (cmd == "device-restart") {
     if (!IsDeviceId(arg)) return "error bad device";
+    // pnputil says "done" even for a device that is not there: look first.
+    DEVINST node = 0;
+    if (CM_Locate_DevNodeW(&node, const_cast<DEVINSTID_W>(Widen(arg).c_str()), CM_LOCATE_DEVNODE_NORMAL) != CR_SUCCESS) {
+      return "error no such device";
+    }
     const int code = Run(SystemPath(L"pnputil.exe"), L"/restart-device \"" + Widen(arg) + L"\"");
     // 3010: restarted, but Windows wants the PC restarted to finish.
     return code == 3010 ? "ok reboot" : Result(code);
@@ -145,11 +157,13 @@ std::string Handle(const std::string& request) {
   if (cmd == "sharing") {
     const wchar_t* group = arg == "files" ? kFilesGroup : arg == "discovery" ? kDiscoveryGroup : nullptr;
     if (!group || (arg2 != "on" && arg2 != "off")) return "error bad sharing";
-    // Private networks only: a till on a public Wi-Fi keeps its files to itself.
-    return Result(Run(SystemPath(L"netsh.exe"),
-                      std::wstring(L"advfirewall firewall set rule group=\"") + group +
-                          L"\" new enable=" + (arg2 == "on" ? L"Yes" : L"No") +
-                          (arg2 == "on" ? L" profile=private" : L"")));
+    // PowerShell's firewall commands, because netsh's group= wants the group's
+    // name in the PC's own language. On: the group's Private-network rules
+    // only, so a till on a public Wi-Fi keeps its files to itself. Off: all.
+    const std::wstring rules = std::wstring(L"Get-NetFirewallRule -Group '") + group + L"' -ErrorAction Stop";
+    return Result(PowerShell(arg2 == "on"
+                                 ? rules + L" | Where-Object { $_.Profile -match 'Private|Any' } | Enable-NetFirewallRule -ErrorAction Stop"
+                                 : rules + L" | Disable-NetFirewallRule -ErrorAction Stop"));
   }
 
   if (cmd == "network-private") {
@@ -317,7 +331,9 @@ int Uninstall() {
     CloseServiceHandle(service);
   }
   CloseServiceHandle(scm);
-  DeleteFileW((InstalledPath() + L"\\vesopa_nethelper.exe").c_str());
+  // The stopped service's process lets go of its file a moment later.
+  const std::wstring file = InstalledPath() + L"\\vesopa_nethelper.exe";
+  for (int i = 0; i < 20 && !DeleteFileW(file.c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND; i++) Sleep(250);
   RemoveDirectoryW(InstalledPath().c_str());
   return 0;
 }
@@ -327,6 +343,18 @@ int Uninstall() {
 int wmain(int argc, wchar_t** argv) {
   if (argc > 1 && _wcsicmp(argv[1], L"install") == 0) return Install();
   if (argc > 1 && _wcsicmp(argv[1], L"uninstall") == 0) return Uninstall();
+  // One command run here and now, with the caller's own rights, for support
+  // and tests: vesopa_nethelper.exe run sharing files on
+  if (argc > 1 && _wcsicmp(argv[1], L"run") == 0) {
+    std::string request;
+    for (int i = 2; i < argc; i++) {
+      char buf[512] = {0};
+      WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, buf, sizeof(buf) - 1, nullptr, nullptr);
+      request += (i > 2 ? " " : "") + std::string(buf);
+    }
+    printf("%s\n", Handle(request).c_str());
+    return 0;
+  }
   SERVICE_TABLE_ENTRYW table[] = {{const_cast<LPWSTR>(kService), ServiceMain}, {nullptr, nullptr}};
   return StartServiceCtrlDispatcherW(table) ? 0 : 1;
 }
