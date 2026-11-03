@@ -220,10 +220,31 @@ function deviceHealthRoutes({ pool, secret, auth, admin, broadcast }) {
           // One row per machine: bo_devices (tills, displays, Go) and the
           // installs that never registered there (kitchen screens), by id.
           const ids = new Map();
-          for (const d of byOffice(devices, e)) ids.set(d.device_id, { device_id: d.device_id, kind: d.kind, name: d.name, online: !!d.online, last_seen_at: d.last_seen_at, ip: d.ip_address, signed_in_as: d.signed_in_as, app_version: d.app_version, apps: [] });
-          for (const i of byOffice(installs, e)) {
-            if (!ids.has(i.device_id)) ids.set(i.device_id, { device_id: i.device_id, kind: i.app, name: i.device_name, online: null, last_seen_at: i.last_seen_at, apps: [] });
-            ids.get(i.device_id).apps.push({ app: i.app, version: appUpdates.normalise(i.version) || i.version, install: i.install, last_seen_at: i.last_seen_at });
+          const recent = (t) => t && Date.now() - new Date(t).getTime() < 60 * 86400000;
+          for (const d of byOffice(devices, e)) {
+            if (!recent(d.last_seen_at)) continue;
+            ids.set(d.device_id, { device_id: d.device_id, kind: d.kind, name: d.name, online: !!d.online, last_seen_at: d.last_seen_at, ip: d.ip_address, signed_in_as: d.signed_in_as, app_version: d.app_version, apps: [] });
+          }
+          // One install per app per machine: a reinstall gets a new id, and
+          // its old row would read as a second machine (as venueRoutes does).
+          const latest = new Map();
+          for (const i of byOffice(installs, e).sort((a, b) => new Date(b.last_seen_at) - new Date(a.last_seen_at))) {
+            const k = `${i.app}|${String(i.device_name || i.device_id).toLowerCase()}|${i.install}`;
+            if (!latest.has(k)) latest.set(k, i);
+          }
+          // An install joins the machine the till registered under the same
+          // name ("BAR-PC", or a display's "Display on BAR-PC").
+          const lower = (s) => String(s || '').toLowerCase();
+          for (const i of latest.values()) {
+            const n = lower(i.device_name);
+            let d = [...ids.values()].find((x) => n && (lower(x.name) === n || lower(x.name) === `display on ${n}`) && (x.kind === i.app || (x.kind === 'till' && i.app === 'till') || x.kind === 'unknown'));
+            if (!d) d = [...ids.values()].find((x) => x.device_id === `${i.app}|${n}`);
+            if (!d) {
+              d = { device_id: i.device_id, kind: i.app, name: i.device_name, online: null, last_seen_at: i.last_seen_at, apps: [] };
+              ids.set(n ? `${i.app}|${n}` : i.device_id, d);
+            }
+            d.apps.push({ app: i.app, version: appUpdates.normalise(i.version) || i.version, install: i.install, last_seen_at: i.last_seen_at });
+            if (!d.last_seen_at || new Date(i.last_seen_at) > new Date(d.last_seen_at)) d.last_seen_at = i.last_seen_at;
           }
           for (const h of hs) {
             if (!ids.has(h.device_id)) ids.set(h.device_id, { device_id: h.device_id, kind: h.app, name: h.device_name, online: null, last_seen_at: h.updated_at, apps: [] });

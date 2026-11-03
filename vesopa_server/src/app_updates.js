@@ -252,10 +252,10 @@ function adminRoutes({ pool, broadcast, auth, admin }) {
       let devices = [];
       try {
         [pins] = await pool.query(
-          `SELECT p.*, o.id AS office_id FROM bo_app_pins p LEFT JOIN offices o ON o.contact_email = p.office
+          `SELECT p.*, o.id AS office_id FROM bo_app_pins p LEFT JOIN offices o ON o.contact_email COLLATE utf8mb4_general_ci = p.office COLLATE utf8mb4_general_ci
             ${app ? 'WHERE p.app = ?' : ''}`, app ? [app] : []);
         [devices] = await pool.query(
-          `SELECT i.*, o.id AS office_id FROM bo_app_installs i JOIN offices o ON o.contact_email = i.office
+          `SELECT i.*, o.id AS office_id FROM bo_app_installs i JOIN offices o ON o.contact_email COLLATE utf8mb4_general_ci = i.office COLLATE utf8mb4_general_ci
             WHERE i.last_seen_at > DATE_SUB(NOW(), INTERVAL 60 DAY) ${app ? 'AND i.app = ?' : ''}
             ORDER BY i.last_seen_at DESC`, app ? [app] : []);
       } catch (e) {
