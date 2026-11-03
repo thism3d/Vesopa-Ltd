@@ -4,6 +4,7 @@ over SSH (VESOPA_SSH_PASSWORD, askpass, set up by the workflow).
 
     python vesopa_go/tool/go_site.py check    # where the site lives and what it serves; changes nothing
     python vesopa_go/tool/go_site.py live     # back up, upload, HTTPS if missing, check
+    python vesopa_go/tool/go_site.py live --local   # the same from the office PC
 
 The repository and its logs are public: this prints the domain, counts and
 status codes only. Nothing on the server is deleted: the site's folder is
@@ -23,15 +24,39 @@ SITE = REPO / "vesopa_go" / "web" / "site"
 HOST = "root@34.63.118.67"
 DOMAIN = "go.vesopa.com"
 H = "export PATH=$PATH:/usr/local/hestia/bin; "
-PAGES = ["/", "/privacy/", "/terms/", "/support/", "/style.css"]
+PAGES = ["/", "/privacy/", "/terms/", "/support/", "/style.css", "/js/go.js", "/js/three.min.js", "/media/pay-iphone.mp4", "/img/og.jpg"]
+# --local: from the office PC through paramiko rather than the runner's ssh.
+LOCAL = "--local" in sys.argv
+
+
+_client = None
+
+
+def _local_client():
+    """From the office PC (--local): password SSH through paramiko, with the
+    login from .env.claude-tools, as .claude/skills/vesopa-ops does."""
+    global _client
+    if _client is None:
+        sys.path.insert(0, str(REPO / ".claude" / "skills" / "vesopa-ops" / "scripts"))
+        import vesopa_ssh
+        _client = vesopa_ssh.connect()
+    return _client
 
 
 def sh(script, *, data=None, check=True):
-    cmd = ["ssh", "-o", "BatchMode=no", HOST, "bash -s" if data is None else script]
-    r = subprocess.run(cmd, input=script.encode() if data is None else data, capture_output=True)
-    if check and r.returncode:
-        raise SystemExit(f"! on the server (exit {r.returncode})")
-    return r.stdout.decode(errors="replace").strip()
+    if LOCAL:
+        stdin, stdout, _ = _local_client().exec_command("bash -s" if data is None else script, timeout=600)
+        stdin.write(script.encode() if data is None else data)
+        stdin.channel.shutdown_write()
+        out = stdout.read()
+        code = stdout.channel.recv_exit_status()
+    else:
+        cmd = ["ssh", "-o", "BatchMode=no", HOST, "bash -s" if data is None else script]
+        r = subprocess.run(cmd, input=script.encode() if data is None else data, capture_output=True)
+        out, code = r.stdout, r.returncode
+    if check and code:
+        raise SystemExit(f"! on the server (exit {code})")
+    return out.decode(errors="replace").strip()
 
 
 def status(url):
@@ -95,4 +120,5 @@ def main(mode):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "check")
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    main(args[0] if args else "check")

@@ -1,0 +1,289 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/services.dart';
+
+/// This PC's network and hardware, for Settings > Network and hardware: the
+/// adapters, Wi-Fi, mobile hotspot and who is on it, Bluetooth, USB and serial
+/// devices, and Windows file and printer sharing.
+///
+/// Reading and the switches Windows lets any app use (hotspot, Bluetooth and
+/// Wi-Fi radios) go straight to Windows (windows/runner/hardware.cpp). The
+/// rest needs an administrator, so it goes to the network helper service
+/// (windows/nethelper), which someone allows once.
+class Hardware {
+  Hardware._();
+  static final instance = Hardware._();
+
+  static const _channel = MethodChannel('vesopa/hardware');
+
+  /// The helper this build carries; nethelper.cpp's kVersion.
+  static const helperVersion = '1';
+
+  static bool get supported => Platform.isWindows;
+
+  Future<HardwareSnapshot> snapshot() async {
+    final raw = await _channel.invokeMethod<Map<Object?, Object?>>('snapshot');
+    final sharing = await _sharing();
+    final helper = await helperState();
+    return HardwareSnapshot.fromMap(raw ?? const {}, sharing, helper);
+  }
+
+  /// "ok", or what Windows said.
+  Future<String> setHotspot({required bool on, String? ssid, String? passphrase}) async =>
+      await _channel.invokeMethod<String>('hotspot', {
+        'on': on,
+        'ssid': ?ssid,
+        'passphrase': ?passphrase,
+      }) ??
+      'no answer';
+
+  Future<String> setRadio(String kind, bool on) async =>
+      await _channel.invokeMethod<String>('radio', {'kind': kind, 'on': on}) ?? 'no answer';
+
+  /// "ok", "ok reboot", "missing" (no helper), or "error ...".
+  Future<String> helper(String request) async =>
+      await _channel.invokeMethod<String>('helper', {'request': request}) ?? 'error no answer';
+
+  Future<String> restartAdapter(int index) => helper('adapter-restart $index');
+  Future<String> setAdapter(int index, bool on) => helper('${on ? 'adapter-on' : 'adapter-off'} $index');
+  Future<String> restartDevice(String id) => helper('device-restart $id');
+  Future<String> setSharing(String what, bool on) => helper('sharing $what ${on ? 'on' : 'off'}');
+  Future<String> makePrivate(int index) => helper('network-private $index');
+
+  /// null when no helper answers; otherwise the version it reports.
+  Future<String?> helperState() async {
+    try {
+      final r = await helper('ping');
+      return r.startsWith('ok ') ? r.substring(3).trim() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Copies the helper out of the till's folder and runs its installer with
+  /// the administrator's say-so, once. A Store copy's folder cannot be run
+  /// elevated from, hence the copy. True when the helper answers afterwards.
+  Future<bool> installHelper() async {
+    final source = File('${File(Platform.resolvedExecutable).parent.path}\\vesopa_nethelper.exe');
+    if (!await source.exists()) return false;
+    final dir = await Directory.systemTemp.createTemp('vesopa-helper');
+    final copy = await source.copy('${dir.path}\\vesopa_nethelper.exe');
+    try {
+      await Process.run('powershell', [
+        '-NoProfile',
+        '-Command',
+        "Start-Process -FilePath '${copy.path}' -ArgumentList install -Verb RunAs -WindowStyle Hidden -Wait",
+      ]).timeout(const Duration(minutes: 3));
+    } catch (_) {}
+    for (var i = 0; i < 10; i++) {
+      if (await helperState() != null) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    return false;
+  }
+
+  /// Windows restarts in [seconds]; anything the till has not sent yet waits
+  /// in its outbox and goes when it is back.
+  Future<void> restartPc({int seconds = 10}) async {
+    await Process.run('shutdown', ['/r', '/t', '$seconds', '/c', 'Vesopa EPOS is restarting this PC.']);
+  }
+
+  Future<void> cancelPcRestart() async {
+    await Process.run('shutdown', ['/a']);
+  }
+
+  /// File and printer sharing and network discovery on private networks, and
+  /// each network's kind, in one PowerShell call (the group names are the
+  /// resource ones, the same in every Windows language).
+  Future<SharingState> _sharing() async {
+    try {
+      final r = await Process.run('powershell', [
+        '-NoProfile',
+        '-Command',
+        r"$f = @(Get-NetFirewallRule -Group '@FirewallAPI.dll,-28502' -Direction Inbound -ErrorAction SilentlyContinue | ? { $_.Profile -match 'Private|Any' -and $_.Enabled -eq 'True' }).Count; "
+            r"$d = @(Get-NetFirewallRule -Group '@FirewallAPI.dll,-32752' -Direction Inbound -ErrorAction SilentlyContinue | ? { $_.Profile -match 'Private|Any' -and $_.Enabled -eq 'True' }).Count; "
+            r"$p = @(Get-NetConnectionProfile | % { @{ index = $_.InterfaceIndex; name = $_.Name; category = [string]$_.NetworkCategory } }); "
+            r"@{ files = $f -gt 0; discovery = $d -gt 0; profiles = $p } | ConvertTo-Json -Depth 4 -Compress",
+      ]).timeout(const Duration(seconds: 20));
+      final m = jsonDecode('${r.stdout}'.trim()) as Map<String, dynamic>;
+      final profiles = <int, NetworkProfile>{};
+      final list = m['profiles'];
+      for (final p in list is List ? list : [list]) {
+        if (p is! Map) continue;
+        final index = (p['index'] as num?)?.toInt();
+        if (index == null) continue;
+        profiles[index] = NetworkProfile('${p['name'] ?? ''}', '${p['category'] ?? ''}');
+      }
+      return SharingState(files: m['files'] == true, discovery: m['discovery'] == true, profiles: profiles);
+    } catch (_) {
+      return const SharingState(files: null, discovery: null, profiles: {});
+    }
+  }
+}
+
+class NetworkProfile {
+  const NetworkProfile(this.name, this.category);
+  final String name;
+
+  /// Public, Private or DomainAuthenticated.
+  final String category;
+  bool get isPublic => category == 'Public';
+}
+
+class SharingState {
+  const SharingState({required this.files, required this.discovery, required this.profiles});
+
+  /// null when Windows would not say.
+  final bool? files;
+  final bool? discovery;
+  final Map<int, NetworkProfile> profiles;
+}
+
+class NetAdapter {
+  NetAdapter.fromMap(Map<Object?, Object?> m)
+      : index = (m['index'] as int?) ?? 0,
+        name = '${m['name'] ?? ''}',
+        description = '${m['description'] ?? ''}',
+        kind = '${m['kind'] ?? 'ethernet'}',
+        up = m['up'] == true,
+        mac = '${m['mac'] ?? ''}',
+        speedMbps = (m['speed_mbps'] as int?) ?? 0,
+        ips = [for (final ip in (m['ips'] as List? ?? const [])) '$ip'],
+        gateway = '${m['gateway'] ?? ''}';
+
+  final int index;
+  final String name;
+  final String description;
+
+  /// ethernet, wifi, bluetooth, hotspot or virtual.
+  final String kind;
+  final bool up;
+  final String mac;
+  final int speedMbps;
+  final List<String> ips;
+  final String gateway;
+
+  /// The one carrying the default route: turning it off takes the till off
+  /// the internet.
+  bool get carriesInternet => up && gateway.isNotEmpty;
+}
+
+class HotspotClient {
+  HotspotClient(this.mac, this.names);
+  final String mac;
+  final List<String> names;
+  String get label => names.firstWhere((n) => !RegExp(r'^[\d.:]+$').hasMatch(n), orElse: () => names.isEmpty ? mac : names.first);
+  String? get address => names.where((n) => RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(n)).firstOrNull;
+}
+
+class HotspotState {
+  HotspotState.fromMap(Map<Object?, Object?> m)
+      : supported = m['supported'] == true,
+        why = m['why'] as String?,
+        state = '${m['state'] ?? 'unknown'}',
+        ssid = '${m['ssid'] ?? ''}',
+        passphrase = '${m['passphrase'] ?? ''}',
+        shares = '${m['shares'] ?? ''}',
+        maxClients = (m['max_clients'] as int?) ?? 0,
+        clients = [
+          for (final c in (m['clients'] as List? ?? const []))
+            if (c is Map) HotspotClient('${c['mac'] ?? ''}', [for (final n in (c['names'] as List? ?? const [])) '$n']),
+        ];
+
+  final bool supported;
+  final String? why;
+
+  /// on, off, changing or unknown.
+  final String state;
+  final String ssid;
+  final String passphrase;
+
+  /// The network it passes on.
+  final String shares;
+  final int maxClients;
+  final List<HotspotClient> clients;
+  bool get on => state == 'on';
+}
+
+class RadioState {
+  RadioState(this.kind, this.name, this.on);
+  final String kind;
+  final String name;
+  final bool on;
+}
+
+class HardwareDevice {
+  HardwareDevice.fromMap(Map<Object?, Object?> m)
+      : id = '${m['id'] ?? ''}',
+        name = '${m['name'] ?? ''}',
+        kind = '${m['kind'] ?? ''}',
+        cls = '${m['class'] ?? ''}',
+        working = m['working'] == true,
+        problem = (m['problem'] as int?) ?? 0;
+
+  final String id;
+  final String name;
+
+  /// usb, usb-printer, serial, bluetooth or bluetooth-radio.
+  final String kind;
+  final String cls;
+  final bool working;
+
+  /// Device Manager's problem code; 22 is "turned off", 28 "no driver".
+  final int problem;
+
+  String get problemText => switch (problem) {
+        0 => working ? 'Working' : 'Not started',
+        10 => 'Will not start',
+        22 => 'Turned off in Device Manager',
+        28 => 'No driver installed',
+        43 => 'Windows stopped it after it reported a fault',
+        45 => 'Not plugged in',
+        _ => 'Problem $problem in Device Manager',
+      };
+}
+
+class HardwareSnapshot {
+  HardwareSnapshot({
+    required this.adapters,
+    required this.wifiSsid,
+    required this.wifiSignal,
+    required this.radios,
+    required this.hotspot,
+    required this.devices,
+    required this.sharing,
+    required this.helperVersion,
+  });
+
+  factory HardwareSnapshot.fromMap(Map<Object?, Object?> m, SharingState sharing, String? helper) {
+    final wifi = m['wifi'] is Map ? m['wifi'] as Map : null;
+    return HardwareSnapshot(
+      adapters: [for (final a in (m['adapters'] as List? ?? const [])) if (a is Map) NetAdapter.fromMap(a)],
+      wifiSsid: wifi == null ? null : '${wifi['ssid'] ?? ''}'.isNotEmpty ? '${wifi['ssid']}' : '${wifi['profile'] ?? ''}',
+      wifiSignal: wifi == null ? null : wifi['signal'] as int?,
+      radios: [
+        for (final r in (m['radios'] as List? ?? const []))
+          if (r is Map) RadioState('${r['kind']}', '${r['name'] ?? ''}', r['on'] == true),
+      ],
+      hotspot: HotspotState.fromMap(m['hotspot'] is Map ? m['hotspot'] as Map : const {}),
+      devices: [for (final d in (m['devices'] as List? ?? const [])) if (d is Map) HardwareDevice.fromMap(d)],
+      sharing: sharing,
+      helperVersion: helper,
+    );
+  }
+
+  final List<NetAdapter> adapters;
+  final String? wifiSsid;
+  final int? wifiSignal;
+  final List<RadioState> radios;
+  final HotspotState hotspot;
+  final List<HardwareDevice> devices;
+  final SharingState sharing;
+  final String? helperVersion;
+
+  RadioState? radio(String kind) => radios.where((r) => r.kind == kind).firstOrNull;
+  bool get helperInstalled => helperVersion != null;
+  bool get helperOutdated => helperVersion != null && helperVersion != Hardware.helperVersion;
+}

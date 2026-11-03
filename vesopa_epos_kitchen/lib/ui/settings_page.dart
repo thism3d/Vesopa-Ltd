@@ -10,6 +10,7 @@ import 'branding_page.dart';
 import 'quit.dart';
 import 'theme.dart';
 import 'theme_controller.dart';
+import 'hardware_page.dart';
 
 /// What *this* machine is, as against what the venue has set up.
 ///
@@ -230,7 +231,23 @@ class _SettingsSheet extends ConsumerWidget {
                     label: const Text('Refresh now'),
                   ),
                 ),
-
+                const SizedBox(height: 8),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.router_outlined),
+                      title: const Text('Network and hardware'),
+                      subtitle: const Text(
+                        "This PC's network, Wi-Fi hotspot, sharing, Bluetooth, USB devices and restarts.",
+                        style: TextStyle(fontSize: 12.5),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(title: const Text('Network and hardware')),
+                          body: const HardwarePage(),
+                        ),
+                      )),
+                    ),
                 // ---- Branding ------------------------------------------
                 //
                 // Venue-wide, not this machine's — so it sits under its own

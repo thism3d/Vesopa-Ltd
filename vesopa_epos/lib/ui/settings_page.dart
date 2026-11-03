@@ -27,6 +27,7 @@ import '../printing/printer_transport.dart';
 import 'card_diagnostics_page.dart';
 import 'cards_page.dart';
 import 'gym_page.dart';
+import 'hardware_page.dart';
 import 'layout.dart';
 import 'nav_panel_controller.dart';
 import 'customer_display_page.dart';
@@ -431,6 +432,29 @@ class SettingsPage extends ConsumerWidget {
         const SizedBox(height: 28),
         const _SectionTitle('Local network'),
         const Card(margin: EdgeInsets.zero, child: _LocalNetworkCard()),
+        if (Platform.isWindows) ...[
+          const SizedBox(height: 12),
+          Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              leading: const Icon(Icons.router_outlined, color: Pos.brandDeep),
+              title: const Text('Network and hardware'),
+              subtitle: const Text(
+                'Wi-Fi hotspot for Go phones and screens, network adapters, file and printer sharing, '
+                'Bluetooth, USB devices, and restarts.',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => Scaffold(
+                    appBar: AppBar(title: const Text('Network and hardware')),
+                    body: const HardwarePage(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
 
         // ---- Closing the till ------------------------------------------
         //

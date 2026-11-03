@@ -28,6 +28,7 @@ import '../payments/teya_machine.dart';
 import 'device_prefs.dart';
 import 'fit_text.dart';
 import 'pages/card_machine_page.dart' show deviceMachine;
+import 'pages/connection_page.dart';
 import 'sounds.dart';
 import 'theme.dart';
 
@@ -99,13 +100,13 @@ class StatusChips extends ConsumerWidget {
           ('Waiting to send', s.pendingSync == 0 ? 'Nothing' : '${s.pendingSync}'),
           ('Venue network', lan.linked ? (lan.isHub ? 'Linked, leading the tills' : 'Linked to the tills') : 'Not linked'),
           ('This device', ref.read(tapProvider.notifier).terminalName),
-        ]),
+        ], more: () => goNavigator.currentState?.push(MaterialPageRoute<void>(builder: (_) => const ConnectionPage()))),
       ),
     ]);
   }
 }
 
-void _info(BuildContext context, String title, IconData icon, List<(String, String)> facts) => showDialog<void>(
+void _info(BuildContext context, String title, IconData icon, List<(String, String)> facts, {VoidCallback? more}) => showDialog<void>(
       context: context,
       builder: (c) => AlertDialog(
         icon: Icon(icon),
@@ -120,7 +121,14 @@ void _info(BuildContext context, String title, IconData icon, List<(String, Stri
               ]),
             ),
         ]),
-        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Done'))],
+        actions: [
+          if (more != null)
+            TextButton(onPressed: () {
+              Navigator.pop(c);
+              more();
+            }, child: const Text('Network and hardware')),
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Done')),
+        ],
       ),
     );
 

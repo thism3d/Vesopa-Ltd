@@ -8,6 +8,7 @@ project(runner LANGUAGES CXX)
 # Any new source files that you add to the application should be added here.
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
+  "hardware.cpp"
   "store_update.cpp"
   "main.cpp"
   "utils.cpp"
@@ -41,6 +42,9 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 # because under C++17 its headers reach for <experimental/coroutine>, which the
 # current MSVC refuses outright.
 target_link_libraries(${BINARY_NAME} PRIVATE "windowsapp.lib")
+# Settings > Network and hardware (hardware.cpp): adapters, Wi-Fi, devices.
+target_link_libraries(${BINARY_NAME} PRIVATE "iphlpapi.lib" "ws2_32.lib" "wlanapi.lib"
+  "setupapi.lib" "cfgmgr32.lib")
 target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)
 
 # Run the Flutter tool portions of the build. This must not be removed.

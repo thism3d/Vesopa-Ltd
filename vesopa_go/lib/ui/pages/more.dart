@@ -14,6 +14,7 @@ import '../../nfc/staff_card.dart';
 import '../../payments/payment_service.dart';
 import '../tap_to_pay_mark.dart';
 import '../theme.dart';
+import 'connection_page.dart';
 
 class MorePage extends ConsumerStatefulWidget {
   const MorePage({super.key});
@@ -136,6 +137,16 @@ class _MorePageState extends ConsumerState<MorePage> {
             if (s.pendingSync > 0) '${s.pendingSync} waiting to send',
           ].join(' · ')),
           onTap: () => ref.read(tapProvider.notifier).refresh(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Card(
+        child: ListTile(
+          leading: const Icon(Icons.router_rounded),
+          title: const Text('Network and hardware'),
+          subtitle: const Text('Wi-Fi, the back office, the venue network, the card reader and printer'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ConnectionPage())),
         ),
       ),
       if (s.recent.isNotEmpty) ...[

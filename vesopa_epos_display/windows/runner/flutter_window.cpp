@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "hardware.h"
 #include "store_update.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -28,6 +29,7 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   store_update::Register(flutter_controller_->engine()->messenger(),
                          GetHandle());
+  hardware::Register(flutter_controller_->engine()->messenger(), GetHandle());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -44,6 +46,7 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   store_update::Unregister();
+  hardware::Unregister();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -56,6 +59,9 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
   if (auto answer = store_update::HandleMessage(message, lparam)) {
+    return *answer;
+  }
+  if (auto answer = hardware::HandleMessage(message, lparam)) {
     return *answer;
   }
   // Give Flutter, including plugins, an opportunity to handle window messages.

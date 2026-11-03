@@ -334,6 +334,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         actions: bill == null ? const [] : _resultActions(bill),
         test: _testing,
         machine: machine,
+        online: ref.watch(tapProvider).online,
       ),
     );
   }

@@ -799,7 +799,14 @@ class TapSession extends Notifier<TapState> {
     }
   }
 
+  /// Messages heard on the live connection, and when the last came (the
+  /// Network and hardware page).
+  int liveHeard = 0;
+  DateTime? liveHeardAt;
+
   void _onLive(dynamic raw) {
+    liveHeard++;
+    liveHeardAt = DateTime.now();
     Map<String, dynamic> msg;
     try {
       msg = Map<String, dynamic>.from(jsonDecode(raw is String ? raw : utf8.decode(raw as List<int>)) as Map);

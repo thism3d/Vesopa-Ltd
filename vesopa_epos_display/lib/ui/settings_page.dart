@@ -22,7 +22,8 @@ import '../data/settings.dart';
 import 'big_screen_settings.dart';
 import 'settings_controls.dart';
 import 'quit.dart';
-import 'theme.dart';
+import 'theme.dart';
+import 'hardware_page.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -703,7 +704,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (_fullScreen)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.router_outlined),
+                      title: const Text('Network and hardware'),
+                      subtitle: const Text(
+                        "This PC's network, Wi-Fi hotspot, sharing, Bluetooth, USB devices and restarts.",
+                        style: TextStyle(fontSize: 12.5),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(title: const Text('Network and hardware')),
+                          body: const HardwarePage(),
+                        ),
+                      )),
+                    ),                    if (_fullScreen)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: const Icon(
