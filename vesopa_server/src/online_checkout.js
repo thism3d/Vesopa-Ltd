@@ -135,6 +135,11 @@ async function save(db, office, body) {
   if (mode === 'live') {
     const typed = String((body && body.api_key) || '').trim();
     if (typed) {
+      // A Paymentsense Connect key (a GUID from Dojo's "Legacy keys") runs the
+      // card machines only; it belongs under Pay at Counter, never here.
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(typed)) {
+        throw Object.assign(new Error('That is a Paymentsense Connect key (Dojo\'s Legacy keys). It runs the card machines and belongs under Pay at Counter; it cannot take online payments. Here use the key from the API keys table that starts sk_prod_. Nothing was saved.'), { status: 400 });
+      }
       if (!typed.startsWith('sk_prod_') || !KEY_SHAPE.test(typed)) throw Object.assign(new Error('A live key starts sk_prod_. For a sandbox key choose Demo.'), { status: 400 });
       const checked = await checkKey(typed);
       if (!checked.ok) throw Object.assign(new Error(checked.message), { status: 400 });

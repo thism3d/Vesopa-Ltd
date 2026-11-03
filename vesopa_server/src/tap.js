@@ -856,6 +856,14 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
    * Apple's reader), into the card log, so the back office's Card payments
    * page shows why a tap failed. Never card data: a code and a message.
    */
+  /** A Tap to Pay set-up step (activate, link) that failed on the phone before any payment. */
+  router.post('/api/tap/client-error', terminal, express.json(), (req, res) => {
+    const b = req.body || {};
+    const clip = (v, n) => String(v || '').replace(/[\r\n]+/g, ' ').slice(0, n);
+    console.warn(`[go] tap set-up failed for ${req.office} at ${clip(b.where, 20)} (${clip(b.env, 12)}): ${clip(b.code, 40)} ${clip(b.message, 300)} by ${who(req)}`);
+    res.json({ ok: true });
+  });
+
   router.post('/api/tap/payments/:id/client-error', terminal, express.json(), async (req, res, next) => {
     try {
       const [[row]] = await pool.query('SELECT * FROM epos_tap_payments WHERE id = ? AND office = ?', [req.params.id, req.office]);

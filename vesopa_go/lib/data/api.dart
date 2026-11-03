@@ -391,6 +391,14 @@ class TapApi {
     } catch (_) {}
   }
 
+  /// Tells the server a Tap to Pay set-up step (activate, link) failed before
+  /// any payment existed, so it shows in the server's log for the venue.
+  Future<void> reportTapSetupError({required String step, required String env, required String code, String? message}) async {
+    try {
+      await _send('POST', '/api/tap/client-error', {'where': step, 'env': env, 'code': code, 'message': message ?? ''});
+    } catch (_) {}
+  }
+
   /// What Dojo's Tap to Pay on Pocket SDK needs (/api/tap/pocket-config):
   /// the venue's Dojo API key and partner ids. Kept in memory only.
   Future<Map<String, dynamic>> pocketConfig() => _send('GET', '/api/tap/pocket-config');

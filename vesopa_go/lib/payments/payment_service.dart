@@ -111,6 +111,23 @@ class DojoTapToPay implements PaymentService {
     return _secret!;
   }
 
+  /// Words for a Tap to Pay set-up failure, by the step it failed at. Dojo's
+  /// own errors mostly carry only a number.
+  String _setupMessage(String step, PlatformException e, Map d) {
+    final code = d['code'] != null ? ' (Dojo ${d['name'] != '' ? d['name'] : 'code'} ${d['code']})' : '';
+    if (e.code == 'unsupported') return e.message ?? 'Tap to Pay is not available on this phone.';
+    switch (step) {
+      case 'activate':
+        return 'Dojo would not switch on Tap to Pay for this iPhone$code. '
+            'The venue\'s Dojo account needs Tap to Pay on iPhone turned on by Dojo for its ${_env == 'production' ? 'live' : 'test'} key. '
+            'Use the card machine or QR Pay for now.';
+      case 'link':
+        return 'This iPhone could not be linked to Tap to Pay$code. Accept Apple\'s Tap to Pay terms with the venue\'s Apple ID, then try again.';
+      default:
+        return 'Tap to Pay could not start: ${e.message ?? e.code}$code. Try again.';
+    }
+  }
+
   @override
   Future<PaymentOutcome> take({
     required int amountMinor,
@@ -124,14 +141,17 @@ class DojoTapToPay implements PaymentService {
     if (via == 'machine') return _onMachine(paymentId, amountMinor, tipMinor, billRef, clerk, onStep);
     if (Platform.isAndroid) return _onPocket(amountMinor + tipMinor, onStep, reference: billRef);
     var created = false;
+    var step = 'secret';
     try {
       onStep?.call(PayStep.preparing);
       final secret = await _freshSecret();
       if (!_active) {
+        step = 'activate';
         onStep?.call(PayStep.activating);
         await _channel.invokeMethod('activate', {'secret': secret, 'env': _env});
         _active = true;
       }
+      step = 'link';
       if (!(await _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret}) ?? false)) {
         onStep?.call(PayStep.linking);
         await _channel.invokeMethod('linkAccount', {'secret': secret});
@@ -180,7 +200,10 @@ class DojoTapToPay implements PaymentService {
       }
       if (!created) {
         // It never reached a payment: nothing to check, nothing was taken.
-        return PaymentOutcome(PayResult.unavailable, message: 'Tap to Pay could not start: ${e.message ?? e.code}. Try again.');
+        // The server hears which step failed, so it shows in the venue's logs.
+        final d = e.details is Map ? e.details as Map : const {};
+        unawaited(api.reportTapSetupError(step: step, env: _env, code: '${d['code'] ?? e.code}', message: e.message ?? ''));
+        return PaymentOutcome(PayResult.unavailable, message: _setupMessage(step, e, d));
       }
       unawaited(api.reportTapError(paymentId, where: 'startPayment', code: e.code, message: e.message));
       // The card may still have gone through: ask the server before saying no.

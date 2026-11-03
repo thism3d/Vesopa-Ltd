@@ -124,12 +124,20 @@ final class DojoTapToPayBridge {
         return
       }
       let ns = error as NSError
-      if let code = DojoSDKErrorCode(rawValue: ns.code), ns.domain.contains("Dojo") {
-        result(FlutterError(code: code == .terminalNotOperational ? "unsupported" : "dojo",
-                            message: "Dojo: \(code) (\(ns.localizedDescription))", details: nil))
+      // Dojo's domain is "dojo-tap-to-pay-sdk-error" (lower case), and most of
+      // its errors carry no description, so iOS says only "The operation
+      // couldn't be completed". The code goes to Dart as details, where the
+      // step it failed at turns it into words.
+      if ns.domain.lowercased().contains("dojo") {
+        let known = DojoSDKErrorCode(rawValue: ns.code).map { String(describing: $0) }
+        let said = ns.userInfo[NSLocalizedDescriptionKey] as? String
+        result(FlutterError(code: known == "terminalNotOperational" ? "unsupported" : "dojo",
+                            message: said ?? known ?? "Dojo error \(ns.code)",
+                            details: ["domain": ns.domain, "code": ns.code, "name": known ?? ""]))
         return
       }
-      result(FlutterError(code: "dojo", message: ns.localizedDescription, details: nil))
+      result(FlutterError(code: "dojo", message: ns.localizedDescription,
+                          details: ["domain": ns.domain, "code": ns.code, "name": ""]))
     }
   }
 
