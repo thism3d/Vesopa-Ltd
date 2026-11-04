@@ -652,8 +652,12 @@ class _PayPageState extends ConsumerState<PayPage> {
     if (bill == null) {
       return Scaffold(appBar: AppBar(), body: const Center(child: Text('This sale is closed.')));
     }
-    final via = cardVia(settings, config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600);
     final teya = config.teya.enabled;
+    // Apple (review 5.1, 5.2; HIG): on an iPhone, Tap to Pay on iPhone is the
+    // first payment option, named so, whether or not it is set up yet (the
+    // button sets it up); the card machine is the second.
+    final iPhoneTap = defaultTargetPlatform == TargetPlatform.iOS && !_isIpad(context) && !teya;
+    final via = iPhoneTap ? 'tap' : cardVia(settings, config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600);
     final other = via == 'tap' ? 'machine' : 'tap';
     final notes = CashNote.listFrom(config.cashNotes);
     final board = TillPayBoard(
@@ -665,7 +669,7 @@ class _PayPageState extends ConsumerState<PayPage> {
       actions: PayActions(
         cash: _cash,
         card: (amount) => _card(via, amount: amount),
-        cardLabel: 'Card',
+        cardLabel: iPhoneTap ? 'Tap to Pay on iPhone' : 'Card',
         // Tap to Pay on iPhone is not in iPadOS (Apple's guidelines): an
         // iPad offers it only as a test venue's pretend payment.
         otherCard: teya || (other == 'tap' && _isIpad(context) && !config.testVenue) ? null : (amount) => _card(other, amount: amount),

@@ -53,7 +53,8 @@ class CardsPage extends ConsumerWidget {
         ListTile(
           leading: const Icon(Icons.badge_rounded),
           title: const Text('Read a staff card'),
-          trailing: const Icon(Icons.contactless_rounded),
+          // Not the payment symbol: this reads a staff card, not a payment (HIG).
+          trailing: const Icon(Icons.nfc_rounded),
           onTap: () async {
             final id = await StaffCardReader.readOnce();
             if (!context.mounted) return;

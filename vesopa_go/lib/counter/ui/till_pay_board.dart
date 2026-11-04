@@ -175,7 +175,10 @@ class _TillPayBoardState extends State<TillPayBoard> {
         Expanded(child: _TenderKey(key: const ValueKey('pay-cash'), label: 'Cash', colour: PayPalette.of(context).cash, ink: Colors.white, onTap: () => _then(() => a.cash(_amount)))),
         const SizedBox(width: 12),
       ],
-      Expanded(child: _TenderKey(key: const ValueKey('pay-card'), label: a.cardLabel, colour: Tp.lime, ink: Tp.onLime, onTap: () => _then(() => a.card(_amount.clamp(1, _due))))),
+      Expanded(child: _TenderKey(key: const ValueKey('pay-card'), label: a.cardLabel, colour: Tp.lime, ink: Tp.onLime,
+          // Apple (HIG, review 5.5): the Tap to Pay on iPhone button carries wave.3.right.circle.
+          mark: a.cardLabel.startsWith('Tap to Pay') ? const TapToPayMark(size: 30, color: Tp.onLime) : null,
+          onTap: () => _then(() => a.card(_amount.clamp(1, _due))))),
     ]);
 
     final row2 = Row(children: [
@@ -287,8 +290,9 @@ class _TillPayBoardState extends State<TillPayBoard> {
 }
 
 class _TenderKey extends StatelessWidget {
-  const _TenderKey({super.key, required this.label, required this.colour, required this.ink, required this.onTap});
+  const _TenderKey({super.key, required this.label, required this.colour, required this.ink, required this.onTap, this.mark});
   final String label;
+  final Widget? mark;
   final Color colour;
   final Color ink;
   final VoidCallback onTap;
@@ -307,7 +311,10 @@ class _TenderKey extends StatelessWidget {
               Expanded(
                 child: Align(
                   alignment: Alignment.bottomLeft,
-                  child: FitText(label, maxLines: 1, style: TextStyle(fontSize: 40, height: 1.1, fontWeight: FontWeight.w900, color: ink)),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    if (mark != null) ...[mark!, const SizedBox(width: 10)],
+                    Flexible(child: FitText(label, maxLines: 1, style: TextStyle(fontSize: 40, height: 1.1, fontWeight: FontWeight.w900, color: ink))),
+                  ]),
                 ),
               ),
             ]),

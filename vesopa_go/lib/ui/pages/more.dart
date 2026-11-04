@@ -284,6 +284,22 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
     if (pay is! DojoTapToPay) return;
     final why = await pay.showGuide();
     if (why != null && mounted) setState(() => _note = why);
+    // Apple (HIG, Educating merchants): at the end of the tutorial, a chance
+    // to accept the terms for whoever has not yet.
+    if (why == null && mounted && _linked != true) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Set up Tap to Pay on iPhone?'),
+          content: const Text("A manager accepts Apple's Tap to Pay terms once, then any iPhone at the venue can take payments."),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Not now')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Set up')),
+          ],
+        ),
+      );
+      if (go == true && mounted) await _setUp();
+    }
   }
 
   @override
