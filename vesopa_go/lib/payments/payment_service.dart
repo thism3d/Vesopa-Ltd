@@ -213,8 +213,16 @@ class DojoTapToPay implements PaymentService {
   /// an iPhone sat on "Starting" for ever when Dojo's activation never
   /// answered). A stall becomes an error with words, and is logged.
   Future<T?> _step<T>(String name, Duration limit, Future<T?> Function() call) async {
+    final watch = Stopwatch()..start();
     try {
-      return await call().timeout(limit);
+      final r = await call().timeout(limit);
+      // Each step in the server's log with its time, so a slow or failing
+      // iPhone can be read there (2026-11-04).
+      unawaited(api.reportTap({'platform': _platform, 'step': name, 'code': 'ok', 'message': '${watch.elapsedMilliseconds} ms', 'environment': _env}));
+      return r;
+    } on PlatformException catch (e) {
+      unawaited(api.reportTap({'platform': _platform, 'step': name, 'code': e.code, 'message': '${e.message ?? ''} after ${watch.elapsedMilliseconds} ms', 'environment': _env}));
+      rethrow;
     } on TimeoutException {
       _active = false;
       final e = PlatformException(

@@ -1486,6 +1486,15 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     const status = String(e.status || '').toLowerCase();
     const state = status === 'captured' || status === 'succeeded' ? 'paid'
       : status === 'canceled' || status === 'cancelled' || status === 'reversed' ? 'failed' : null;
+    // Every Dojo event for a Go payment, in the log beside the phone's own
+    // reports (2026-11-04): what Dojo said, whether or not it settles anything.
+    try {
+      const [[seen]] = await pool.query('SELECT id, office, state, via FROM epos_tap_payments WHERE intent_id = ?', [e.paymentIntentId]);
+      if (seen) {
+        console.log(`[go] dojo webhook ${e.environment || ''} ${seen.office} payment ${seen.id} (${seen.via || 'tap'}, was ${seen.state}): `
+          + `${e.event || ''} ${e.status || ''}${e.terminalId ? ` terminal ${e.terminalId}` : ''}`);
+      }
+    } catch { /* logging only */ }
     if (!state) return;
     try {
       const [[row]] = await pool.query("SELECT * FROM epos_tap_payments WHERE intent_id = ? AND state = 'waiting'", [e.paymentIntentId]);
