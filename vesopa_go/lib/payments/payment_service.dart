@@ -221,7 +221,8 @@ class DojoTapToPay implements PaymentService {
       unawaited(api.reportTap({'platform': _platform, 'step': name, 'code': 'ok', 'message': '${watch.elapsedMilliseconds} ms', 'environment': _env}));
       return r;
     } on PlatformException catch (e) {
-      unawaited(api.reportTap({'platform': _platform, 'step': name, 'code': e.code, 'message': '${e.message ?? ''} after ${watch.elapsedMilliseconds} ms', 'environment': _env}));
+      final info = e.details is Map ? '${(e.details as Map)['info'] ?? ''}' : '';
+      unawaited(api.reportTap({'platform': _platform, 'step': name, 'code': e.code, 'message': '${e.message ?? ''} after ${watch.elapsedMilliseconds} ms', 'detail': info, 'environment': _env}));
       rethrow;
     } on TimeoutException {
       _active = false;
@@ -387,7 +388,15 @@ class DojoTapToPay implements PaymentService {
       return;
     }
     if (!link) return;
-    final linked = await _step('link', const Duration(seconds: 25), () => _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret})) ?? false;
+    // Before activation the SDK cannot say (internalError): that reads as
+    // "not yet", and Apple's terms are offered.
+    bool linked;
+    try {
+      linked = await _step('link', const Duration(seconds: 25), () => _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret})) ?? false;
+    } on PlatformException catch (e) {
+      if (e.code == 'timeout') rethrow;
+      linked = false;
+    }
     if (!linked) {
       if (!(canAcceptTerms?.call() ?? true)) {
         throw PlatformException(code: 'not_admin', message: notAdmin);

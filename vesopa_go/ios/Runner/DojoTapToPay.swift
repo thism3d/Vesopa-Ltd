@@ -164,16 +164,19 @@ final class DojoTapToPayBridge {
       // its errors carry no description, so iOS says only "The operation
       // couldn't be completed". The code goes to Dart as details, where the
       // step it failed at turns it into words.
+      // Everything the error carries, for the server's log (2026-11-04: a
+      // bare "networkError" said nothing about what Dojo refused).
+      let info = Self.describe(ns)
       if ns.domain.lowercased().contains("dojo") {
         let known = DojoSDKErrorCode(rawValue: ns.code).map { String(describing: $0) }
         let said = ns.userInfo[NSLocalizedDescriptionKey] as? String
         result(FlutterError(code: known == "terminalNotOperational" ? "unsupported" : "dojo",
                             message: said ?? known ?? "Dojo error \(ns.code)",
-                            details: ["domain": ns.domain, "code": ns.code, "name": known ?? ""]))
+                            details: ["domain": ns.domain, "code": ns.code, "name": known ?? "", "info": info]))
         return
       }
       result(FlutterError(code: "dojo", message: ns.localizedDescription,
-                          details: ["domain": ns.domain, "code": ns.code, "name": ""]))
+                          details: ["domain": ns.domain, "code": ns.code, "name": "", "info": info]))
     }
   }
 
@@ -213,6 +216,18 @@ final class DojoTapToPayBridge {
     } catch {
       result(FlutterError(code: "guide", message: error.localizedDescription, details: nil))
     }
+  }
+
+  /// An error and the ones under it, with their user info, in one line.
+  static func describe(_ e: NSError, depth: Int = 0) -> String {
+    var parts = ["\(e.domain)#\(e.code)"]
+    for (k, v) in e.userInfo where k != NSUnderlyingErrorKey {
+      parts.append("\(k)=\(String(describing: v).prefix(300))")
+    }
+    if depth < 3, let under = e.userInfo[NSUnderlyingErrorKey] as? NSError {
+      parts.append("under: " + describe(under, depth: depth + 1))
+    }
+    return parts.joined(separator: "; ")
   }
 
   #if canImport(DojoTapToPayOniPhoneSDK)

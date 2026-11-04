@@ -1,6 +1,6 @@
 {
   "_comment": "One place for what testers read on each build: TestFlight's What to Test (tool/testflight.py) and Play's release notes (tool/play_upload.py). Change it with the version in pubspec.yaml; a build whose version is not this one says so in its notes instead of repeating an old release's.",
-  "version": "1.2.36",
+  "version": "1.2.37",
   "what_to_test": "Tap to Pay on iPhone set-up (manager): Set up now shows Apple's Tap to Pay terms within seconds; accept, then Apple's guide, then Try it now. Tap to Pay on iPhone set-up: if it cannot finish, it now stops within about a minute and a half with a message saying why, instead of staying on Starting. Tap to Pay on iPhone, as Apple's review checks it. On an iPhone, sign on as a manager: the Tap to Pay on iPhone introduction appears once; Set up shows progress, Apple's terms, then Apple's how-to screens, then Try it now. Sign on as staff (not a manager) at a venue not set up yet: you are told to ask a manager. At checkout a declined card offers Send a receipt; if Vesopa Go is in the background when a payment is not approved, a notification says so. Settings keeps Set up and How to use Tap to Pay on iPhone. Android: Tap to Pay through Dojo's SDK on NFC phones, refunds through the SDK.",
   "release_notes": "Vesopa Go 1.2.36: Tap to Pay on iPhone set-up shows Apple's terms straight after activation instead of waiting first, one set-up at a time, and the Tap to Pay symbol drawn as Apple's."
 }

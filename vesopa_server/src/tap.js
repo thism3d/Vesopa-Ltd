@@ -448,7 +448,7 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     const b = req.body || {};
     const f = (k, n = 160) => String(b[k] == null ? '' : b[k]).replace(/\s+/g, ' ').slice(0, n);
     console.log(`[go] tap problem ${req.office} ${who(req)}: ${f('platform', 10)} ${f('step', 20)} ${f('code', 30)} "${f('message', 240)}"`
-      + ` sdkReady=${f('sdk_ready', 5)} env=${f('environment', 10)} model="${f('model', 60)}" android=${f('sdk', 5)} nfc=${f('nfc', 5)} dojoApp=${f('dojoApp', 5)}`);
+      + ` sdkReady=${f('sdk_ready', 5)} env=${f('environment', 10)} model="${f('model', 60)}" android=${f('sdk', 5)} nfc=${f('nfc', 5)} dojoApp=${f('dojoApp', 5)}${b.detail ? ` detail="${f('detail', 900)}"` : ''}`);
     res.json({ ok: true });
   });
 

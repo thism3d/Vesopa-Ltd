@@ -172,7 +172,10 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
           else if (!notAdmin)
             FilledButton.icon(
               key: const ValueKey('ttp-setup'),
-              onPressed: _linked == null ? null : _setUp,
+              // Never waits on the "already accepted?" check (2026-11-04: it
+              // can hang on Dojo, which left this button grey): set-up asks
+              // again itself and shows Apple's terms when they are needed.
+              onPressed: _setUp,
               icon: const TapToPayMark(size: 20),
               label: const Text('Set up Tap to Pay on iPhone'),
             )
