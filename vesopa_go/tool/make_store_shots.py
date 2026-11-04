@@ -279,6 +279,8 @@ h1 em {{ font-style: normal; font-weight: 700; }}
 .logo {{ position: absolute; bottom: {30 * k:.0f}px; zoom: {k}; }}
 """
 
+CSS = css()  # the phone's, as make_store_video and make_promo_video use it
+
 
 def build(device):
     d = DEVICES[device]
