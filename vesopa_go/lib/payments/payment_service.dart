@@ -182,10 +182,9 @@ class DojoTapToPay implements PaymentService {
       if (!ok) {
         return Platform.isIOS
             ? 'Tap to Pay needs an iPhone XS or newer on iOS 16.7 or later.'
-            // Dojo's Tap to Pay on Android runs only in Dojo's own payment
-            // app (com.dojo.tap), which comes on a Dojo Pocket: an ordinary
-            // phone has NFC but not that app (owner, 2026-10-31).
-            : 'Tap to Pay on Android works on a Dojo Pocket, where the Dojo payment app is built in. This device does not have it.';
+            // Dojo's SDK runs on any NFC phone on Android 10+; whether Dojo
+            // will take payments on it is the SDK's answer (2026-11-04).
+            : 'Tap to Pay needs a phone with NFC on Android 10 or later.';
       }
       // The Pocket has the venue's Dojo account in it already.
       if (!Platform.isIOS) return null;
@@ -412,11 +411,30 @@ class DojoTapToPay implements PaymentService {
   /// DojoPocketSdk.kt). Once per app run; when the back office cannot be
   /// reached the Pocket is driven by its intents instead, as before.
   bool _pocketSdk = false;
+  String _sdkEnv = '';
+
+  /// What went wrong, with the phone it went wrong on, to the server's log.
+  Future<void> _report(String step, PlatformException e) async {
+    Map<String, Object?> device = const {};
+    try {
+      device = (await _channel.invokeMapMethod<String, Object?>('deviceInfo')) ?? const {};
+    } catch (_) {}
+    unawaited(api.reportTap({
+      'platform': _platform,
+      'step': step,
+      'code': e.code,
+      'message': e.message,
+      'sdk_ready': _pocketSdk,
+      'environment': _sdkEnv,
+      ...device,
+    }));
+  }
 
   Future<void> _configurePocket() async {
     if (_pocketSdk) return;
     try {
       final c = await api.pocketConfig();
+      _sdkEnv = '${c['environment'] ?? ''}';
       await _channel.invokeMethod('pocketConfigure', {
         'apiKey': '${c['api_key'] ?? ''}',
         'softwareHouseId': '${c['software_house_id'] ?? ''}',
@@ -426,7 +444,8 @@ class DojoTapToPay implements PaymentService {
     } on TapApiError {
       // Offline or an older back office: the intents still take the card.
     } on PlatformException catch (e) {
-      // Not a Pocket: the payment itself says so.
+      unawaited(_report('configure', e));
+      // The payment itself says why, in the SDK's words.
       if (e.code != 'setup') rethrow;
     }
   }
@@ -448,6 +467,7 @@ class DojoTapToPay implements PaymentService {
       return pocketOutcome(r);
     } on PlatformException catch (e) {
       if (e.code == 'cancelled') return const PaymentOutcome(PayResult.cancelled);
+      unawaited(_report('sale', e));
       // Refused before the card was asked for (not a Pocket, the app out of
       // date, no connection, ...): nothing was taken, and the words say why.
       if (const {'dojo', 'setup', 'busy', 'unsupported'}.contains(e.code)) {
@@ -465,9 +485,17 @@ class DojoTapToPay implements PaymentService {
   }
 
   /// A refund of a Pocket payment, on the Pocket: the customer taps the card again.
+  /// Through Dojo's SDK, as Dojo documents (DojoTapToPayOnPocket.refund),
+  /// set up first like a sale; the intents only when the SDK could not be.
   Future<bool> refundOnPocket(int amountMinor) async {
-    final r = await _channel.invokeMapMethod<String, Object?>('pocketRefund', {'amount': amountMinor});
-    return pocketOutcome(r).paid;
+    try {
+      await _configurePocket();
+      final r = await _channel.invokeMapMethod<String, Object?>('pocketRefund', {'amount': amountMinor});
+      return pocketOutcome(r).paid;
+    } on PlatformException catch (e) {
+      unawaited(_report('refund', e));
+      rethrow;
+    }
   }
 
   /// Ask the server until Dojo has a verdict (~30 seconds; longer on a card machine).

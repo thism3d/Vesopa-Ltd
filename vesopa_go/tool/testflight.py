@@ -134,21 +134,36 @@ def cmd_signing(out_dir):
     bundles = [b for b in c.all("/v1/bundleIds", **{"filter[identifier]": APP_ID}) if b["attributes"]["identifier"] == APP_ID]
     if not bundles:
         raise SystemExit(f"No App ID {APP_ID}: run `prepare` first.")
-    name = f"{asc.CI_PREFIX} {APP_ID} cert {cert['id']}"
+    # ADHOC=1 (2026-11-04): Apple granted Tap to Pay on iPhone with the
+    # development restriction, "registered test devices only". An Ad Hoc
+    # profile names those devices and carries the entitlement; the App Store
+    # profile does not until Apple lifts the restriction.
+    adhoc = os.environ.get("ADHOC") == "1"
+    devices = []
+    if adhoc:
+        devices = [d for d in c.all("/v1/devices", **{"filter[platform]": "IOS", "filter[status]": "ENABLED"})]
+        if not devices:
+            raise SystemExit("No registered iPhones: register the test iPhone (testflight.py register-device NAME UDID) first.")
+        asc.note(f"  {len(devices)} registered device(s): " + ", ".join(d["attributes"]["name"] for d in devices))
+    name = f"{asc.CI_PREFIX} {APP_ID} {'adhoc ' if adhoc else ''}cert {cert['id']}"
+    rel = {
+        "bundleId": {"data": {"type": "bundleIds", "id": bundles[0]["id"]}},
+        "certificates": {"data": [{"type": "certificates", "id": cert["id"]}]},
+    }
+    if adhoc:
+        rel["devices"] = {"data": [{"type": "devices", "id": d["id"]} for d in devices]}
     prof = c.post("/v1/profiles", {"data": {
         "type": "profiles",
-        "attributes": {"name": name, "profileType": "IOS_APP_STORE"},
-        "relationships": {
-            "bundleId": {"data": {"type": "bundleIds", "id": bundles[0]["id"]}},
-            "certificates": {"data": [{"type": "certificates", "id": cert["id"]}]},
-        },
+        "attributes": {"name": name, "profileType": "IOS_APP_ADHOC" if adhoc else "IOS_APP_STORE"},
+        "relationships": rel,
     }})["data"]
     (out / f"{prof['attributes']['uuid']}.mobileprovision").write_bytes(base64.b64decode(prof["attributes"]["profileContent"]))
-    asc.note(f"  App Store profile for {APP_ID}")
+    asc.note(f"  {'Ad Hoc' if adhoc else 'App Store'} profile for {APP_ID}")
     profiles = {APP_ID: name}
     with open(out / "ExportOptions.plist", "wb") as f:
         plistlib.dump({
-            "method": "app-store-connect", "destination": "upload", "teamID": TEAM,
+            "method": "release-testing" if adhoc else "app-store-connect",
+            "destination": "export" if adhoc else "upload", "teamID": TEAM,
             "signingStyle": "manual", "signingCertificate": "Apple Distribution",
             "provisioningProfiles": profiles, "uploadSymbols": True, "manageAppVersionAndBuildNumber": False,
         }, f)
@@ -272,6 +287,16 @@ def main():
         cmd_prepare()
     elif cmd == "signing" and len(sys.argv) > 2:
         cmd_signing(sys.argv[2])
+    elif cmd == "devices":
+        c = asc.Client()
+        for d in c.all("/v1/devices", **{"filter[platform]": "IOS"}):
+            a = d["attributes"]
+            print(f"{a['name']}  {a.get('model') or ''}  {a['status']}  {a['udid'][:8]}...")
+    elif cmd == "register-device" and len(sys.argv) > 3:
+        c = asc.Client()
+        c.post("/v1/devices", {"data": {"type": "devices", "attributes": {
+            "name": sys.argv[2], "udid": sys.argv[3], "platform": "IOS"}}})
+        print(f"registered {sys.argv[2]}")
     elif cmd == "sign-project" and len(sys.argv) > 2:
         cmd_sign_project(sys.argv[2])
     elif cmd == "testflight" and len(sys.argv) > 2:

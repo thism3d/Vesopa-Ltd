@@ -421,6 +421,14 @@ class TapApi {
   /// the venue's Dojo API key and partner ids. Kept in memory only.
   Future<Map<String, dynamic>> pocketConfig() => _send('GET', '/api/tap/pocket-config');
 
+  /// A Tap to Pay problem on this device, for the server's log (2026-11-04):
+  /// what Dojo's SDK said, and the phone it said it on. Never card data.
+  Future<void> reportTap(Map<String, Object?> what) async {
+    try {
+      await _send('POST', '/api/tap/client-log', what);
+    } catch (_) {}
+  }
+
   /// A Tap to Pay secret and the Dojo environment it belongs to: `production`
   /// when the venue's key is live, else `staging` (Dojo's sandbox).
   Future<({String secret, String env})> tapSecret(String platform) async {

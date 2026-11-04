@@ -39,7 +39,17 @@ class MainActivity : FlutterFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.vesopa.go/dojo").setMethodCallHandler { call, result ->
             when (call.method) {
-                "isSupported", "pocketAvailable" -> result.success(pocketInstalled())
+                // Owner, 2026-11-04: Dojo's SDK decides, not Go. Any NFC phone
+                // on Android 10+ is offered Tap to Pay; the SDK itself says
+                // if Dojo's side of the device is missing (DpaNotInstalled).
+                "isSupported" -> result.success(tapCapable())
+                "pocketAvailable" -> result.success(pocketInstalled())
+                "deviceInfo" -> result.success(mapOf(
+                    "model" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+                    "sdk" to android.os.Build.VERSION.SDK_INT,
+                    "nfc" to nfcState(),
+                    "dojoApp" to pocketInstalled(),
+                ))
                 // Dojo's SDK once the venue's Dojo account is known
                 // (DojoPocketSdk.kt); the intents below until then.
                 "pocketConfigure" -> {
@@ -47,8 +57,6 @@ class MainActivity : FlutterFragmentActivity() {
                     val house = call.argument<String>("softwareHouseId").orEmpty()
                     if (key.isEmpty() || house.isEmpty()) {
                         result.error("setup", "The venue's Dojo account is not set up in the back office.", null)
-                    } else if (!pocketInstalled()) {
-                        result.error("unsupported", DojoPocketSdk.friendly("DpaNotInstalled"), null)
                     } else {
                         DojoPocketSdk.configure(this, key, house, call.argument<String>("resellerId") ?: house, result)
                     }
@@ -94,6 +102,15 @@ class MainActivity : FlutterFragmentActivity() {
         } catch (e: Exception) {
             result.error("unavailable", e.message, null)
         }
+    }
+
+    /** NFC hardware and Android 10+, what Dojo's SDK runs on. */
+    private fun tapCapable(): Boolean =
+        android.os.Build.VERSION.SDK_INT >= 29 && nfcState() != "none"
+
+    private fun nfcState(): String {
+        val nfc = android.nfc.NfcAdapter.getDefaultAdapter(this) ?: return "none"
+        return if (nfc.isEnabled) "on" else "off"
     }
 
     private fun pocketInstalled(): Boolean = try {

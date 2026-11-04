@@ -174,7 +174,8 @@ object DojoPocketSdk {
     fun friendly(error: String?): String {
         val e = error ?: ""
         return when {
-            e.contains("DpaNotInstalled") -> "This device has no Dojo payment app. Tap to Pay works on a Dojo Pocket."
+            e.contains("DpaNotInstalled") ->
+                "Dojo's SDK could not reach Dojo's Tap to Pay service on this phone (DpaNotInstalled). Ask Dojo to enable Tap to Pay for this device, or use the card machine."
             e.contains("DpaVersionUnsupported") -> "The Dojo payment app on this Pocket is out of date. Update it, then try again."
             e.contains("DpaSecurityFailure") -> "The Dojo app refused this device's security check. Turn off developer options and USB debugging, then try again."
             e.contains("AppInBackground") -> "Keep Vesopa Go open on the screen while taking a card."

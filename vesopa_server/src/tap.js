@@ -438,6 +438,20 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     } catch (e) { send(res, e, next); }
   });
 
+  /**
+   * A Tap to Pay problem on a Go device, into this server's log (2026-11-04),
+   * so a failure at a venue can be read here: what Dojo's SDK said, the step,
+   * the phone's model, Android version, NFC and whether Dojo's app is on it.
+   * Short fields only; nothing about the card.
+   */
+  router.post('/api/tap/client-log', terminal, (req, res) => {
+    const b = req.body || {};
+    const f = (k, n = 160) => String(b[k] == null ? '' : b[k]).replace(/\s+/g, ' ').slice(0, n);
+    console.log(`[go] tap problem ${req.office} ${who(req)}: ${f('platform', 10)} ${f('step', 20)} ${f('code', 30)} "${f('message', 240)}"`
+      + ` sdkReady=${f('sdk_ready', 5)} env=${f('environment', 10)} model="${f('model', 60)}" android=${f('sdk', 5)} nfc=${f('nfc', 5)} dojoApp=${f('dojoApp', 5)}`);
+    res.json({ ok: true });
+  });
+
   router.get('/api/tap/terminals', terminal, async (req, res, next) => {
     try {
       const m = await machineFor(req.office);
