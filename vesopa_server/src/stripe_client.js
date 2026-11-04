@@ -20,6 +20,12 @@ const crypto = require('crypto');
 const API = (process.env.STRIPE_API_BASE || 'https://api.stripe.com').replace(/\/+$/, '');
 /** The Connect preview the plan's account configuration needs. */
 const PREVIEW = process.env.STRIPE_PREVIEW_VERSION || '2026-10-28.preview';
+/**
+ * Every v1 call is pinned. The newest versions refuse payment_method_types,
+ * which a card-present (Tap to Pay) PaymentIntent made on the server needs;
+ * checked against the sandbox 2026-11-04.
+ */
+const V1 = process.env.STRIPE_API_VERSION || '2025-09-30.clover';
 
 class StripeError extends Error {
   constructor(status, code, message, raw) {
@@ -52,8 +58,9 @@ async function call(method, path, { body, account, v2 = false, idempotencyKey, f
   if (v2) {
     headers['Stripe-Version'] = PREVIEW;
     headers['Content-Type'] = 'application/json';
-  } else if (body) {
-    headers['Content-Type'] = 'application/x-www-form-urlencoded';
+  } else {
+    headers['Stripe-Version'] = V1;
+    if (body) headers['Content-Type'] = 'application/x-www-form-urlencoded';
   }
   if (account) headers['Stripe-Account'] = account;
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
@@ -103,7 +110,7 @@ function createAccount({ email, name, country = 'gb', currency = 'gbp' }, opts =
 }
 
 function retrieveAccount(id, opts = {}) {
-  const q = ['configuration.merchant', 'requirements'].map((x) => `include=${encodeURIComponent(x)}`).join('&');
+  const q = ['configuration.merchant', 'defaults', 'requirements'].map((x) => `include=${encodeURIComponent(x)}`).join('&');
   return call('GET', `/v2/core/accounts/${encodeURIComponent(id)}?${q}`, { ...opts, v2: true });
 }
 
@@ -212,6 +219,7 @@ function verifyWebhook(rawBody, header, secret, tolerance = 300, now = Date.now(
 module.exports = {
   StripeError,
   PREVIEW,
+  V1,
   configured,
   environment,
   form,
