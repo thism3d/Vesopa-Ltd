@@ -34,7 +34,7 @@ on:
         type: boolean
         default: false
       adhoc:
-        description: Ad Hoc build for registered test iPhones, with Tap to Pay on iPhone (development entitlement); no TestFlight, IPA as an artifact
+        description: Development build for registered test iPhones, with Tap to Pay on iPhone (Apple's development entitlement needs a development profile); no TestFlight, IPA as an artifact
         type: boolean
         default: false
       devices_only:
@@ -201,7 +201,7 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
-      - name: Ad Hoc IPA (registered test iPhones)
+      - name: Development IPA (registered test iPhones)
         if: inputs.adhoc && inputs.testflight_build == '' && !inputs.listing_only
         uses: actions/upload-artifact@v4
         with:

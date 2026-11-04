@@ -8,9 +8,12 @@
 /// to pay, so a round of £22.28 can be a £20 note and a card.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:vesopa_go/ui/adaptive.dart';
 import 'package:vesopa_go/display/data/display_feed.dart' show displayCardProvider;
@@ -301,6 +304,8 @@ class _PayPageState extends ConsumerState<PayPage> {
       ));
     } else {
       if (outcome.result == PayResult.declined) GoSounds.play(ref.read(tapProvider).config.go, GoSound.declined);
+      final pay = ref.read(paymentsProvider);
+      if (pay is DojoTapToPay) unawaited(pay.notifyIfAway(outcome, money(_cardAmount + _tip)));
       // The same screen turns into its result, with what can be done next.
       setState(() {
         _busy = false;
@@ -363,9 +368,30 @@ class _PayPageState extends ConsumerState<PayPage> {
         ),
         (icon: Icons.qr_code_2_rounded, label: 'QR Pay', onPressed: () => then(() => _qr(again)), primary: false),
       ],
+      // Apple 5.10: a receipt for the customer whether or not it went through.
+      if (r == PayResult.declined || r == PayResult.cancelled)
+        (icon: Icons.ios_share_rounded, label: 'Send a receipt', onPressed: () => _declineReceipt(bill), primary: false),
       (icon: Icons.support_agent_rounded, label: 'Get help', onPressed: () => launchUrl(Uri.parse('https://go.vesopa.com/support/'), mode: LaunchMode.externalApplication), primary: false),
       (icon: Icons.close_rounded, label: 'Close', onPressed: _closeResult, primary: false),
     ];
+  }
+
+  /// A receipt for a card payment that did not go through, for the customer
+  /// by message, email or AirDrop (the system share sheet).
+  Future<void> _declineReceipt(Bill bill) async {
+    final s = ref.read(tapProvider);
+    final r = _result;
+    final when = DateTime.now();
+    final text = [
+      s.venue?.name ?? 'Receipt',
+      '${when.day.toString().padLeft(2, '0')}/${when.month.toString().padLeft(2, '0')}/${when.year} ${when.hour.toString().padLeft(2, '0')}:${when.minute.toString().padLeft(2, '0')}',
+      '',
+      'Card payment ${r?.result == PayResult.cancelled ? 'cancelled' : 'declined'}: ${money(_cardAmount + _tip)}',
+      'No money was taken.',
+      if (r?.paymentId != null) 'Reference: ${r!.paymentId}',
+      'Bill: ${bill.name}',
+    ].join('\n');
+    await SharePlus.instance.share(ShareParams(text: text, subject: '${s.venue?.name ?? 'Vesopa'}: payment not taken'));
   }
 
   bool _isIpad(BuildContext context) => defaultTargetPlatform == TargetPlatform.iOS && MediaQuery.sizeOf(context).shortestSide >= 600;

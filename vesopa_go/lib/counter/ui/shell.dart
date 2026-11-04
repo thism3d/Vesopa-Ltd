@@ -43,6 +43,7 @@ import 'receipt_print.dart';
 import 'reports_page.dart';
 import 'sales_page.dart';
 import 'sell_page.dart';
+import '../../ui/tap_to_pay_intro.dart';
 
 class Shell extends ConsumerStatefulWidget {
   const Shell({super.key});
@@ -76,6 +77,12 @@ class _ShellState extends ConsumerState<Shell> {
       final tablet = MediaQuery.sizeOf(context).shortestSide >= 600;
       final pay = ref.read(paymentsProvider);
       if (pay is DojoTapToPay && cardVia(ref.read(liteSettingsProvider), s.config, tablet: tablet) == 'tap') pay.prepare();
+      if (pay is DojoTapToPay) {
+        // Apple 3.8: only a manager accepts the Tap to Pay terms.
+        pay.canAcceptTerms = () => ref.read(tapProvider).clerk?.can(TillPermission.isManager) ?? false;
+        // Apple 3.1 / 3.2: the introduction, once, for everyone who takes payments.
+        if (!tablet && !s.demo) maybeShowTapToPayIntro(context, ref);
+      }
     });
   }
 

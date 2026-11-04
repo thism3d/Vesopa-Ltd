@@ -26,6 +26,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/api.dart';
@@ -168,6 +169,15 @@ class DojoTapToPay implements PaymentService {
   final MethodChannel _channel;
 
   String? _secret;
+
+  /// Whether the person signed on may accept Apple's Tap to Pay terms for the
+  /// venue (Apple 3.8: an administrator only). Set by the shell from the
+  /// clerk's role; unset means yes, for the set-up screens that ask first.
+  bool Function()? canAcceptTerms;
+
+  /// Apple 3.8.1, in words.
+  static const notAdmin = "Tap to Pay on iPhone isn't set up for this venue yet. Ask a manager to set it up in Settings, or to sign on and take this payment.";
+
   /// The SDK's environment for [_secret], as the server said.
   String _env = 'staging';
   DateTime _secretUntil = DateTime.fromMillisecondsSinceEpoch(0);
@@ -256,6 +266,9 @@ class DojoTapToPay implements PaymentService {
       }
       step = 'link';
       if (!(await _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret}) ?? false)) {
+        // Apple 3.7: the terms can be accepted from checkout, but only by an
+        // administrator (3.8); anyone else is told who can (3.8.1).
+        if (!(canAcceptTerms?.call() ?? true)) return const PaymentOutcome(PayResult.unavailable, message: notAdmin);
         onStep?.call(PayStep.linking);
         await _channel.invokeMethod('linkAccount', {'secret': secret});
       }
@@ -342,6 +355,7 @@ class DojoTapToPay implements PaymentService {
       await _channel.invokeMethod('activate', {'secret': secret, 'env': _env});
       _active = true;
       if (!(await _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret}) ?? false)) {
+        if (!(canAcceptTerms?.call() ?? true)) return notAdmin;
         await _channel.invokeMethod('linkAccount', {'secret': secret});
       }
       return null;
@@ -366,6 +380,33 @@ class DojoTapToPay implements PaymentService {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Apple 5.12: asks for notifications well before checkout (from the Tap
+  /// to Pay introduction), so a payment that is not approved while the app
+  /// is closed can still be told.
+  Future<bool> askNotifications() async {
+    if (!Platform.isIOS) return false;
+    try {
+      return await _channel.invokeMethod<bool>('askNotify') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Tells the clerk a payment was not approved when the app is not on screen.
+  Future<void> notifyIfAway(PaymentOutcome o, String amount) async {
+    if (!Platform.isIOS || o.result == PayResult.paid) return;
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) return;
+    final (title, body) = switch (o.result) {
+      PayResult.declined => ('Payment declined', '$amount was declined. No money was taken. Open Vesopa Go to try again or pay another way.'),
+      PayResult.cancelled => ('Payment cancelled', '$amount was cancelled. Nothing was taken.'),
+      PayResult.uncertain => ('Payment not confirmed', '$amount is not confirmed yet. Open Vesopa Go to check it before taking it again.'),
+      _ => ('Payment not taken', '$amount did not go through. Open Vesopa Go to try again.'),
+    };
+    try {
+      await _channel.invokeMethod('notify', {'title': title, 'body': body});
+    } catch (_) {}
   }
 
   /// Apple's own guide to taking a payment with Tap to Pay on iPhone.

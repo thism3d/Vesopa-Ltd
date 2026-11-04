@@ -1,6 +1,7 @@
 import Flutter
 import Foundation
 import ProximityReader
+import UserNotifications
 
 #if canImport(DojoTapToPayOniPhoneSDK)
 import DojoTapToPayOniPhoneSDK
@@ -57,6 +58,24 @@ final class DojoTapToPayBridge {
     }
     if call.method == "showEducation" {
       await showEducation(result)
+      return
+    }
+    // Apple 5.12: a payment that was not approved while the app was closed
+    // is told in a notification; permission is asked well before checkout.
+    if call.method == "askNotify" {
+      UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { ok, _ in
+        DispatchQueue.main.async { result(ok) }
+      }
+      return
+    }
+    if call.method == "notify" {
+      let args = call.arguments as? [String: Any] ?? [:]
+      let content = UNMutableNotificationContent()
+      content.title = args["title"] as? String ?? "Vesopa Go"
+      content.body = args["body"] as? String ?? ""
+      content.sound = .default
+      let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+      UNUserNotificationCenter.current().add(request) { _ in DispatchQueue.main.async { result(nil) } }
       return
     }
     guard supported else {
@@ -127,6 +146,11 @@ final class DojoTapToPayBridge {
         result(FlutterMethodNotImplemented)
       }
     } catch {
+      // Apple 1.4: before iOS 17.6 the reader may need a newer iOS; say so plainly.
+      if let reader = error as? PaymentCardReaderError, case .osVersionNotSupported = reader {
+        result(FlutterError(code: "unsupported", message: "Update this iPhone to the latest version of iOS to use Tap to Pay on iPhone (Settings > General > Software Update).", details: nil))
+        return
+      }
       if let reader = error as? PaymentCardReaderError, case .unsupported = reader {
         result(FlutterError(code: "unsupported", message: reader.localizedDescription, details: nil))
         return

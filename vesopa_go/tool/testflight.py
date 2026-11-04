@@ -128,17 +128,18 @@ def cmd_signing(out_dir):
     out.mkdir(parents=True, exist_ok=True)
     c = asc.Client()
 
+    # ADHOC=1 (2026-11-04): Apple's development entitlement for Tap to Pay on
+    # iPhone "only supports development provisioning profiles" on registered
+    # devices (App Requirements and Review guide v1.8, p4). So that build is
+    # signed as development: an Apple Development certificate from the same
+    # long-lived key, and a development profile naming the registered iPhones.
+    adhoc = os.environ.get("ADHOC") == "1"
     # One long-lived certificate, never revoked (app_store_connect.py).
-    cert = {"id": asc.ci_certificate(c, out)}
+    cert = {"id": dev_certificate(c, out) if adhoc else asc.ci_certificate(c, out)}
 
     bundles = [b for b in c.all("/v1/bundleIds", **{"filter[identifier]": APP_ID}) if b["attributes"]["identifier"] == APP_ID]
     if not bundles:
         raise SystemExit(f"No App ID {APP_ID}: run `prepare` first.")
-    # ADHOC=1 (2026-11-04): Apple granted Tap to Pay on iPhone with the
-    # development restriction, "registered test devices only". An Ad Hoc
-    # profile names those devices and carries the entitlement; the App Store
-    # profile does not until Apple lifts the restriction.
-    adhoc = os.environ.get("ADHOC") == "1"
     devices = []
     if adhoc:
         devices = [d for d in c.all("/v1/devices", **{"filter[platform]": "IOS", "filter[status]": "ENABLED"})]
@@ -154,24 +155,68 @@ def cmd_signing(out_dir):
         rel["devices"] = {"data": [{"type": "devices", "id": d["id"]} for d in devices]}
     prof = c.post("/v1/profiles", {"data": {
         "type": "profiles",
-        "attributes": {"name": name, "profileType": "IOS_APP_ADHOC" if adhoc else "IOS_APP_STORE"},
+        "attributes": {"name": name, "profileType": "IOS_APP_DEVELOPMENT" if adhoc else "IOS_APP_STORE"},
         "relationships": rel,
     }})["data"]
     (out / f"{prof['attributes']['uuid']}.mobileprovision").write_bytes(base64.b64decode(prof["attributes"]["profileContent"]))
-    asc.note(f"  {'Ad Hoc' if adhoc else 'App Store'} profile for {APP_ID}")
+    asc.note(f"  {'Development' if adhoc else 'App Store'} profile for {APP_ID}")
     profiles = {APP_ID: name}
     with open(out / "ExportOptions.plist", "wb") as f:
         plistlib.dump({
-            "method": "release-testing" if adhoc else "app-store-connect",
+            "method": "debugging" if adhoc else "app-store-connect",
             "destination": "export" if adhoc else "upload", "teamID": TEAM,
-            "signingStyle": "manual", "signingCertificate": "Apple Distribution",
+            "signingStyle": "manual", "signingCertificate": "Apple Development" if adhoc else "Apple Distribution",
             "provisioningProfiles": profiles, "uploadSymbols": True, "manageAppVersionAndBuildNumber": False,
         }, f)
     (out / "profiles.json").write_text(json.dumps(profiles, indent=2))
 
 
+def dev_certificate(c, out):
+    """An Apple Development certificate from the long-lived CI key
+    (ASC_DIST_KEY_PEM), reused while it matches and has a month left; written
+    as dist.key.pem and dist.cer so the workflow imports it the same way."""
+    import datetime as dt
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.x509.oid import NameOID
+
+    pem = os.environ.get("ASC_DIST_KEY_PEM", "").strip()
+    if not pem:
+        raise SystemExit("ASC_DIST_KEY_PEM is needed for the development certificate.")
+    key = serialization.load_pem_private_key(pem.encode(), password=None)
+    mine = key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    soon = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=30)
+    found = None
+    for cert in c.all("/v1/certificates", **{"filter[certificateType]": "DEVELOPMENT,IOS_DEVELOPMENT"}):
+        der = base64.b64decode(cert["attributes"].get("certificateContent") or "")
+        if not der:
+            continue
+        x = x509.load_der_x509_certificate(der)
+        pub = x.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+        if pub == mine and x.not_valid_after_utc > soon:
+            found = (cert, der)
+            asc.note(f"  development certificate {cert['id']} (reused)")
+            break
+    if not found:
+        csr = x509.CertificateSigningRequestBuilder().subject_name(x509.Name([
+            x509.NameAttribute(NameOID.COMMON_NAME, "Vesopa CI Development"),
+            x509.NameAttribute(NameOID.COUNTRY_NAME, "GB"),
+        ])).sign(key, hashes.SHA256())
+        cert = c.post("/v1/certificates", {"data": {"type": "certificates", "attributes": {
+            "certificateType": "DEVELOPMENT",
+            "csrContent": base64.b64encode(csr.public_bytes(serialization.Encoding.DER)).decode(),
+        }}})["data"]
+        found = (cert, base64.b64decode(cert["attributes"]["certificateContent"]))
+        asc.note(f"  development certificate {cert['id']} (made)")
+    (out / "dist.key.pem").write_bytes(key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+    (out / "dist.cer").write_bytes(found[1])
+    return found[0]["id"]
+
+
 def cmd_sign_project(profiles_json):
     """Manual signing with this run's profile on the app's build configurations."""
+    IDENTITY = "Apple Development" if os.environ.get("ADHOC") == "1" else "Apple Distribution"
     profiles = json.loads(Path(profiles_json).read_text())
     text = PBX.read_text(encoding="utf-8")
     out, changed = [], 0
@@ -185,7 +230,7 @@ def cmd_sign_project(profiles_json):
             block = block.replace("buildSettings = {", (
                 "buildSettings = {\n"
                 "\t\t\t\tCODE_SIGN_STYLE = Manual;\n"
-                "\t\t\t\tCODE_SIGN_IDENTITY = \"Apple Distribution\";\n"
+                f"\t\t\t\tCODE_SIGN_IDENTITY = \"{IDENTITY}\";\n"
                 f"\t\t\t\tDEVELOPMENT_TEAM = {TEAM};\n"
                 f"\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"{profiles[ident]}\";"), 1)
             changed += 1
