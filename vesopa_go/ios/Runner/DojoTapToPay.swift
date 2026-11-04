@@ -111,6 +111,19 @@ final class DojoTapToPayBridge {
         let dojo = sdkFor(args["env"] as? String ?? "staging")
         result(String(describing: try await dojo.activateTerminal(secret)))
 
+      // What Dojo's activation is built from, for the server's log
+      // (2026-11-04: activation answered "unknown", "Order-id is missing").
+      case "diagnose":
+        let dojo = sdkFor(args["env"] as? String ?? "staging")
+        let fp = dojo.getFingerprint()
+        result([
+          "fingerprint": fp.map { "present (\($0.count) chars)" } ?? "MISSING",
+          "readerSupported": PaymentCardReader.isSupported,
+          "sdkEnv": String(describing: dojo.getEnvironment()),
+          "ios": UIDevice.current.systemVersion,
+          "model": UIDevice.current.model,
+        ])
+
       case "waitOperational":
         let now = try await current().getTerminalActivationStatus(notifyWhenOperational: true, secret: secret)
         if now == .failed {

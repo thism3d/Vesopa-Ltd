@@ -397,6 +397,10 @@ class DojoTapToPay implements PaymentService {
     // missing"), so waiting longer changes nothing. A minute, then words.
     if (status == 'unknown') {
       try {
+        final d = await _channel.invokeMapMethod<String, Object?>('diagnose', env);
+        unawaited(api.reportTap({'platform': _platform, 'step': 'diagnose', 'code': 'info', 'message': '$d', 'environment': _env}));
+      } catch (_) {}
+      try {
         await _step<String>('ready', const Duration(seconds: 60), () => _channel.invokeMethod<String>('waitOperational', env));
       } on PlatformException catch (e) {
         if (e.code != 'timeout') rethrow;

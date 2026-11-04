@@ -1,6 +1,6 @@
 {
   "_comment": "One place for what testers read on each build: TestFlight's What to Test (tool/testflight.py) and Play's release notes (tool/play_upload.py). Change it with the version in pubspec.yaml; a build whose version is not this one says so in its notes instead of repeating an old release's.",
-  "version": "1.2.41",
+  "version": "1.2.42",
   "what_to_test": "Tap to Pay on iPhone: Settings > Set up Tap to Pay on iPhone opens the full-screen set-up with a timer while Dojo sets up the iPhone (a minute or two the first time), then Apple's terms, then Apple's guide. Then take 1.00 with the Tap to Pay on iPhone button.",
   "release_notes": "Vesopa Go 1.2.40: Tap to Pay on iPhone set-up follows Dojo's order (activate, wait until Dojo has set up the iPhone, then Apple's terms) with a timer, and Settings opens the same set-up screen."
 }
