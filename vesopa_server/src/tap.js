@@ -724,6 +724,8 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
       const answer = await dojo(key, 'POST', path, { version: TAP_VERSION, ...opts });
       const value = answer && (answer.secret || answer.terminalSecret || answer.value);
       if (!value) throw new TapError(502, 'Dojo did not send a Tap to Pay secret.');
+      // Which phone asked and on which key: where a stuck set-up starts (2026-11-04).
+      console.log(`[go] tap secret for ${req.office} (${environment}, sdk ${sdkEnvOf(value)}) to ${platform} ${who(req)}`);
       res.json({ secret: value, environment, sdk_env: sdkEnvOf(value), expires_in: 6 * 3600 });
     } catch (e) { send(res, e, next); }
   });
