@@ -222,7 +222,7 @@ def option(name):
 
 def main():
     # Words after --track and --builds are their values, not the venue.
-    skip = {i + 1 for i, a in enumerate(sys.argv) if a in ("--track", "--builds", "--only", "--halt")}
+    skip = {i + 1 for i, a in enumerate(sys.argv) if a in ("--track", "--builds", "--only", "--halt", "--promote")}
     args = [a for i, a in enumerate(sys.argv) if i and i not in skip and not a.startswith("--")]
     if len(args) != 1:
         raise SystemExit(__doc__)
