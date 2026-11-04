@@ -109,16 +109,30 @@ const API_VERSION = process.env.DOJO_API_VERSION || '2024-02-05';
  * dojo_settings.js keeps the card-machine one). A venue still on sandbox, or
  * with no key saved, is on this. Never a live key.
  */
-const TAP_SANDBOX_KEY = process.env.DOJO_TAP_SANDBOX_KEY
-  || 'sk_sandbox_EtKXUrMCHU9Y7NCURtDRI9KEn0yqWDgy4JFUOeg0QNGRihcml31fxJURpfbdlx1D';
+//
+// 2026-11-04, checked by hand: that key, and the one in DOJO_TAP_SANDBOX_KEY,
+// are refused (401) by staging-api.dojo.dev AND api.dojo.tech, so every
+// venue without a live key failed before the reader started. Dojo's public
+// card-machine sandbox key (dojo_settings.js) is accepted by api.dojo.tech
+// for Tap to Pay secrets and intents, so that is the sandbox now, on
+// api.dojo.tech. DOJO_TAP_SANDBOX_KEY_OVERRIDE puts another back.
+const TAP_SANDBOX_KEY = process.env.DOJO_TAP_SANDBOX_KEY_OVERRIDE || require('./dojo_settings').PUBLIC_SANDBOX_KEY;
 
-/** Where Tap to Pay lives for a key: Dojo's staging host for sandbox keys. */
+/** Where Tap to Pay lives: api.dojo.tech, sandbox keys included (see above). */
 function tapBase(key) {
-  if (String(key || '').startsWith('sk_sandbox_')) {
-    return (process.env.DOJO_TAP_SANDBOX_BASE_URL || 'https://staging-api.dojo.dev/integration-test').replace(/\/+$/, '');
+  if (String(key || '').startsWith('sk_sandbox_') && process.env.DOJO_TAP_SANDBOX_BASE_URL_OVERRIDE) {
+    return process.env.DOJO_TAP_SANDBOX_BASE_URL_OVERRIDE.replace(/\/+$/, '');
   }
-  // Production: confirm with partnertech@dojo.tech before the first live venue.
   return (process.env.DOJO_TAP_BASE_URL || 'https://api.dojo.tech').replace(/\/+$/, '');
+}
+
+/**
+ * Which environment Dojo's Tap to Pay SDK must run in for [secret]: a
+ * secret api.dojo.tech issues is `ts_prod_…` for sandbox keys too, and the
+ * SDK has to match it, whatever the account's own environment.
+ */
+function sdkEnvOf(secret) {
+  return /^ts_prod/.test(String(secret || '')) ? 'production' : 'staging';
 }
 
 /**
@@ -696,7 +710,7 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
       const answer = await dojo(key, 'POST', path, { version: TAP_VERSION, ...opts });
       const value = answer && (answer.secret || answer.terminalSecret || answer.value);
       if (!value) throw new TapError(502, 'Dojo did not send a Tap to Pay secret.');
-      res.json({ secret: value, environment, expires_in: 6 * 3600 });
+      res.json({ secret: value, environment, sdk_env: sdkEnvOf(value), expires_in: 6 * 3600 });
     } catch (e) { send(res, e, next); }
   });
 
@@ -935,7 +949,9 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
         }
       } else {
         const { key } = await keyFor(req.office);
-        await dojo(key, 'POST', '/payment-intents/' + encodeURIComponent(row.intent_id) + '/cancel', opts).catch(() => null);
+        // DELETE is Dojo's cancel (POST …/cancel is a 404: checked on the live
+        // API 2026-11-04, and what the till has always sent, dojo_client.js).
+        await dojo(key, 'DELETE', '/payment-intents/' + encodeURIComponent(row.intent_id), opts).catch(() => null);
       }
       const [r] = await pool.query(
         "UPDATE epos_tap_payments SET state = 'cancelled' WHERE id = ? AND office = ? AND state = 'waiting'", [row.id, row.office]);
@@ -1471,5 +1487,5 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
 }
 
 module.exports = {
-  tapRoutes, tapBase, secretPath, paymentState, cleanMinor, cleanPercents, cleanSettings, phoneSettings, DEFAULTS, TAP_SANDBOX_KEY,
+  tapRoutes, tapBase, sdkEnvOf, secretPath, paymentState, cleanMinor, cleanPercents, cleanSettings, phoneSettings, DEFAULTS, TAP_SANDBOX_KEY,
 };

@@ -215,7 +215,11 @@ async function main() {
     assert.strictEqual(secret.status, 200);
     assert.strictEqual(secret.body.secret, 'tap-secret-123');
     const sent = calls.at(-1);
-    assert.strictEqual(sent.url, 'https://staging-api.dojo.dev/integration-test/tap/apple-terminal/secret');
+    // api.dojo.tech for sandbox keys too: the staging host refuses every sandbox key (2026-11-04).
+    assert.strictEqual(sent.url, 'https://api.dojo.tech/tap/apple-terminal/secret');
+    assert.strictEqual(secret.body.sdk_env, 'staging');
+    assert.strictEqual(tap.sdkEnvOf('ts_prod_abc'), 'production', 'a ts_prod secret runs the SDK in production');
+    assert.strictEqual(tap.TAP_SANDBOX_KEY, require('../src/dojo_settings').PUBLIC_SANDBOX_KEY);
     assert.strictEqual(sent.init.headers.Authorization, 'Basic ' + tap.TAP_SANDBOX_KEY);
     assert.strictEqual(sent.init.headers.version, '2023-12-12');
     // Once only: two spellings were joined into "2023-12-12, 2023-12-12",
@@ -377,7 +381,7 @@ async function main() {
     assert.strictEqual(rest.body.state, 'refunded');
     assert.strictEqual(rest.body.refunded_minor, 2700);
     const refundCall = calls.filter((c) => c.url.endsWith('/refunds')).at(-1);
-    assert.ok(refundCall.url.startsWith('https://staging-api.dojo.dev/integration-test/'), 'a phone payment is refunded where it was taken');
+    assert.ok(refundCall.url.startsWith('https://api.dojo.tech/'), 'a phone payment is refunded where it was taken');
     assert.ok(refundCall.init.headers.idempotencyKey);
     assert.strictEqual((await go('POST', '/api/tap/payments/pay-0003-abcd/refund', { body: { approved_by: 'Sam' } })).status, 409, 'only paid payments');
 
