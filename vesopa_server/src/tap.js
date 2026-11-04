@@ -347,7 +347,29 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     return null;
   }
 
+  /**
+   * Test venues take Tap to Pay on their own Dojo sandbox key, never a
+   * borrowed live one (owner, 2026-11-04: "enable test on The Vesopa
+   * Kitchen"): no real money. DOJO_TAP_TEST_OFFICES, comma separated; The
+   * Vesopa Kitchen by default.
+   */
+  const TAP_TEST_OFFICES = new Set(String(process.env.DOJO_TAP_TEST_OFFICES || 'manager@vesopa.co.uk')
+    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
+
+  async function sandboxKeyOf(office) {
+    try {
+      const [[row]] = await pool.query('SELECT api_key_enc FROM epos_dojo_settings WHERE office = ?', [office]);
+      const key = row && row.api_key_enc ? unseal(row.api_key_enc) : null;
+      return key && /^sk_sandbox_/.test(key) ? key : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function keyFor(office) {
+    if (TAP_TEST_OFFICES.has(String(office || '').toLowerCase())) {
+      return { key: (await sandboxKeyOf(office)) || TAP_SANDBOX_KEY, environment: 'sandbox' };
+    }
     const own = await liveKeyOf(office);
     if (own) return { key: own, environment: 'live' };
     const lender = lenderOf(office);

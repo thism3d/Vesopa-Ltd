@@ -342,7 +342,7 @@ class DojoTapToPay implements PaymentService {
         if (created) unawaited(api.cancelPayment(paymentId).then((_) {}, onError: (Object _) {}));
         return PaymentOutcome(PayResult.cancelled, paymentId: paymentId);
       }
-      if (e.code == 'not_admin' || e.code == 'timeout') {
+      if (e.code == 'not_admin' || e.code == 'timeout' || e.code == 'not_enabled') {
         return PaymentOutcome(PayResult.unavailable, message: e.message);
       }
       if (!created) {
@@ -392,7 +392,23 @@ class DojoTapToPay implements PaymentService {
     // missing" and linkAccount "Terminal is not in operational state"):
     // wait until Dojo has provisioned the iPhone, then Apple's terms.
     onStep?.call(PayStep.activating);
-    await _step<String>('ready', const Duration(minutes: 4), () => _channel.invokeMethod<String>('waitOperational', env));
+    // "unknown" after activation: Dojo has no Tap to Pay terminal order for
+    // the venue's account (the iPhone's log, 2026-11-04: "Order-id is
+    // missing"), so waiting longer changes nothing. A minute, then words.
+    if (status == 'unknown') {
+      try {
+        await _step<String>('ready', const Duration(seconds: 60), () => _channel.invokeMethod<String>('waitOperational', env));
+      } on PlatformException catch (e) {
+        if (e.code != 'timeout') rethrow;
+        throw PlatformException(
+          code: 'not_enabled',
+          message: "Dojo has not enabled Tap to Pay on iPhone for this venue's account yet, so this iPhone cannot be set up. "
+              'Ask Dojo to switch on Tap to Pay on iPhone for the venue. Use the card machine or QR Pay meanwhile.',
+        );
+      }
+    } else {
+      await _step<String>('ready', const Duration(minutes: 4), () => _channel.invokeMethod<String>('waitOperational', env));
+    }
     _active = true;
     if (!link) return;
     final linked = await _step('link', const Duration(seconds: 25), () => _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret})) ?? false;
