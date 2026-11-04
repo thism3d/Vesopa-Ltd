@@ -366,6 +366,21 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     }
   }
 
+  /**
+   * The venue's Dojo location for Tap to Pay on iPhone (2026-11-04): Dojo's
+   * SDK has setLocation and a locationNotConfigured error its guide never
+   * mentions, and activation without one came back with no terminal order
+   * ("Order-id is missing"). DOJO_TAP_LOCATIONS = office=location, comma
+   * separated; from Dojo (Account > Locations, or Dojo's partner team).
+   */
+  function tapLocationOf(office) {
+    for (const pair of String(process.env.DOJO_TAP_LOCATIONS || '').split(',')) {
+      const [from, loc] = pair.split('=').map((s) => s.trim());
+      if (from && loc && from.toLowerCase() === String(office || '').toLowerCase()) return loc;
+    }
+    return null;
+  }
+
   async function keyFor(office) {
     if (TAP_TEST_OFFICES.has(String(office || '').toLowerCase())) {
       return { key: (await sandboxKeyOf(office)) || TAP_SANDBOX_KEY, environment: 'sandbox' };
@@ -748,7 +763,7 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
       if (!value) throw new TapError(502, 'Dojo did not send a Tap to Pay secret.');
       // Which phone asked and on which key: where a stuck set-up starts (2026-11-04).
       console.log(`[go] tap secret for ${req.office} (${environment}, sdk ${sdkEnvOf(value)}) to ${platform} ${who(req)}`);
-      res.json({ secret: value, environment, sdk_env: sdkEnvOf(value), expires_in: 6 * 3600 });
+      res.json({ secret: value, environment, sdk_env: sdkEnvOf(value), expires_in: 6 * 3600, location_id: tapLocationOf(req.office) });
     } catch (e) { send(res, e, next); }
   });
 

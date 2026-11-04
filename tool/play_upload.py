@@ -250,6 +250,26 @@ def main():
     if "--next-build" in sys.argv:
         print(next_build(play, int(v["build"])))
         return
+    # --promote CODE --track beta: a bundle already in Play (e.g. on internal
+    # testing) onto another track, with no upload and no build (owner,
+    # 2026-11-04: "do not build again").
+    if option("--promote"):
+        code = option("--promote")
+        edit = play.edit()
+        seen = None
+        for t in play.call("GET", f"{API}/{play.package}/edits/{edit}/tracks").get("tracks", []):
+            for r in t.get("releases", []):
+                if code in r.get("versionCodes", []):
+                    seen = (t["track"], r)
+        if not seen:
+            sys.exit(f"   ! version code {code} is not on any track")
+        source, r = seen
+        rel = {"name": r.get("name") or code, "versionCodes": [code], "status": "completed",
+               "releaseNotes": r.get("releaseNotes") or [{"language": p["language"], "text": p["release_notes"]}]}
+        play.call("PUT", f"{API}/{play.package}/edits/{edit}/tracks/{track}", {"track": track, "releases": [rel]})
+        play.commit(edit)
+        print(f"   version code {code} ({rel['name']}) from {source} onto the {track} track")
+        return
     print(f"{p['title']} ({p['package']}) as {who}")
 
     failed = False

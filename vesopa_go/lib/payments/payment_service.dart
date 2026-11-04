@@ -175,6 +175,9 @@ class DojoTapToPay implements PaymentService {
   /// clerk's role; unset means yes, for the set-up screens that ask first.
   bool Function()? canAcceptTerms;
 
+  /// The venue's Dojo location, set on the SDK before activation.
+  String? _location;
+
   /// Apple 3.8.1, in words.
   static const notAdmin = "Tap to Pay on iPhone isn't set up for this venue yet. Ask a manager to set it up in Settings, or to sign on and take this payment.";
 
@@ -248,6 +251,7 @@ class DojoTapToPay implements PaymentService {
           onTimeout: () => throw const TapApiError(504, 'The back office did not answer. Check the connection and try again.'));
       _secret = s.secret;
       _env = s.env;
+      _location = s.location;
       _secretUntil = DateTime.now().add(const Duration(hours: 6));
       _active = false;
     }
@@ -374,7 +378,7 @@ class DojoTapToPay implements PaymentService {
   }
 
   Future<void> _readyOnce(String secret, {required bool link, void Function(PayStep step)? onStep}) async {
-    final env = {'secret': secret, 'env': _env};
+    final env = {'secret': secret, 'env': _env, 'location': ?_location};
     var status = await _step<String>('status', const Duration(seconds: 25), () => _channel.invokeMethod<String>('status', env)) ?? '';
     if (status == 'operational') {
       _active = true;

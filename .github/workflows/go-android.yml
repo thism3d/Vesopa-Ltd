@@ -25,7 +25,7 @@ on:
       mode:
         description: full = build and upload with the listing; listing = only the words and pictures; build = bundle only
         type: choice
-        options: [full, listing, build]
+        options: [full, listing, build, promote]
         default: full
       track:
         description: Play track (empty = play.json's, internal)
@@ -33,6 +33,10 @@ on:
         default: ''
       build:
         description: Build number (empty = the next one Play has not seen)
+        required: false
+        default: ''
+      promote_code:
+        description: With mode promote, the version code already in Play to move onto the track (no build)
         required: false
         default: ''
 
@@ -56,9 +60,18 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/py"
           "$RUNNER_TEMP/py/bin/pip" install --quiet cryptography
 
+      - name: Promote a build already in Play (no build)
+        if: inputs.mode == 'promote'
+        env:
+          TRACK: ${{ inputs.track }}
+          CODE: ${{ inputs.promote_code }}
+        run: |
+          [ -n "$CODE" ] && [ -n "$TRACK" ] || { echo "::error::promote needs promote_code and track"; exit 1; }
+          "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$APP" --promote "$CODE" --track "$TRACK"
+
       - name: Next build number Play has not seen
         id: num
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote'
         env:
           BUILD_INPUT: ${{ inputs.build }}
         run: |
@@ -96,20 +109,20 @@ jobs:
           echo "### Vesopa Go $version ($n)" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-java@v4
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote'
         with:
           distribution: temurin
           java-version: '17'
 
       - uses: subosito/flutter-action@v2
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote'
         with:
           channel: stable
           flutter-version: 3.47.8
           cache: true
 
       - name: Upload key
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote'
         env:
           KS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
           KSP: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -130,7 +143,7 @@ jobs:
           } > "$APP/android/key.properties"
 
       - name: Bundle
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote'
         working-directory: vesopa_go
         run: |
           flutter pub get
@@ -142,14 +155,14 @@ jobs:
           ls -la "$out"
 
       - uses: actions/upload-artifact@v4
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote'
         with:
           name: vesopa-go-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}
           path: ${{ runner.temp }}/android-builds/*.aab
           retention-days: 30
 
       - name: Upload to Google Play
-        if: inputs.mode != 'build'
+        if: inputs.mode != 'build' && inputs.mode != 'promote'
         env:
           TRACK: ${{ inputs.track }}
         run: |

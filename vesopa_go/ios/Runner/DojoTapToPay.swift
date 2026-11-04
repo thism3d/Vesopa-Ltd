@@ -109,6 +109,8 @@ final class DojoTapToPayBridge {
 
       case "activate":
         let dojo = sdkFor(args["env"] as? String ?? "staging")
+        // The venue's Dojo location, when the back office knows it.
+        if let location = args["location"] as? String, !location.isEmpty { dojo.setLocation(location) }
         result(String(describing: try await dojo.activateTerminal(secret)))
 
       // What Dojo's activation is built from, for the server's log
@@ -118,6 +120,7 @@ final class DojoTapToPayBridge {
         let fp = dojo.getFingerprint()
         result([
           "fingerprint": fp.map { "present (\($0.count) chars)" } ?? "MISSING",
+          "location": (args["location"] as? String) ?? "none",
           "readerSupported": PaymentCardReader.isSupported,
           "sdkEnv": String(describing: dojo.getEnvironment()),
           "ios": UIDevice.current.systemVersion,

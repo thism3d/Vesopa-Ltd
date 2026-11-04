@@ -431,12 +431,16 @@ class TapApi {
 
   /// A Tap to Pay secret and the Dojo environment it belongs to: `production`
   /// when the venue's key is live, else `staging` (Dojo's sandbox).
-  Future<({String secret, String env})> tapSecret(String platform) async {
+  Future<({String secret, String env, String? location})> tapSecret(String platform) async {
     final r = await _send('POST', '/api/tap/secret', {'platform': platform});
     // The server says which environment Dojo's SDK needs for this secret
     // (sdk_env: a sandbox account's secret from api.dojo.tech is production's).
     final sdk = r['sdk_env'] as String?;
-    return (secret: r['secret'] as String, env: sdk ?? (r['environment'] == 'live' ? 'production' : 'staging'));
+    return (
+      secret: r['secret'] as String,
+      env: sdk ?? (r['environment'] == 'live' ? 'production' : 'staging'),
+      location: (r['location_id'] as String?)?.trim().isEmpty ?? true ? null : (r['location_id'] as String).trim(),
+    );
   }
 
   /// [via] `tap` (this phone) or `machine` (the venue's Dojo card machine).
