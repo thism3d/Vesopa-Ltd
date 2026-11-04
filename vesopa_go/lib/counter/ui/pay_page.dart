@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:vesopa_go/ui/adaptive.dart';
+import 'package:vesopa_go/display/data/display_feed.dart' show displayCardProvider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
@@ -90,6 +91,56 @@ class _PayPageState extends ConsumerState<PayPage> {
       ),
     );
     return ok ?? false;
+  }
+
+  /// The card payment, in the customer's words, for a customer display that
+  /// follows this device (display/data/display_feed.dart).
+  void _toDisplay(PayStep? st, String via, {PaymentOutcome? result}) {
+    final machine = via == 'machine';
+    final amount = _cardAmount + _tip;
+    final card = ref.read(displayCardProvider.notifier);
+    if (result != null) {
+      final r = result.result;
+      card.show({
+        'phase': 'result',
+        'title': switch (r) {
+          PayResult.paid => 'Payment approved',
+          PayResult.declined => 'Payment declined',
+          PayResult.cancelled => 'Payment cancelled',
+          PayResult.uncertain => 'Checking the payment',
+          PayResult.unavailable => 'Card payment unavailable',
+        },
+        'outcome': switch (r) {
+          PayResult.paid => 'approved',
+          PayResult.declined => 'declined',
+          PayResult.cancelled => 'cancelled',
+          PayResult.uncertain => 'unknown',
+          PayResult.unavailable => 'declined',
+        },
+        if (r != PayResult.paid) 'detail': r == PayResult.uncertain ? 'One moment, please.' : 'No money has been taken.',
+        'amount_minor': amount,
+      }, clearAfter: const Duration(seconds: 5));
+      return;
+    }
+    if (st == null) return;
+    final (title, detail) = switch (st) {
+      PayStep.preparing || PayStep.activating || PayStep.linking => ('Getting ready', null),
+      PayStep.waitingForCard => ('Tap your card or phone', 'Hold it at the top of the device'),
+      PayStep.onMachine => (machine ? 'Use the card machine' : 'Tap your card or phone', machine ? 'Tap, insert or swipe your card' : null),
+      PayStep.pin => ('Enter your PIN', 'On the card machine'),
+      PayStep.signature => ('One moment, please', 'Your signature is being checked'),
+      PayStep.cancelling => ('Cancelling', null),
+      PayStep.confirming => ('Authorising', 'Please wait'),
+      PayStep.done => ('Payment approved', null),
+    };
+    card.show({
+      'phase': st == PayStep.done ? 'result' : 'progress',
+      'title': title,
+      'detail': ?detail,
+      if (st == PayStep.done) 'outcome': 'approved',
+      'amount_minor': amount,
+      'heading': machine ? 'Card machine' : 'Tap to Pay',
+    });
   }
 
   void _cancelPayment() {
@@ -217,11 +268,15 @@ class _PayPageState extends ConsumerState<PayPage> {
       billRef: bill.id,
       clerk: ref.read(tapProvider).clerk?.name,
       via: via,
-      onStep: (st) => mounted ? setState(() => _step = st) : null,
+      onStep: (st) {
+        _toDisplay(st, via);
+        if (mounted) setState(() => _step = st);
+      },
       control: control,
     );
     _control = null;
     _cancelling = false;
+    _toDisplay(null, via, result: outcome);
     if (!mounted) return;
     if (outcome.paid) {
       // The rail finishes on Complete before the receipt, as the till's.

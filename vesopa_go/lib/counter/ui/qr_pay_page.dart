@@ -22,6 +22,7 @@ import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../data/api.dart';
+import '../../display/data/display_feed.dart' show displayCardProvider;
 import '../../data/models.dart';
 import '../../data/session.dart';
 import '../../ui/pay_motion.dart';
@@ -76,8 +77,27 @@ class _QrPayPageState extends ConsumerState<QrPayPage> {
     _start();
   }
 
+  /// The QR on a customer display following this device too, so the
+  /// customer can scan it there (display/data/display_feed.dart).
+  String? _shown;
+  void _mirror() {
+    final url = _status == 'waiting' ? _url : null;
+    final key = '$url|$_status';
+    if (key == _shown) return;
+    _shown = key;
+    final card = ref.read(displayCardProvider.notifier);
+    Future.microtask(() => card.show(url == null
+        ? (_status == 'paid'
+            ? {'phase': 'result', 'title': 'Payment approved', 'outcome': 'approved', 'amount_minor': widget.amountMinor}
+            : null)
+        : {'phase': 'progress', 'title': 'Scan to pay', 'detail': "Use your phone's camera", 'qr': url, 'amount_minor': widget.amountMinor, 'heading': 'QR Pay'},
+        clearAfter: _status == 'paid' ? const Duration(seconds: 5) : null));
+  }
+
   @override
   void dispose() {
+    final card = ref.read(displayCardProvider.notifier);
+    Future.microtask(() => card.show(null));
     _poll?.cancel();
     _socketSub?.cancel();
     _socket?.sink.close();
@@ -209,6 +229,7 @@ class _QrPayPageState extends ConsumerState<QrPayPage> {
 
   @override
   Widget build(BuildContext context) {
+    _mirror();
     final t = Theme.of(context).textTheme;
     final config = ref.watch(tapProvider.select((s) => s.config));
     final venue = ref.watch(tapProvider.select((s) => s.venue?.name)) ?? '';
@@ -376,3 +397,4 @@ class _PayMarks extends StatelessWidget {
     ]);
   }
 }
+

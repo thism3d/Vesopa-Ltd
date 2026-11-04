@@ -24,6 +24,7 @@ import 'counter/ui/shell.dart';
 import 'counter/ui/start_pages.dart';
 import 'data/demo_venue.dart';
 import 'data/models.dart' show VenueMode;
+import 'display/data/display_feed.dart';
 import 'display/ui/display_mode_page.dart';
 import 'kitchen/ui/kitchen_mode_page.dart';
 import 'modes/device_mode.dart';
@@ -116,7 +117,8 @@ class GoApp extends ConsumerWidget {
           Phase.setup => const SetupPage(key: ValueKey('setup')),
           // The PIN pad stays dark, as the till's.
           Phase.locked => orMode(Theme(key: const ValueKey('locked'), data: Tp.theme(Brightness.dark), child: const LiteLockPage())),
-          Phase.ready => orMode(const Shell(key: ValueKey('ready'))),
+          // Beside tills, the sale also goes to any customer display following this device.
+          Phase.ready => orMode(modes ? const GoDisplayFeed(key: ValueKey('ready'), child: Shell()) : const Shell(key: ValueKey('ready'))),
         },
       ),
     );

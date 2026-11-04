@@ -36,6 +36,7 @@ import 'brand.dart';
 import 'cash_page.dart';
 import 'dojo_checklist_page.dart';
 import '../../modes/device_mode.dart';
+import '../../display/data/display_hub.dart';
 import 'quick_sale_page.dart';
 import 'printer_scan.dart';
 import 'receipt_print.dart';
@@ -257,6 +258,41 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DojoChecklistPage())),
           ),
       ]),
+      // Customer displays following this device: a Go device or a Windows
+      // display shows a code; connect it here (display/data/display_hub.dart).
+      if (s.venue?.mode == VenueMode.connected && !s.demo)
+        _group('Customer displays', [
+          StreamBuilder<void>(
+            stream: GoDisplayHub.instance.changes,
+            builder: (context, _) {
+              final hub = GoDisplayHub.instance;
+              return Column(children: [
+                for (final d in hub.paired)
+                  ListTile(
+                    leading: Icon(Icons.connected_tv_rounded, color: d.online ? Tp.lime : null),
+                    title: Text(d.name),
+                    subtitle: Text(d.online ? "Showing this device's sales" : 'Connected, switched off just now'),
+                    trailing: TextButton(onPressed: () => hub.unpair(d.device), child: const Text('Disconnect')),
+                  ),
+                for (final r in hub.requests)
+                  ListTile(
+                    leading: const Icon(Icons.add_to_queue_rounded),
+                    title: Text('${r.name} · code ${r.code}'),
+                    subtitle: const Text('Waiting to be connected. Check the code matches the display.'),
+                    trailing: FilledButton(onPressed: () => hub.accept(r.device), child: const Text('Connect')),
+                  ),
+                if (hub.paired.isEmpty && hub.requests.isEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.connected_tv_rounded),
+                    title: const Text('No customer display yet'),
+                    subtitle: Text(hub.connected
+                        ? 'Open Vesopa Go on another device as a Customer display (or the Windows display app). Its code appears here.'
+                        : 'Reaching the back office…'),
+                  ),
+              ]);
+            },
+          ),
+        ]),
       // EPOS, Kitchen or Customer display (owner, 2026-11-03): the back
       // office's choice, else the device's, changed here by a manager.
       if (s.venue?.mode == VenueMode.connected && !s.demo)
