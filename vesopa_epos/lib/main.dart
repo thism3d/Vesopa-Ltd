@@ -269,6 +269,7 @@ final kitchenScreenSenderProvider = Provider<KitchenScreenSender>(
   (ref) => KitchenScreenSender(
     apiBase: ref.watch(apiBaseProvider),
     office: ref.watch(officeProvider),
+    terminal: ref.watch(terminalNameProvider),
   ),
 );
 

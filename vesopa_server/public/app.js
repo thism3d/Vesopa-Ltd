@@ -16532,6 +16532,8 @@ const KDS_MODES = [
 let kdsSettings = {};
 let kdsUsers = [];
 let kdsScreens = [];
+// The venue's sites (Devices › Sites), for choosing which a kitchen cooks for.
+let kdsSites = [];
 let kdsBoardTimer = null;
 
 /**
@@ -16572,6 +16574,9 @@ async function loadKitchen() {
     api('/kitchen/routing'),
     api('/kitchen/branding'),
   ]);
+  // A login without the dashboard permission cannot list sites; its kitchens
+  // then simply show no site picker.
+  kdsSites = await api('/till-sites').then((r) => r.sites || []).catch(() => []);
   kdsSettings = settings;
   kdsUsers = users;
   kdsScreens = screens;
@@ -16755,6 +16760,15 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+/** The sites a kitchen cooks for, by name; every site when none are chosen. */
+function kdsSitesLabel(ids) {
+  const names = (ids || [])
+    .map((id) => kdsSites.find((x) => Number(x.id) === Number(id)))
+    .filter(Boolean)
+    .map((x) => esc(x.name));
+  return names.length ? names.join(', ') : '<span class="muted">Every site</span>';
+}
+
 function renderKitchenScreens() {
   const box = $('kitchen-screens');
   if (!box) return;
@@ -16769,7 +16783,7 @@ function renderKitchenScreens() {
 
   box.innerHTML = kdsDisplayDefaultHtml() +
     '<table class="table"><thead><tr>' +
-      '<th>Screen</th><th>Stations</th><th>Amber / red</th>' +
+      '<th>Screen</th><th>Stations</th>' + (kdsSites.length ? '<th>Sites</th>' : '') + '<th>Amber / red</th>' +
       '<th>Recall</th><th>Size</th><th></th>' +
     '</tr></thead><tbody>' +
     kdsScreens.map((s) =>
@@ -16778,6 +16792,7 @@ function renderKitchenScreens() {
         '<td>' + (s.stations.length
           ? esc(s.stations.map(kdsLabel).join(', '))
           : '<span class="muted">Every station</span>') + '</td>' +
+        (kdsSites.length ? '<td>' + kdsSitesLabel(s.sites) + '</td>' : '') +
         '<td class="muted small">' + Math.round(s.warn_seconds / 60) + 'm / ' +
           Math.round(s.late_seconds / 60) + 'm</td>' +
         '<td class="muted small">' + s.recall_minutes + 'm</td>' +
@@ -17244,6 +17259,15 @@ function kdsEditScreen(screen) {
       options: stationOptions,
       value: screen ? screen.stations.join(',') : '',
     },
+    ...(kdsSites.length ? [{
+      // 2026-11-04: a venue with four sites may run two or three kitchens.
+      name: 'sites',
+      label: 'Sites it cooks for — orders from these sites’ tills. None ticked ' +
+        'means every site',
+      type: 'stations',
+      options: kdsSites.map((x) => ({ value: String(x.id), label: x.name })),
+      value: screen && screen.sites ? screen.sites.join(',') : '',
+    }] : []),
     {
       name: 'warn_minutes',
       label: 'Minutes before an order turns amber',
@@ -17312,6 +17336,9 @@ function kdsEditScreen(screen) {
       body: JSON.stringify({
         name: data.name,
         stations: stations,
+        ...(kdsSites.length
+          ? { sites: data.sites === undefined ? [] : [].concat(data.sites).map(Number) }
+          : {}),
         warn_seconds: Math.round(Number(data.warn_minutes) * 60),
         late_seconds: Math.round(Number(data.late_minutes) * 60),
         recall_minutes: Math.round(Number(data.recall_minutes)),

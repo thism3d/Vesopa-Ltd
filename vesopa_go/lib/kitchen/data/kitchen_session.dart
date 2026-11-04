@@ -28,6 +28,7 @@ class KitchenSession {
     this.screenId,
     this.soundOverride,
     this.branding = KitchenBranding.standard,
+    this.sites = const [],
   });
 
   final String? token;
@@ -41,6 +42,18 @@ class KitchenSession {
   final int? screenId;
   final bool? soundOverride;
   final KitchenBranding branding;
+
+  /// The venue's sites (2026-11-04), for naming the ones this kitchen cooks
+  /// for and choosing them. Empty for a venue with no sites set up.
+  final List<KitchenSite> sites;
+
+  /// What this board's sites are called: "Every site" when it cooks for all.
+  String get sitesLabel {
+    final mine = screen.sites;
+    if (mine.isEmpty) return 'Every site';
+    final names = [for (final s in sites) if (mine.contains(s.id)) s.name];
+    return names.isEmpty ? '${mine.length} site${mine.length == 1 ? '' : 's'}' : names.join(', ');
+  }
 
   bool get signedIn => token != null && office != null;
 
@@ -76,6 +89,7 @@ class KitchenSession {
     bool? soundOverride,
     bool clearSoundOverride = false,
     KitchenBranding? branding,
+    List<KitchenSite>? sites,
   }) =>
       KitchenSession(
         token: token ?? this.token,
@@ -87,6 +101,7 @@ class KitchenSession {
         screenId: clearScreenId ? null : (screenId ?? this.screenId),
         soundOverride: clearSoundOverride ? null : (soundOverride ?? this.soundOverride),
         branding: branding ?? this.branding,
+        sites: sites ?? this.sites,
       );
 
   Map<String, dynamic> toJson() => {
@@ -99,6 +114,7 @@ class KitchenSession {
         'screenId': screenId,
         'soundOverride': soundOverride,
         'branding': branding.toJson(),
+        'sites': [for (final s in sites) s.toJson()],
       };
 
   factory KitchenSession.fromJson(Map<String, dynamic> j) => KitchenSession(
@@ -111,6 +127,10 @@ class KitchenSession {
         screenId: (j['screenId'] as num?)?.toInt(),
         soundOverride: j['soundOverride'] as bool?,
         branding: KitchenBranding.fromJson(j['branding'] as Map<String, dynamic>?),
+        sites: [
+          for (final s in (j['sites'] as List?) ?? const [])
+            if (s is Map) KitchenSite.fromJson(s.cast<String, dynamic>()),
+        ],
       );
 
   static const empty = KitchenSession();
@@ -148,6 +168,7 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
         stationNames: p.stationNames,
         screens: p.screens,
         branding: p.branding,
+        sites: p.sites,
       );
     } catch (_) {
       // Offline: the board starts on what was cached and the profile follows.
@@ -168,6 +189,7 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
         stationNames: p.stationNames,
         screens: p.screens,
         branding: p.branding,
+        sites: p.sites,
       ));
     } on KitchenApiError catch (e) {
       if (e.signedOut) await signOut();
@@ -180,6 +202,30 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
     await _persist(id == null ? current.copyWith(clearScreenId: true) : current.copyWith(screenId: id));
   }
 
+  /// Rename this kitchen or choose the sites it cooks for, from the device
+  /// (2026-11-04). The manager's PIN is asked for before this is reached.
+  Future<void> saveScreen(int id, {String? name, Set<int>? sites}) async {
+    final current = state.value;
+    if (current == null) return;
+    final p = await _api.saveScreen(id, name: name, sites: sites);
+    await _persist(_with(current, p));
+  }
+
+  /// A new named kitchen, which this device then shows.
+  Future<void> addScreen(String name, {Set<int> sites = const {}}) async {
+    final current = state.value;
+    if (current == null) return;
+    final made = await _api.createScreen(name: name, sites: sites);
+    await _persist(_with(current, made.profile).copyWith(screenId: made.id));
+  }
+
+  KitchenSession _with(KitchenSession s, KitchenProfile p) => s.copyWith(
+        stationNames: p.stationNames,
+        screens: p.screens,
+        branding: p.branding,
+        sites: p.sites,
+      );
+
   Future<void> setSound(bool? on) async {
     final current = state.value;
     if (current == null) return;
@@ -191,7 +237,8 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
   Future<void> signOut() async {
     _api.token = null;
     final current = state.value ?? KitchenSession.empty;
-    final next = KitchenSession(screenId: current.screenId, soundOverride: current.soundOverride, branding: current.branding);
+    final next = KitchenSession(
+        screenId: current.screenId, soundOverride: current.soundOverride, branding: current.branding, sites: current.sites);
     await _persist(next);
   }
 

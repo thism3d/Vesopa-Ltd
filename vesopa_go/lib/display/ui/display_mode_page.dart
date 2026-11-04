@@ -39,6 +39,8 @@ import '../../data/api.dart';
 import '../../data/models.dart' show money;
 import '../../data/session.dart';
 import '../../modes/mode_settings.dart';
+import '../../data/lan/lan_service.dart';
+import '../../ui/pages/connection_page.dart';
 import '../../ui/theme.dart';
 import '../data/basket_feed.dart';
 import '../data/control.dart';
@@ -234,6 +236,20 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
       ),
       Card(
         child: ListTile(
+          leading: const Icon(Icons.router_rounded),
+          title: const Text('Network and hardware'),
+          subtitle: const Text('How this display hears its till: the Wi-Fi, the back office'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () {
+            Navigator.pop(context);
+            Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => ConnectionPage(mode: ConnectionMode.display, sections: (_) => _connections()),
+            ));
+          },
+        ),
+      ),
+      Card(
+        child: ListTile(
           leading: const Icon(Icons.refresh_rounded),
           title: const Text('New code'),
           subtitle: const Text('For connecting this display to a different till.'),
@@ -252,6 +268,42 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
         ),
       ),
     ]);
+  }
+
+  /// The display's own rows on Network and hardware (2026-11-04): which till
+  /// it follows and by which road, the venue's Wi-Fi first and the back
+  /// office's relay when the Wi-Fi cannot.
+  List<ConnSection> _connections() {
+    final link = _link;
+    final lan = LanService.instance;
+    final size = MediaQuery.maybeSizeOf(context);
+    final route = link?.route;
+    return [
+      ConnSection('Connection to the till', [
+        ConnRow(Icons.point_of_sale_rounded, 'Following', _paidTo ?? 'No till yet: enter code $_code on a till', ok: _paidTo != null),
+        ConnRow(Icons.alt_route_rounded, 'Road in use', switch (route) {
+          'lan' => 'The venue Wi-Fi (local link): the bill shows as it is rung up',
+          'cloud' => 'The back office relay, over the internet',
+          'local' => 'This device',
+          _ => 'Waiting for the till',
+        }, ok: route == 'lan' || route == 'cloud' || route == 'local'),
+        ConnRow(Icons.lan_rounded, 'Local link', lan.node == null
+            ? 'Not started'
+            : (link?.lanUp ?? false)
+                ? 'Hearing the till over the Wi-Fi'
+                : lan.linked
+                    ? 'On the venue network; the till has not spoken on it yet'
+                    : 'Looking for the main till on this network', ok: link?.lanUp ?? false),
+        ConnRow(Icons.cloud_sync_rounded, 'Back office relay', (link?.cloudUp ?? false) ? 'Connected' : 'Reconnecting', ok: link?.cloudUp ?? false),
+        ConnRow(Icons.pin_rounded, 'Pairing code', _code, neutral: true),
+      ], warnings: [
+        if (link != null && !link.cloudUp && !link.lanUp) 'This display can hear neither the till nor the back office. Check the Wi-Fi.',
+      ]),
+      ConnSection('This screen', [
+        ConnRow(Icons.aspect_ratio_rounded, 'Size', size == null ? '' : '${size.width.round()} × ${size.height.round()} points', neutral: true),
+        ConnRow(Icons.slideshow_rounded, 'Adverts', _adverts.isEmpty ? 'None (back office > Devices > Customer display adverts)' : '${_adverts.length} playing when idle', neutral: true),
+      ]),
+    ];
   }
 
   @override

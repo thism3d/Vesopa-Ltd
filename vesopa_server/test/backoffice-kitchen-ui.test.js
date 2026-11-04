@@ -41,11 +41,12 @@ const sizes = source.slice(sizesFrom, sizesTo);
  * Returns the modal it opened and the calls it made, so a test can fill the
  * form in and then read what went to the server.
  */
-function harness() {
+function harness(sites = []) {
   const calls = [];
   let opened = null;
 
   const context = {
+    kdsSites: sites,
     KDS_STATIONS: ['kp1', 'kp2', 'kp3', 'kp4', 'kp5', 'kp6'],
     kdsSettings: { printer_name_kp1: 'Grill' },
     api: async (url, options) => {
@@ -252,6 +253,19 @@ async function check(name, fn) {
     const labels = field(m, 'stations').options.map((o) => o.label);
     assert.strictEqual(labels[0], 'Grill');
     assert.strictEqual(labels[1], 'KP 2');
+  });
+
+  await check('a venue with sites chooses which a kitchen cooks for', async () => {
+    const h = harness([{ id: 1, name: 'Bar' }, { id: 2, name: 'Lounge' }]);
+    const m = h.editScreen({ id: 5, name: 'Main', stations: [], sites: [2], warn_seconds: 480,
+      late_seconds: 900, recall_minutes: 60, columns_count: 0, sound: 1 });
+    const f = field(m, 'sites');
+    assert.deepStrictEqual(f.options.map((o) => o.label), ['Bar', 'Lounge']);
+    assert.strictEqual(f.value, '2');
+    await m.onSubmit({ name: 'Main', sites: ['1', '2'], warn_minutes: 8, late_minutes: 15, recall_minutes: 60, columns_count: 0, sound: '1' });
+    assert.deepStrictEqual(h.calls[0].body.sites, [1, 2]);
+    const none = harness();
+    assert.strictEqual(field(none.editScreen(null), 'sites'), undefined);
   });
 
   await check('no editor calls prompt', async () => {

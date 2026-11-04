@@ -85,6 +85,18 @@ class KitchenRemote {
         : {'tvSize': ?tvSize, 'zoom': ?zoom, 'touch': ?touch},
   );
 
+  /// Name a kitchen and choose the sites it cooks for (2026-11-04). An empty
+  /// [sites] means every site.
+  Future<void> nameScreen(int id, {String? name, Set<int>? sites}) => _send(
+    'PUT',
+    '/till/kitchen/display/$id',
+    {'name': ?name, if (sites != null) 'sites': sites.toList()},
+  );
+
+  /// A new named kitchen.
+  Future<void> addScreen(String name, {Set<int> sites = const {}}) =>
+      _send('POST', '/till/kitchen/display', {'name': name, 'sites': sites.toList()});
+
   /// Show [tab] (open, counts, stock, completed) on the kitchen screens, or
   /// on one named [screen].
   Future<void> showTab(String tab, {int? screen}) =>
@@ -136,11 +148,22 @@ class KitchenScreenEntry {
     required this.id,
     required this.name,
     required this.display,
+    this.sites = const {},
   });
 
   final int id;
   final String name;
   final KitchenDisplay display;
+
+  /// The sites it cooks for; empty for every site.
+  final Set<int> sites;
+}
+
+/// One of the venue's sites (back office > Devices > Sites).
+class KitchenSiteEntry {
+  const KitchenSiteEntry({required this.id, required this.name});
+  final int id;
+  final String name;
 }
 
 /// The kitchen widgets, in order, and what they are called on the till.
@@ -161,7 +184,11 @@ class KitchenDisplaySettings {
     this.tiles = const [],
     this.note = '',
     this.tilesSupported = const [],
+    this.sites = const [],
   });
+
+  /// The venue's sites, for choosing which a kitchen cooks for.
+  final List<KitchenSiteEntry> sites;
 
   /// The kitchen widgets that are on, the note, and what the server knows.
   final List<String> tiles;
@@ -178,6 +205,10 @@ class KitchenDisplaySettings {
       tiles: [for (final t in (v['tiles'] as List? ?? const [])) '$t'],
       note: '${v['note'] ?? ''}',
       tilesSupported: [for (final t in (j['tilesSupported'] as List? ?? const [])) '$t'],
+      sites: [
+        for (final x in (j['sites'] as List? ?? const []))
+          if (x is Map) KitchenSiteEntry(id: (x['id'] as num).toInt(), name: '${x['name'] ?? 'Site'}'),
+      ],
       venue: KitchenDisplay(
         tvSize: '${v['tvSize'] ?? 'auto'}',
         zoom: (v['zoom'] as num?)?.round() ?? 100,
@@ -188,6 +219,7 @@ class KitchenDisplaySettings {
           KitchenScreenEntry(
             id: (s['id'] as num).toInt(),
             name: '${s['name'] ?? 'Screen'}',
+            sites: {for (final id in (s['sites'] as List? ?? const [])) (id as num).toInt()},
             display: KitchenDisplay(
               tvSize: s['tvSize'] as String?,
               zoom: (s['zoom'] as num?)?.round(),

@@ -200,6 +200,8 @@ class Ticket {
     this.covers,
     this.note,
     this.rushed = false,
+    this.terminal,
+    this.siteId,
   });
 
   final String id;
@@ -218,6 +220,12 @@ class Ticket {
   final int? covers;
   final String? note;
   final bool rushed;
+
+  /// The till that fired it, and the site that till is in (2026-11-04), so a
+  /// kitchen that cooks for some of the venue's sites shows only theirs. Null
+  /// from a kiosk, the online menu or a till that does not say.
+  final String? terminal;
+  final int? siteId;
 
   final List<TicketLine> lines;
   final List<TicketStation> stations;
@@ -333,7 +341,9 @@ class Ticket {
   /// (2026-10-27) before -- or instead of -- the back office's copy. Same id,
   /// so the board swaps it for the back office's the moment that arrives.
   /// Allergens are not on it: the back office adds those.
-  factory Ticket.fromTill(Map<String, dynamic> j) {
+  /// [tillSites] places a ticket heard over the link, which names its till
+  /// but not that till's site.
+  factory Ticket.fromTill(Map<String, dynamic> j, {Map<String, int> tillSites = const {}}) {
     final lines = [for (final l in (j['lines'] as List? ?? const [])) (l as Map).cast<String, dynamic>()];
     final stations = <String>{for (final l in lines) ..._stations(l['stations'])};
     return Ticket.fromJson({
@@ -347,6 +357,8 @@ class Ticket {
       'staffName': j['staff_name'],
       'covers': j['covers'],
       'note': j['note'],
+      'terminal': j['terminal'],
+      'siteId': (j['site_id'] as num?)?.toInt() ?? tillSites['${j['terminal']}'],
       'lines': [
         for (var i = 0; i < lines.length; i++)
           {
@@ -377,6 +389,8 @@ class Ticket {
         ? null
         : (j['note'] as String).trim(),
     rushed: j['rushed'] == true,
+    terminal: (j['terminal'] as String?)?.trim().isEmpty ?? true ? null : (j['terminal'] as String).trim(),
+    siteId: (j['siteId'] as num?)?.toInt(),
     lines:
         ((j['lines'] as List?) ?? const [])
             .cast<Map<String, dynamic>>()
@@ -401,6 +415,8 @@ class Ticket {
     if (covers != null) 'covers': covers,
     if (note != null) 'note': note,
     'rushed': rushed,
+    if (terminal != null) 'terminal': terminal,
+    if (siteId != null) 'siteId': siteId,
     'lines': [for (final l in lines) l.toJson()],
     'stations': [for (final s in stations) s.toJson()],
   };
@@ -460,6 +476,8 @@ class Ticket {
     covers: covers,
     note: note,
     rushed: rushed ?? this.rushed,
+    terminal: terminal,
+    siteId: siteId,
     lines: lines ?? this.lines,
     stations: stations ?? this.stations,
   );

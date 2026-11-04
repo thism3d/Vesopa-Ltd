@@ -70,7 +70,7 @@ Map<String, Object?> openBillPayload(Bill bill, {required String terminal}) => {
 
 /// The kitchen ticket for [lines] (the ones being sent now), or null when
 /// none of them is made at a station.
-Map<String, Object?>? kitchenTicket(Bill bill, List<BillLine> lines, {required String id, required String office, String? roomName, String kind = 'sale'}) {
+Map<String, Object?>? kitchenTicket(Bill bill, List<BillLine> lines, {required String id, required String office, String? roomName, String kind = 'sale', String? terminal}) {
   final out = <Map<String, Object?>>[];
   for (final l in lines) {
     if (l.product.stations.isEmpty) continue;
@@ -101,6 +101,8 @@ Map<String, Object?>? kitchenTicket(Bill bill, List<BillLine> lines, {required S
     'staff_name': bill.clerk,
     if (bill.covers > 0) 'covers': bill.covers,
     'note': bill.tableNumber == null ? bill.name : null,
+    // This device's name, so the kitchens for its site get it (2026-11-04).
+    'terminal': ?terminal,
     'lines': out,
   };
 }

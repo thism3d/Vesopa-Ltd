@@ -24,6 +24,8 @@ class ScreenProfile {
     this.tvSize,
     this.zoom,
     this.touch,
+    this.sites = const {},
+    this.tillSites = const {},
   });
 
   /// Negative for the built-in profile, which has no row in the database. Real
@@ -53,6 +55,23 @@ class ScreenProfile {
   final String? tvSize;
   final int? zoom;
   final bool? touch;
+
+  /// The venue's sites this kitchen cooks for (2026-11-04). **Empty means
+  /// every site**, which is what a venue with one kitchen has always had.
+  final Set<int> sites;
+
+  /// Which site each of the venue's tills is in, for placing a ticket heard
+  /// over the local link, which names its till but not the site.
+  final Map<String, int> tillSites;
+
+  /// Whether a ticket from [siteId] (or from till [terminal]) belongs on this
+  /// board. A ticket from nowhere known -- a kiosk, the online menu, a till in
+  /// no site -- shows on every kitchen: food must never be lost to a filter.
+  bool takes({int? siteId, String? terminal}) {
+    if (sites.isEmpty) return true;
+    final site = siteId ?? (terminal == null ? null : tillSites[terminal]);
+    return site == null || sites.contains(site);
+  }
 
   /// The board every venue has before anybody configures one.
   ///
@@ -93,6 +112,14 @@ class ScreenProfile {
         : (j['tv_size'] as String).trim(),
     zoom: (j['zoom_percent'] as num?)?.round().clamp(50, 300),
     touch: j['touch'] == null ? null : j['touch'] != 0 && j['touch'] != false,
+    sites: {
+      for (final s in (j['sites'] as List?) ?? const [])
+        if (int.tryParse('$s') case final int id when id > 0) id,
+    },
+    tillSites: {
+      for (final e in ((j['till_sites'] as Map?) ?? const {}).entries)
+        if (int.tryParse('${e.value}') case final int id) '${e.key}': id,
+    },
   );
 
   Map<String, dynamic> toJson() => {
@@ -107,6 +134,8 @@ class ScreenProfile {
     'tv_size': tvSize,
     'zoom_percent': zoom,
     'touch': touch,
+    'sites': sites.toList(),
+    'till_sites': tillSites,
   };
 
   /// [late] is never allowed to arrive before [warn], whatever was stored.
@@ -124,6 +153,8 @@ class ScreenProfile {
           tvSize: tvSize,
           zoom: zoom,
           touch: touch,
+          sites: sites,
+          tillSites: tillSites,
         );
 
   static Duration _seconds(Object? raw, Duration fallback, int min, int max) {

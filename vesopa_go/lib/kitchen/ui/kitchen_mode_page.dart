@@ -4,8 +4,9 @@
 /// first, from the tills over the venue's network; bump, cross off, recall,
 /// rush; queued while offline), drawn for a phone or an iPad:
 ///
-///   iPad / wide   the open tickets in columns, oldest first, rushed at the
-///                 front, each with its Done button, as the wall screen is
+///   iPad / wide   the open tickets in a grid of equal boxes, oldest first,
+///                 rushed at the front, each with its Done button; a ticket
+///                 with more than fits opens whole when tapped (2026-11-04)
 ///   phone         one column; swipe a ticket left to mark it done, right to
 ///                 rush it, the way Mail's swipe actions work
 ///
@@ -24,13 +25,17 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../data/api.dart';
 import '../../data/session.dart';
 import '../../modes/mode_settings.dart';
+import '../../ui/pages/connection_page.dart';
 import '../../ui/sounds.dart';
 import '../../ui/theme.dart';
+import '../../data/lan/lan_service.dart';
 import '../data/dinein_orders.dart';
+import '../data/kitchen_api.dart';
 import '../data/kitchen_session.dart';
 import '../data/providers.dart';
 import '../data/screen_profile.dart';
 import '../data/ticket.dart';
+import '../kitchen_printer.dart';
 
 const _amber = Color(0xFFFF9F0A);
 const _red = Color(0xFFFF453A);
@@ -107,11 +112,197 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
 
   void _announce(Ticket t) {
     _chime();
+    unawaited(_autoPrint(t));
     if (!mounted) return;
     setState(() => _flash.add(t.id));
     Timer(const Duration(seconds: 6), () {
       if (mounted) setState(() => _flash.remove(t.id));
     });
+  }
+
+  /// Each new ticket on paper too, when a manager turned that on.
+  Future<void> _autoPrint(Ticket t) async {
+    if (!await kitchenAutoPrint()) return;
+    final s = ref.read(kitchenSessionProvider).value ?? KitchenSession.empty;
+    try {
+      await printKitchenTicket(t, s, s.screen, allergens: ref.read(allergenLabelsProvider).value ?? const {});
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Future<String?> _askText(String title, {String initial = '', String hint = ''}) async {
+    final c = TextEditingController(text: initial);
+    final v = await showAdaptiveDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog.adaptive(
+        title: Text(title),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Material(
+            type: MaterialType.transparency,
+            child: TextField(
+              controller: c,
+              autofocus: true,
+              maxLength: 80,
+              decoration: InputDecoration(hintText: hint),
+              onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    c.dispose();
+    return v == null || v.isEmpty ? null : v;
+  }
+
+  void _say(String words) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(words)));
+  }
+
+  /// Name this kitchen (2026-11-04). The built-in board has no name of its
+  /// own, so naming it makes a kitchen for this device.
+  Future<void> _rename() async {
+    final s = ref.read(kitchenSessionProvider).value;
+    if (s == null) return;
+    final board = s.screen;
+    final name = await _askText(board.isBuiltIn ? 'Name this kitchen' : 'Rename kitchen',
+        initial: board.isBuiltIn ? '' : board.name, hint: 'Main kitchen, Lounge kitchen, Pizza oven');
+    if (name == null) return;
+    try {
+      final n = ref.read(kitchenSessionProvider.notifier);
+      if (board.isBuiltIn) {
+        await n.addScreen(name);
+      } else {
+        await n.saveScreen(board.id, name: name);
+      }
+      _say('This kitchen is now called $name.');
+    } on KitchenApiError catch (e) {
+      _say(e.message);
+    } catch (e) {
+      _say('Could not save: $e');
+    }
+  }
+
+  /// Which of the venue's sites this kitchen cooks for.
+  Future<void> _chooseSites() async {
+    final s = ref.read(kitchenSessionProvider).value;
+    if (s == null) return;
+    if (s.sites.isEmpty) {
+      _say('This venue has no sites. Add them in the back office under Devices > Sites.');
+      return;
+    }
+    if (s.screen.isBuiltIn) {
+      _say('Name this kitchen first, then choose its sites.');
+      return _rename();
+    }
+    final picked = await showModalBottomSheet<Set<int>>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (c) => _SitesSheet(sites: s.sites, chosen: s.screen.sites, kitchen: s.screen.name),
+    );
+    if (picked == null) return;
+    try {
+      await ref.read(kitchenSessionProvider.notifier).saveScreen(s.screen.id, sites: picked);
+      _say(picked.isEmpty ? '${s.screen.name} now cooks for every site.' : 'Saved. ${s.screen.name} gets those sites\' orders.');
+    } on KitchenApiError catch (e) {
+      _say(e.message);
+    }
+  }
+
+  Future<void> _addKitchen() async {
+    final name = await _askText('New kitchen', hint: 'Lounge kitchen');
+    if (name == null) return;
+    try {
+      await ref.read(kitchenSessionProvider.notifier).addScreen(name);
+      _say('$name made, and this device shows it. Choose its sites next.');
+    } on KitchenApiError catch (e) {
+      _say(e.message);
+    }
+  }
+
+  Future<void> _printerSetup() async {
+    final now = await kitchenPrinter();
+    if (!mounted) return;
+    final v = await showAdaptiveDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final c = TextEditingController(text: now);
+        return AlertDialog.adaptive(
+          title: const Text('Kitchen printer'),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Material(
+              type: MaterialType.transparency,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                TextField(
+                  controller: c,
+                  autofocus: true,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(labelText: 'Address on the Wi-Fi', hintText: '192.168.1.60 or 192.168.1.60:9100'),
+                ),
+                const SizedBox(height: 8),
+                const Text('A network kitchen printer (ESC/POS, port 9100), as the till uses. Empty: this device\'s own printing (AirPrint, Android printing).',
+                    style: TextStyle(fontSize: 12)),
+              ]),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Save')),
+          ],
+        );
+      },
+    );
+    if (v == null) return;
+    await setKitchenPrinter(v);
+    if (v.isEmpty) return _say('Tickets print with this device\'s own printing.');
+    _say(await kitchenPrinterAnswers(v) ? 'The printer at $v answers.' : 'Saved, but the printer at $v did not answer.');
+  }
+
+  /// The kitchen's network and hardware: how tickets reach it, and its printer.
+  void _openConnections() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ConnectionPage(mode: ConnectionMode.kitchen, sections: _connections),
+    ));
+  }
+
+  List<ConnSection> _connections(WidgetRef ref) {
+    final board = ref.read(ticketBoardProvider);
+    final s = ref.read(kitchenSessionProvider).value ?? KitchenSession.empty;
+    final lan = LanService.instance;
+    final updated = board.lastUpdated;
+    return [
+      ConnSection('How tickets arrive', [
+        ConnRow(Icons.lan_rounded, 'From the tills, over the Wi-Fi',
+            lan.node == null
+                ? 'Not started'
+                : lan.linked
+                    ? 'Linked: tickets land in milliseconds, with or without the internet'
+                    : 'Looking for the main till on this network',
+            ok: lan.linked),
+        ConnRow(Icons.cloud_sync_rounded, 'From the back office, live',
+            board.online
+                ? 'Live${updated == null ? '' : ', updated ${TimeOfDay.fromDateTime(updated).format(context)}'}'
+                : 'Reconnecting: the tills still reach this kitchen over the Wi-Fi',
+            ok: board.online),
+        ConnRow(Icons.outbox_rounded, 'Waiting to send', board.queuedActions == 0 ? 'Nothing' : '${board.queuedActions} done or recalled, sent when back',
+            ok: board.queuedActions == 0),
+      ], warnings: [
+        if (!board.online && !lan.linked) 'This kitchen can hear neither the back office nor the tills. Check the Wi-Fi.',
+      ]),
+      ConnSection('This kitchen', [
+        ConnRow(Icons.soup_kitchen_rounded, 'Name', s.screen.isBuiltIn ? 'Not named (every station)' : s.screen.name, neutral: true, onTap: _rename),
+        ConnRow(Icons.store_mall_directory_rounded, 'Sites it cooks for', s.sitesLabel, neutral: true, onTap: _chooseSites),
+        ConnRow(Icons.view_column_rounded, 'Stations',
+            s.screen.stations.isEmpty ? 'Every station' : s.screen.stations.map(s.labelFor).join(', '), neutral: true),
+      ]),
+    ];
   }
 
   Future<void> _pickBoard() async {
@@ -131,7 +322,11 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
             child: ListTile(
               leading: Icon(p.isBuiltIn ? Icons.select_all_rounded : Icons.view_column_rounded),
               title: Text(p.name),
-              subtitle: Text(p.stations.isEmpty ? 'Every station' : p.stations.map(session.labelFor).join(', ')),
+              subtitle: Text([
+                p.stations.isEmpty ? 'Every station' : p.stations.map(session.labelFor).join(', '),
+                if (p.sites.isNotEmpty)
+                  [for (final x in session.sites) if (p.sites.contains(x.id)) x.name].join(', '),
+              ].join(' · ')),
               trailing: p.id == session.screen.id ? const Icon(Icons.check_rounded) : null,
               onTap: () => Navigator.pop(c, p),
             ),
@@ -142,15 +337,91 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
   }
 
   Future<void> _settings() => showModeSettings(context, ref, extra: [
+        Consumer(builder: (c, ref, _) {
+          final s = ref.watch(kitchenSessionProvider).value ?? KitchenSession.empty;
+          void go(VoidCallback then) {
+            Navigator.pop(c);
+            then();
+          }
+
+          return Card(
+            child: Column(children: [
+              ListTile(
+                leading: const Icon(Icons.soup_kitchen_rounded),
+                title: Text(s.screen.isBuiltIn ? 'Name this kitchen' : s.screen.name),
+                subtitle: Text(s.screen.isBuiltIn ? 'So the tills and the back office can send to it by name.' : 'Rename this kitchen'),
+                trailing: const Icon(Icons.edit_rounded),
+                onTap: () => go(_rename),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.store_mall_directory_rounded),
+                title: const Text('Sites it cooks for'),
+                subtitle: Text(s.sites.isEmpty ? 'Every site (the venue has no sites set up)' : s.sitesLabel),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => go(_chooseSites),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.view_column_rounded),
+                title: const Text('Which kitchen this device shows'),
+                subtitle: Text(s.screen.name),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => go(_pickBoard),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.add_rounded),
+                title: const Text('Add a kitchen'),
+                subtitle: const Text('Another kitchen, for other sites or stations'),
+                onTap: () => go(_addKitchen),
+              ),
+            ]),
+          );
+        }),
+        Card(
+          child: Column(children: [
+            ListTile(
+              leading: const Icon(Icons.print_rounded),
+              title: const Text('Kitchen printer'),
+              subtitle: FutureBuilder<String>(
+                future: kitchenPrinter(),
+                builder: (_, v) => Text((v.data ?? '').isEmpty ? 'This device\'s own printing' : v.data!),
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                Navigator.pop(context);
+                _printerSetup();
+              },
+            ),
+            const Divider(height: 1),
+            FutureBuilder<bool>(
+              future: kitchenAutoPrint(),
+              builder: (c, v) => StatefulBuilder(builder: (c, set) {
+                var on = v.data ?? false;
+                return SwitchListTile(
+                  secondary: const Icon(Icons.receipt_long_rounded),
+                  title: const Text('Print each new ticket'),
+                  value: on,
+                  onChanged: (x) async {
+                    await setKitchenAutoPrint(x);
+                    set(() => on = x);
+                    if (c.mounted) (c as Element).markNeedsBuild();
+                  },
+                );
+              }),
+            ),
+          ]),
+        ),
         Card(
           child: ListTile(
-            leading: const Icon(Icons.view_column_rounded),
-            title: const Text('Board'),
-            subtitle: Text(ref.read(kitchenSessionProvider).value?.screen.name ?? 'All stations'),
+            leading: const Icon(Icons.router_rounded),
+            title: const Text('Network and hardware'),
+            subtitle: const Text('How tickets reach this kitchen: the tills over Wi-Fi, the back office, the printer'),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () {
               Navigator.pop(context);
-              _pickBoard();
+              _openConnections();
             },
           ),
         ),
@@ -220,7 +491,11 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
           onTap: _pickBoard,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(profile.name, style: t.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
-            Text(session?.officeName ?? ref.watch(tapProvider.select((s) => s.venue?.name)) ?? 'Kitchen',
+            Text(
+                [
+                  session?.officeName ?? ref.watch(tapProvider.select((s) => s.venue?.name)) ?? 'Kitchen',
+                  if ((session?.sites ?? const []).isNotEmpty) session!.sitesLabel,
+                ].join(' · '),
                 style: t.bodySmall?.copyWith(color: Colors.white60)),
           ]),
         ),
@@ -274,6 +549,12 @@ String _elapsed(Duration d) {
   return h > 0 ? '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}' : '$m:${s.toString().padLeft(2, '0')}';
 }
 
+/// How tall every ticket box is on the board (2026-11-04: "every box should
+/// have same height and width; if items are not visible, tap and then show").
+/// The same for every ticket, so the board reads as a grid; a ticket with more
+/// than fits says so and opens whole when tapped.
+double _boxHeight(bool phone) => phone ? 300 : 340;
+
 class _OpenBoard extends ConsumerWidget {
   const _OpenBoard({required this.tickets, required this.session, required this.now, required this.profile, required this.flash, required this.phone});
   final List<Ticket> tickets;
@@ -286,6 +567,8 @@ class _OpenBoard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final board = ref.read(ticketBoardProvider.notifier);
+    final height = _boxHeight(phone);
+    void open(Ticket t) => showFullTicket(context, ticket: t, profile: profile);
     if (phone) {
       return ListView.separated(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
@@ -307,43 +590,120 @@ class _OpenBoard extends ConsumerWidget {
               await board.bump(ticket);
               return true;
             },
-            child: _TicketCard(ticket: ticket, session: session, now: now, profile: profile, flash: flash.contains(ticket.id)),
+            child: SizedBox(
+              height: height,
+              child: _TicketCard(ticket: ticket, session: session, now: now, profile: profile, flash: flash.contains(ticket.id), onOpen: () => open(ticket)),
+            ),
           );
         },
       );
     }
     return LayoutBuilder(builder: (context, box) {
       final columns = (profile.columns > 0 ? profile.columns : (box.maxWidth / 300).floor()).clamp(1, 8);
-      // Oldest first along the row, then the next row: each card into the
-      // shortest column so far, as the wall screen lays them out.
-      final cols = List.generate(columns, (_) => <Ticket>[]);
-      final heights = List.filled(columns, 0);
-      for (final t in tickets) {
-        var c = 0;
-        for (var i = 1; i < columns; i++) {
-          if (heights[i] < heights[c]) c = i;
-        }
-        cols[c].add(t);
-        heights[c] += 3 + t.linesFor(profile.stations).length;
-      }
-      return SingleChildScrollView(
+      // Oldest first along the row, then the next row, every box the same
+      // size, as the wall screen lays them out.
+      return GridView.builder(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          for (var i = 0; i < columns; i++) ...[
-            if (i > 0) const SizedBox(width: 12),
-            Expanded(
-              child: Column(children: [
-                for (final t in cols[i]) ...[
-                  _TicketCard(ticket: t, session: session, now: now, profile: profile, flash: flash.contains(t.id)),
-                  const SizedBox(height: 12),
-                ],
-              ]),
-            ),
-          ],
-        ]),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          mainAxisExtent: height,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+        ),
+        itemCount: tickets.length,
+        itemBuilder: (context, i) {
+          final t = tickets[i];
+          return _TicketCard(
+            key: ValueKey('card-${t.id}'),
+            ticket: t,
+            session: session,
+            now: now,
+            profile: profile,
+            flash: flash.contains(t.id),
+            onOpen: () => open(t),
+          );
+        },
       );
     });
   }
+}
+
+/// The whole ticket, every item, with its actions: what a box on the board
+/// opens to when it has more than fits.
+Future<void> showFullTicket(BuildContext context, {required Ticket ticket, required ScreenProfile profile}) {
+  HapticFeedback.selectionClick();
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    backgroundColor: const Color(0xFF0B0E0A),
+    constraints: const BoxConstraints(maxWidth: 640),
+    builder: (c) => Theme(
+      data: Tp.theme(Brightness.dark),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.8,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        builder: (c, scroll) => Consumer(builder: (c, ref, _) {
+          final board = ref.watch(ticketBoardProvider);
+          final session = ref.watch(kitchenSessionProvider).value ?? KitchenSession.empty;
+          // The live copy, so a line crossed off here crosses off at once.
+          final live = board.tickets.where((x) => x.id == ticket.id).firstOrNull ?? ticket;
+          return SingleChildScrollView(
+            controller: scroll,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _TicketCard(ticket: live, session: session, now: board.now, profile: profile, onDone: () => Navigator.pop(c)),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                    onPressed: () {
+                      HapticFeedback.mediumImpact();
+                      ref.read(ticketBoardProvider.notifier).rush(live, !live.rushed);
+                    },
+                    icon: const Icon(Icons.bolt_rounded, color: _amber),
+                    label: Text(live.rushed ? 'Take off rush' : 'Rush'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      try {
+                        await printKitchenTicket(live, session, profile, allergens: ref.read(allergenLabelsProvider).value ?? const {});
+                      } catch (e) {
+                        messenger.showSnackBar(SnackBar(content: Text('$e')));
+                      }
+                    },
+                    icon: const Icon(Icons.print_rounded),
+                    label: const Text('Print'),
+                  ),
+                ),
+              ]),
+              if (live.terminal != null || live.siteId != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  [
+                    if (live.terminal != null) 'From ${live.terminal}',
+                    if (live.siteId != null)
+                      session.sites.where((s) => s.id == live.siteId).map((s) => s.name).firstOrNull ?? 'site ${live.siteId}',
+                  ].join(' · '),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(c).textTheme.bodySmall?.copyWith(color: Colors.white54),
+                ),
+              ],
+            ]),
+          );
+        }),
+      ),
+    ),
+  );
 }
 
 class _SwipeBack extends StatelessWidget {
@@ -365,13 +725,24 @@ class _SwipeBack extends StatelessWidget {
       );
 }
 
+/// A ticket. On the board ([onOpen] set) it fills the box it is given and its
+/// items are clipped to it, with "More" and the whole ticket a tap away; in
+/// the full view it is as long as it needs.
 class _TicketCard extends ConsumerWidget {
-  const _TicketCard({required this.ticket, required this.session, required this.now, required this.profile, this.flash = false});
+  const _TicketCard({super.key, required this.ticket, required this.session, required this.now, required this.profile, this.flash = false, this.onOpen, this.onDone});
   final Ticket ticket;
   final KitchenSession session;
   final DateTime now;
   final ScreenProfile profile;
   final bool flash;
+
+  /// Set on the board: the box is a fixed size and a tap opens the whole ticket.
+  final VoidCallback? onOpen;
+
+  /// After Done, in the full view (to close it).
+  final VoidCallback? onDone;
+
+  bool get _boxed => onOpen != null;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -380,6 +751,71 @@ class _TicketCard extends ConsumerWidget {
     final lines = ticket.linesFor(profile.stations);
     final colour = _ageColour(ticket, profile, now);
     final labels = ref.watch(allergenLabelsProvider).value ?? const {};
+
+    final items = Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+      if ((ticket.note ?? '').isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+          child: Text(ticket.note!, style: t.bodyMedium?.copyWith(color: _amber, fontStyle: FontStyle.italic)),
+        ),
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          for (final l in lines)
+            InkWell(
+              // On the board a tap opens the whole ticket; items are crossed
+              // off there, or here in the full view.
+              onTap: _boxed
+                  ? onOpen
+                  : l.isModifier
+                      ? null
+                      : () {
+                          HapticFeedback.selectionClick();
+                          board.setLineMade(ticket, l.id, !l.made);
+                        },
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(l.isModifier ? 40 : 14, 5, 14, 5),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  if (!l.isModifier)
+                    SizedBox(
+                      width: 34,
+                      child: Text('${l.quantityLabel}×',
+                          style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: l.made ? Colors.white38 : Colors.white)),
+                    ),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(
+                        l.name,
+                        style: (l.isModifier ? t.bodyMedium : t.titleMedium)?.copyWith(
+                          fontWeight: l.isModifier ? FontWeight.w500 : FontWeight.w700,
+                          color: l.made ? Colors.white38 : (l.isModifier ? Colors.white70 : Colors.white),
+                          decoration: l.made ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                      if ((l.note ?? '').isNotEmpty)
+                        Text(l.note!, style: t.bodySmall?.copyWith(color: _amber, fontStyle: FontStyle.italic)),
+                      if (l.allergens.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Wrap(spacing: 4, runSpacing: 4, children: [
+                            for (final a in l.allergens)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                decoration: BoxDecoration(color: _red.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
+                                child: Text(labels[a] ?? a, style: const TextStyle(color: _red, fontSize: 11, fontWeight: FontWeight.w700)),
+                              ),
+                          ]),
+                        ),
+                    ]),
+                  ),
+                  if (l.made) const Icon(Icons.check_rounded, color: Tp.lime, size: 20),
+                ]),
+              ),
+            ),
+        ]),
+      ),
+    ]);
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 400),
       curve: const Cubic(0.2, 0, 0, 1),
@@ -393,6 +829,7 @@ class _TicketCard extends ConsumerWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         // The header: where it goes, how long it has waited.
         InkWell(
+          onTap: onOpen,
           onLongPress: () => _actions(context, ref),
           child: Container(
             color: colour.withValues(alpha: 0.16),
@@ -417,6 +854,8 @@ class _TicketCard extends ConsumerWidget {
                       if (ticket.staffName != null) ticket.staffName!,
                       if ((ticket.covers ?? 0) > 0) '${ticket.covers} covers',
                     ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: t.bodySmall?.copyWith(color: Colors.white70),
                   ),
                 ]),
@@ -426,71 +865,16 @@ class _TicketCard extends ConsumerWidget {
             ]),
           ),
         ),
-        if ((ticket.note ?? '').isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
-            child: Text(ticket.note!, style: t.bodyMedium?.copyWith(color: _amber, fontStyle: FontStyle.italic)),
-          ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            for (final l in lines)
-              InkWell(
-                onTap: l.isModifier
-                    ? null
-                    : () {
-                        HapticFeedback.selectionClick();
-                        board.setLineMade(ticket, l.id, !l.made);
-                      },
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(l.isModifier ? 40 : 14, 5, 14, 5),
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    if (!l.isModifier)
-                      SizedBox(
-                        width: 34,
-                        child: Text('${l.quantityLabel}×',
-                            style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: l.made ? Colors.white38 : Colors.white)),
-                      ),
-                    Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(
-                          l.name,
-                          style: (l.isModifier ? t.bodyMedium : t.titleMedium)?.copyWith(
-                            fontWeight: l.isModifier ? FontWeight.w500 : FontWeight.w700,
-                            color: l.made ? Colors.white38 : (l.isModifier ? Colors.white70 : Colors.white),
-                            decoration: l.made ? TextDecoration.lineThrough : null,
-                          ),
-                        ),
-                        if ((l.note ?? '').isNotEmpty)
-                          Text(l.note!, style: t.bodySmall?.copyWith(color: _amber, fontStyle: FontStyle.italic)),
-                        if (l.allergens.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 3),
-                            child: Wrap(spacing: 4, runSpacing: 4, children: [
-                              for (final a in l.allergens)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                                  decoration: BoxDecoration(color: _red.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
-                                  child: Text(labels[a] ?? a, style: const TextStyle(color: _red, fontSize: 11, fontWeight: FontWeight.w700)),
-                                ),
-                            ]),
-                          ),
-                      ]),
-                    ),
-                    if (l.made) const Icon(Icons.check_rounded, color: Tp.lime, size: 20),
-                  ]),
-                ),
-              ),
-          ]),
-        ),
+        if (_boxed) Expanded(child: _Clipped(onOpen: onOpen!, child: items)) else items,
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           child: FilledButton.icon(
-            key: ValueKey('bump-${ticket.id}'),
+            key: ValueKey('bump-${ticket.id}${_boxed ? '' : '-full'}'),
             style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50), backgroundColor: Tp.lime, foregroundColor: Colors.black),
             onPressed: () {
               HapticFeedback.mediumImpact();
               board.bump(ticket);
+              onDone?.call();
             },
             icon: const Icon(Icons.check_rounded),
             label: const Text('Done', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
@@ -517,6 +901,15 @@ class _TicketCard extends ConsumerWidget {
               board.rush(ticket, !ticket.rushed);
             },
           ),
+          if (onOpen != null)
+            ListTile(
+              leading: const Icon(Icons.open_in_full_rounded),
+              title: const Text('See the whole ticket'),
+              onTap: () {
+                Navigator.pop(c);
+                onOpen!();
+              },
+            ),
           ListTile(
             leading: const Icon(Icons.check_circle_rounded, color: Tp.lime),
             title: const Text('Mark it done'),
@@ -528,6 +921,91 @@ class _TicketCard extends ConsumerWidget {
         ]),
       ),
     );
+  }
+}
+
+/// A box's items, cut off at the box's bottom edge. When they run past it, a
+/// fade and "More · tap to see all" say so, and a tap opens the whole ticket.
+class _Clipped extends StatefulWidget {
+  const _Clipped({required this.child, required this.onOpen});
+  final Widget child;
+  final VoidCallback onOpen;
+
+  @override
+  State<_Clipped> createState() => _ClippedState();
+}
+
+class _ClippedState extends State<_Clipped> {
+  final _scroll = ScrollController();
+  bool _more = false;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _measure() {
+    if (!mounted || !_scroll.hasClients) return;
+    final more = _scroll.position.maxScrollExtent > 1;
+    if (more != _more) setState(() => _more = more);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+    return Stack(children: [
+      Positioned.fill(
+        child: NotificationListener<ScrollMetricsNotification>(
+          onNotification: (_) {
+            WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+            return false;
+          },
+          child: SingleChildScrollView(
+            controller: _scroll,
+            physics: const NeverScrollableScrollPhysics(),
+            child: widget.child,
+          ),
+        ),
+      ),
+      if (_more)
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: GestureDetector(
+            key: const ValueKey('ticket-more'),
+            onTap: widget.onOpen,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 22, 14, 6),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x00171B15), Color(0xF2171B15), Color(0xFF171B15)],
+                  stops: [0, 0.55, 1],
+                ),
+              ),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(99)),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.unfold_more_rounded, size: 16, color: Colors.white),
+                    SizedBox(width: 4),
+                    Flexible(
+                      child: Text('More · tap to see all',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        ),
+    ]);
   }
 }
 
@@ -679,5 +1157,52 @@ class _Message extends StatelessWidget {
         ]),
       ),
     );
+  }
+}
+
+/// Tick the sites a kitchen cooks for; none ticked is every site.
+class _SitesSheet extends StatefulWidget {
+  const _SitesSheet({required this.sites, required this.chosen, required this.kitchen});
+  final List<KitchenSite> sites;
+  final Set<int> chosen;
+  final String kitchen;
+
+  @override
+  State<_SitesSheet> createState() => _SitesSheetState();
+}
+
+class _SitesSheetState extends State<_SitesSheet> {
+  late final Set<int> _on = {...widget.chosen};
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return SafeArea(
+      child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), children: [
+        Text('Sites for ${widget.kitchen}', style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 4),
+        Text('Orders from these sites\' tills come to this kitchen. None ticked: every site.', style: t.bodySmall),
+        const SizedBox(height: 8),
+        for (final s in widget.sites)
+          CheckboxListTile(
+            key: ValueKey('site-${s.id}'),
+            value: _on.contains(s.id),
+            title: Text(s.name),
+            secondary: CircleAvatar(radius: 8, backgroundColor: _hex(s.colour) ?? Tp.lime),
+            onChanged: (v) => setState(() => v == true ? _on.add(s.id) : _on.remove(s.id)),
+          ),
+        const SizedBox(height: 8),
+        FilledButton(
+          key: const ValueKey('sites-save'),
+          onPressed: () => Navigator.pop(context, _on),
+          child: Text(_on.isEmpty ? 'Every site' : 'Save ${_on.length} site${_on.length == 1 ? '' : 's'}'),
+        ),
+      ]),
+    );
+  }
+
+  static Color? _hex(String? v) {
+    final m = RegExp(r'^#?([0-9a-fA-F]{6})$').firstMatch(v ?? '');
+    return m == null ? null : Color(int.parse('FF${m.group(1)}', radix: 16));
   }
 }

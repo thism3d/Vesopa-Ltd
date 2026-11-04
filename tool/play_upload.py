@@ -229,6 +229,14 @@ def main():
     venue_dir = (ROOT / args[0]).resolve()
     store = venue_dir / "store"
     p = json.loads((store / "play.json").read_text(encoding="utf-8"))
+    # An app that keeps its testers' notes in store/what_to_test.json (Vesopa
+    # Go, 2026-11-04) gets this release's from there, not play.json's old ones.
+    wtt = store / "what_to_test.json"
+    if wtt.is_file():
+        notes = json.loads(wtt.read_text(encoding="utf-8"))
+        text = notes.get("release_notes", "").strip()
+        if text:
+            p["release_notes"] = text[:500]
     v = json.loads((venue_dir / "venue.json").read_text(encoding="utf-8"))
     track = option("--track") or p.get("track", "internal")
     only = option("--only") or ("listing" if "--listing" in sys.argv else None)

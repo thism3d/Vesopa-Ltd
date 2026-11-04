@@ -30,6 +30,25 @@ class KitchenApiError implements Exception {
 }
 
 /// Everything a screen needs to draw itself, fetched in one call.
+/// One of the venue's sites: a named group of its tills (Devices › Sites).
+class KitchenSite {
+  const KitchenSite({required this.id, required this.name, this.colour});
+
+  final int id;
+  final String name;
+
+  /// '#rrggbb', or null for the default.
+  final String? colour;
+
+  factory KitchenSite.fromJson(Map<String, dynamic> j) => KitchenSite(
+    id: (j['id'] as num?)?.toInt() ?? 0,
+    name: '${j['name'] ?? 'Site'}',
+    colour: j['colour'] as String?,
+  );
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, if (colour != null) 'colour': colour};
+}
+
 class KitchenProfile {
   const KitchenProfile({
     required this.office,
@@ -38,9 +57,14 @@ class KitchenProfile {
     this.userName,
     this.stationNames = const {},
     this.branding = KitchenBranding.standard,
+    this.sites = const [],
   });
 
   final String office;
+
+  /// The venue's sites (2026-11-04), for naming and choosing the ones a
+  /// kitchen cooks for. Empty for a venue with no sites set up.
+  final List<KitchenSite> sites;
 
   /// The venue's trading name. Shown on the info panel; never on the board,
   /// which has no room for anything that is not an order.
@@ -89,6 +113,10 @@ class KitchenProfile {
         .cast<Map<String, dynamic>>()
         .map(ScreenProfile.fromJson)
         .toList(),
+    sites: [
+      for (final s in (j['sites'] as List?) ?? const [])
+        if (s is Map) KitchenSite.fromJson(s.cast<String, dynamic>()),
+    ],
   );
 
   Map<String, dynamic> toJson() => {
@@ -98,6 +126,7 @@ class KitchenProfile {
     'stationNames': stationNames,
     'branding': branding.toJson(),
     'screens': [for (final s in screens) s.toJson()],
+    'sites': [for (final s in sites) s.toJson()],
   };
 }
 
@@ -386,6 +415,40 @@ class KitchenApi {
       body: {...branding.toJson(), 'password': password},
     );
     return KitchenBranding.fromJson(body);
+  }
+
+  /// Name this kitchen, choose its stations or sites (2026-11-04), from the
+  /// screen itself. Answers the venue's profile, re-read. [password] is the
+  /// kitchen login's; a screen set up with an account needs none.
+  Future<KitchenProfile> saveScreen(
+    int id, {
+    String? name,
+    Set<int>? sites,
+    Set<String>? stations,
+    String? password,
+  }) async => KitchenProfile.fromJson(
+    await _send('PUT', '/api/kitchen/profile/screens/$id', body: {
+      'name': ?name,
+      if (sites != null) 'sites': sites.toList(),
+      if (stations != null) 'stations': stations.toList(),
+      'password': ?password,
+    }),
+  );
+
+  /// A new named kitchen. Answers its id and the venue's profile, re-read.
+  Future<({int id, KitchenProfile profile})> createScreen({
+    required String name,
+    Set<int> sites = const {},
+    Set<String> stations = const {},
+    String? password,
+  }) async {
+    final body = await _send('POST', '/api/kitchen/profile/screens', body: {
+      'name': name,
+      'sites': sites.toList(),
+      'stations': stations.toList(),
+      'password': ?password,
+    });
+    return (id: (body['id'] as num?)?.toInt() ?? 0, profile: KitchenProfile.fromJson(body));
   }
 
   /// The same call as [_send], for the routes that answer with a JSON array.

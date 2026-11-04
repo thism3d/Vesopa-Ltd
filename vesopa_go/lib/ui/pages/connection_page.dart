@@ -19,8 +19,43 @@ import '../../data/lan/lan_service.dart';
 import '../../data/session.dart';
 import '../theme.dart';
 
+/// One line on the page: what it is, how it is, and whether that is good.
+class ConnRow {
+  const ConnRow(this.icon, this.label, this.value, {this.ok = true, this.neutral = false, this.onTap, this.trailing});
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool ok;
+
+  /// Information, not a state: no green or amber dot.
+  final bool neutral;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+}
+
+/// A titled group of rows, for what a kitchen or a display adds of its own.
+class ConnSection {
+  const ConnSection(this.title, this.rows, {this.warnings = const []});
+  final String title;
+  final List<ConnRow> rows;
+
+  /// Shown at the top of the page while they hold.
+  final List<String> warnings;
+}
+
+/// What the device runs as: the till's rows (card reader, receipt printer,
+/// live updates) are a till's only.
+enum ConnectionMode { epos, kitchen, display }
+
 class ConnectionPage extends ConsumerStatefulWidget {
-  const ConnectionPage({super.key});
+  const ConnectionPage({super.key, this.mode = ConnectionMode.epos, this.sections});
+
+  final ConnectionMode mode;
+
+  /// The kitchen's or display's own sections (2026-11-04), read again on
+  /// every refresh so they stay live.
+  final List<ConnSection> Function(WidgetRef ref)? sections;
+
   @override
   ConsumerState<ConnectionPage> createState() => _ConnectionPageState();
 }
@@ -51,6 +86,7 @@ class _ConnectionPageState extends ConsumerState<ConnectionPage> {
     _lan = LanService.instance.changes.listen((_) {
       if (mounted) setState(() {});
     });
+    if (widget.mode != ConnectionMode.epos) return;
     ref.read(paymentsProvider).whyUnavailable().then((why) {
       if (mounted) setState(() => _reader = why ?? 'Ready');
     });
@@ -111,6 +147,8 @@ class _ConnectionPageState extends ConsumerState<ConnectionPage> {
     final myIps = {for (final n in wifi) ...n.addresses};
     String subnet(String ip) => ip.split('.').take(3).join('.');
     final sameNet = peers.where((p) => myIps.any((ip) => subnet(ip) == subnet(p.address.address))).length;
+    final epos = widget.mode == ConnectionMode.epos;
+    final own = widget.sections?.call(ref) ?? const <ConnSection>[];
 
     final warnings = <String>[
       if (_reachable == false) 'The back office cannot be reached. Orders wait on this device and send when it is back.',
@@ -120,7 +158,8 @@ class _ConnectionPageState extends ConsumerState<ConnectionPage> {
       if (peers.isNotEmpty && wifi.isNotEmpty && sameNet == 0)
         'This device is on a different network (${subnet(wifi.first.addresses.first)}.x) from the tills. Join the same Wi-Fi, or the till\'s hotspot (Settings > Network and hardware on the till).',
       if (vpn.isNotEmpty) 'A VPN is on. It can keep this device away from the tills on the venue network.',
-      if (s.pendingSync > 0) '${s.pendingSync} waiting to send to the back office.',
+      if (epos && s.pendingSync > 0) '${s.pendingSync} waiting to send to the back office.',
+      for (final x in own) ...x.warnings,
     ];
 
     return Scaffold(
@@ -129,7 +168,11 @@ class _ConnectionPageState extends ConsumerState<ConnectionPage> {
         onRefresh: _check,
         child: ListView(padding: const EdgeInsets.all(16), children: [
           if (warnings.isEmpty)
-            _banner(Icons.check_circle_rounded, Tp.lime, 'All connected', 'Back office, live updates and the venue network are working.')
+            _banner(Icons.check_circle_rounded, Tp.lime, 'All connected', switch (widget.mode) {
+              ConnectionMode.kitchen => 'Tickets reach this kitchen from the tills and the back office.',
+              ConnectionMode.display => 'This display hears its till over the venue network and the back office.',
+              ConnectionMode.epos => 'Back office, live updates and the venue network are working.',
+            })
           else
             for (final w in warnings) _banner(Icons.warning_amber_rounded, const Color(0xFFF0A23B), null, w),
           _title('This device'),
@@ -143,11 +186,20 @@ class _ConnectionPageState extends ConsumerState<ConnectionPage> {
           _card([
             _row(Icons.cloud_done_rounded, 'Back office', _reachable == null ? 'Checking…' : _reachable! ? 'Reachable' : 'Cannot be reached', _reachable ?? false),
             _pingRow(ping, avg),
-            _row(Icons.bolt_rounded, 'Live updates', notifier.live
-                ? 'Connected · ${notifier.liveHeard} heard${notifier.liveHeardAt == null ? '' : ', last ${_ago(notifier.liveHeardAt!)}'}'
-                : 'Reconnecting', notifier.live),
-            _row(Icons.outbox_rounded, 'Waiting to send', s.pendingSync == 0 ? 'Nothing' : '${s.pendingSync}', s.pendingSync == 0),
+            if (epos) ...[
+              _row(Icons.bolt_rounded, 'Live updates', notifier.live
+                  ? 'Connected · ${notifier.liveHeard} heard${notifier.liveHeardAt == null ? '' : ', last ${_ago(notifier.liveHeardAt!)}'}'
+                  : 'Reconnecting', notifier.live),
+              _row(Icons.outbox_rounded, 'Waiting to send', s.pendingSync == 0 ? 'Nothing' : '${s.pendingSync}', s.pendingSync == 0),
+            ],
           ]),
+          for (final x in own) ...[
+            _title(x.title),
+            _card([
+              for (final r in x.rows)
+                _row(r.icon, r.label, r.value, r.ok, neutral: r.neutral, onTap: r.onTap, trailing: r.trailing),
+            ]),
+          ],
           _title('Venue network'),
           _card([
             _row(Icons.lan_rounded, 'Local link', node == null
@@ -159,12 +211,17 @@ class _ConnectionPageState extends ConsumerState<ConnectionPage> {
                         : 'Looking for the main till', lan.linked),
             for (final p in peers)
               _row(p.claimsHub ? Icons.star_rounded : Icons.point_of_sale_rounded, p.name, '${p.role} · ${p.address.address}', true, neutral: true),
+            _row(Icons.settings_ethernet_rounded, 'How it connects',
+                'Found on the Wi-Fi by UDP 47820, then a direct TCP link on 47821 to the main till. '
+                'The back office carries everything when the venue network cannot.', true, neutral: true),
           ]),
-          _title('Hardware'),
-          _card([
-            _row(Icons.contactless_rounded, 'Card reader', _reader ?? 'Checking…', _reader == 'Ready'),
-            _row(Icons.print_rounded, 'Receipt printer', _printer.isEmpty ? 'None set' : _printer, _printer.isNotEmpty, neutral: _printer.isEmpty),
-          ]),
+          if (epos) ...[
+            _title('Hardware'),
+            _card([
+              _row(Icons.contactless_rounded, 'Card reader', _reader ?? 'Checking…', _reader == 'Ready'),
+              _row(Icons.print_rounded, 'Receipt printer', _printer.isEmpty ? 'None set' : _printer, _printer.isNotEmpty, neutral: _printer.isEmpty),
+            ]),
+          ],
           const SizedBox(height: 16),
           Text(
             Platform.isIOS
@@ -221,18 +278,21 @@ class _ConnectionPageState extends ConsumerState<ConnectionPage> {
         ]),
       );
 
-  Widget _row(IconData icon, String label, String value, bool ok, {bool neutral = false}) => ListTile(
+  Widget _row(IconData icon, String label, String value, bool ok,
+          {bool neutral = false, VoidCallback? onTap, Widget? trailing}) =>
+      ListTile(
         leading: Icon(icon),
         title: Text(label),
         subtitle: Text(value),
-        trailing: neutral
-            ? null
+        onTap: onTap,
+        trailing: trailing ?? (neutral
+            ? (onTap == null ? null : const Icon(Icons.chevron_right_rounded))
             : AnimatedContainer(
                 duration: const Duration(milliseconds: 400),
                 width: 12,
                 height: 12,
                 decoration: BoxDecoration(shape: BoxShape.circle, color: ok ? Tp.lime : const Color(0xFFF0A23B)),
-              ),
+              )),
       );
 
   /// The last answer time, with the last twenty as bars.

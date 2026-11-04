@@ -1184,7 +1184,7 @@ class TapSession extends Notifier<TapState> {
     ];
     _put(bill.copyWith(lines: lines, voids: [...bill.voids, record]));
     final ticket = kitchenTicket(bill, [line.copyWith(quantity: q, note: 'VOID: $reason')],
-        id: _uuid.v4(), office: state.venue?.office ?? '', kind: 'void');
+        id: _uuid.v4(), office: state.venue?.office ?? '', kind: 'void', terminal: terminalName);
     if (ticket != null && !state.demo) unawaited(_outbox.add('/till/kitchen/tickets', ticket).then((_) => _flushOutbox()));
   }
 
@@ -1199,7 +1199,7 @@ class TapSession extends Notifier<TapState> {
     final going = bill.lines.where(which).toList();
     if (going.isEmpty) return 0;
     final ticketId = _uuid.v4();
-    final ticket = kitchenTicket(bill, going, id: ticketId, office: state.venue?.office ?? '',
+    final ticket = kitchenTicket(bill, going, id: ticketId, office: state.venue?.office ?? '', terminal: terminalName,
         roomName: bill.tableId == null ? null : state.tables.where((t) => t.id == bill.tableId).firstOrNull?.area);
     final ids = {for (final l in going) l.id};
     _put(bill.copyWith(

@@ -64,9 +64,17 @@ STORE = {
 DESCRIPTION = ("Vesopa Go: take orders and payments anywhere in a Vesopa EPOS venue, at the counter or "
                "the table. Seat a table, send the order to the kitchen, split and pay the bill by card or "
                "cash, and see the day's sales. Sign in with the venue's Vesopa account.")
-WHAT_TO_TEST = ("Vesopa Go 1.2.16 (points, split by item, bills and refunds, Cards page, per-device screen saver): the till on iPad (screens, permissions, customers, memberships, tickets). Sign in with the venue's Vesopa account "
-                "(The Vesopa Kitchen for testers). Open Tables (the floor plan), seat one, order (tap an item twice: it stacks; long-press for a "
-                "note), send it, take the payment, print or email the receipt, then check Reports.")
+def what_to_test():
+    """TestFlight's What to Test, from store/what_to_test.json (2026-11-04: it
+    had said 1.2.16 on every build since). A version that file was not written
+    for says so, rather than passing an old release's notes off as this one's."""
+    notes = json.loads((REPO / "vesopa_go" / "store" / "what_to_test.json").read_text(encoding="utf-8"))
+    text = notes["what_to_test"].strip()
+    if notes.get("version") != version():
+        return f"Vesopa Go {version()}. Notes for {notes.get('version')}: {text}"[:4000]
+    return f"Vesopa Go {version()}. {text}"[:4000]
+
+
 FEEDBACK = "info@vesopasoftware.com"
 PRIVACY = "https://go.vesopa.com/privacy/"
 MARKETING = "https://go.vesopa.com/"
@@ -203,10 +211,10 @@ def cmd_testflight(number):
     try:
         locs = c.all(f"/v1/builds/{build['id']}/betaBuildLocalizations")
         if locs:
-            asc.patch_attributes(c, "betaBuildLocalizations", locs[0]["id"], {"whatsNew": WHAT_TO_TEST}, "What to Test")
+            asc.patch_attributes(c, "betaBuildLocalizations", locs[0]["id"], {"whatsNew": what_to_test()}, "What to Test")
         else:
             c.post("/v1/betaBuildLocalizations", {"data": {
-                "type": "betaBuildLocalizations", "attributes": {"locale": LOCALE, "whatsNew": WHAT_TO_TEST},
+                "type": "betaBuildLocalizations", "attributes": {"locale": LOCALE, "whatsNew": what_to_test()},
                 "relationships": {"build": {"data": {"type": "builds", "id": build["id"]}}}}})
     except asc.AppleError as e:
         asc.todo(f"What to Test: {e.detail()}")

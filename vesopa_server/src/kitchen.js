@@ -116,6 +116,116 @@ function formatStations(list) {
   return stations.length ? stations.join(',') : null;
 }
 
+// ---------------------------------------------------------------------------
+// Which sites a kitchen cooks for (2026-11-04)
+// ---------------------------------------------------------------------------
+//
+// The owner: "Pontardawe RFC has 4 sites so they might have 3 kitchens or maybe
+// 2 kitchens, venues sites should be selected to multiple selected to send to
+// that specific sites." A site is a named group of tills (till_sites.js), so a
+// ticket remembers the till that fired it and the site that till was in, and a
+// screen lists the sites it cooks for. Empty means every site, which is what a
+// one-kitchen venue has always had. Screens filter; the server stores both.
+
+let sitesReady = null;
+let sitesOk = false;
+
+/** Add the columns on first use, so a deploy needs no SQL run by hand. */
+function ensureKitchenSites(pool) {
+  if (!sitesReady) {
+    const add = (sql) => pool.query(sql).catch((e) => {
+      if (!e || e.code !== 'ER_DUP_FIELDNAME') throw e;
+    });
+    sitesReady = add('ALTER TABLE epos_kitchen_tickets ADD COLUMN terminal VARCHAR(120) NULL')
+      .then(() => add('ALTER TABLE epos_kitchen_tickets ADD COLUMN site_id INT NULL'))
+      .then(() => add('ALTER TABLE epos_kitchen_screens ADD COLUMN site_ids VARCHAR(255) NULL'))
+      .then(() => { sitesOk = true; })
+      .catch((e) => {
+        // Tickets still flow without the columns; the next request tries again.
+        console.error('kitchen sites columns', e && e.message);
+        sitesReady = null;
+      });
+  }
+  return sitesReady;
+}
+
+/** Site ids from a list or "1,2", unique and in order. */
+function parseSites(raw) {
+  const list = Array.isArray(raw) ? raw : String(raw || '').split(',');
+  return [...new Set(list.map((s) => Number(s)).filter((n) => Number.isInteger(n) && n > 0))]
+    .sort((a, b) => a - b);
+}
+
+/**
+ * A screen row as the screens and the back office read it. [tillSites] is the
+ * venue's till-to-site map, carried on each screen so a screen hearing a
+ * ticket over the local link can place it with no other lookup.
+ */
+function screenOut(r, tillSites) {
+  const { site_ids: raw, ...rest } = r;
+  return {
+    ...rest,
+    stations: parseStations(r.stations),
+    sites: parseSites(raw),
+    ...(tillSites ? { till_sites: tillSites } : {}),
+  };
+}
+
+/** The storable form. Null for "every site". */
+function formatSites(list) {
+  const sites = parseSites(list).slice(0, 40);
+  return sites.length ? sites.join(',') : null;
+}
+
+/**
+ * The venue's sites, and which site each till is in: the screens' pickers
+ * read the first, and a screen hearing a ticket over the local link (which
+ * carries the till's name, not its site) reads the second.
+ */
+async function venueSites(pool, office) {
+  try {
+    const [sites] = await pool.query(
+      'SELECT id, name, colour FROM bo_till_sites WHERE office = ? ORDER BY sort, name', [office]);
+    const [tills] = await pool.query(
+      'SELECT terminal, label, site_id FROM bo_till_names WHERE office = ? AND site_id IS NOT NULL', [office]);
+    return {
+      sites: sites.map((s) => ({ id: s.id, name: s.name, colour: s.colour || null })),
+      tillSites: Object.fromEntries(tills.map((t) => [t.terminal, t.site_id])),
+      tills: tills.map((t) => ({ terminal: t.terminal, label: t.label || null, siteId: t.site_id })),
+    };
+  } catch (e) {
+    if (e && (e.code === 'ER_NO_SUCH_TABLE' || e.code === 'ER_BAD_FIELD_ERROR')) {
+      return { sites: [], tillSites: {}, tills: [] };
+    }
+    throw e;
+  }
+}
+
+/** Which till a ticket came from: what it says, else the open bill's. */
+async function ticketTerminal(conn, ticket) {
+  const said = String(ticket.terminal || '').trim().slice(0, 120);
+  if (said) return said;
+  try {
+    const [[bill]] = await conn.query(
+      'SELECT terminal FROM epos_open_bills WHERE id = ? AND office = ?',
+      [ticket.order_id || ticket.id, ticket.office]);
+    return (bill && bill.terminal) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function siteOfTill(conn, office, terminal) {
+  if (!terminal) return null;
+  try {
+    const [[row]] = await conn.query(
+      'SELECT site_id FROM bo_till_names WHERE office = ? AND terminal = ?', [office, terminal]);
+    return (row && row.site_id) || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Write one fired ticket: the header, its lines, and a progress row for each
  * station it is waiting on.
@@ -139,11 +249,14 @@ async function recordTicket(conn, ticket) {
     for (const station of parseStations(line.stations)) stations.add(station);
   }
 
+  // The till and its site, when the columns are there (ensureKitchenSites).
+  const where = sitesOk ? await ticketTerminal(conn, ticket) : null;
+  const site = sitesOk ? await siteOfTill(conn, ticket.office, where) : null;
   const [result] = await conn.execute(
     `INSERT IGNORE INTO epos_kitchen_tickets
        (id, office, order_id, ticket_no, kind, table_number, room_name,
-        staff_name, covers, note, placed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        staff_name, covers, note, placed_at${sitesOk ? ', terminal, site_id' : ''})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${sitesOk ? ', ?, ?' : ''})`,
     [
       ticket.id,
       ticket.office,
@@ -158,6 +271,7 @@ async function recordTicket(conn, ticket) {
       ticket.covers ?? null,
       ticket.note ?? null,
       ticket.placed_at ? new Date(ticket.placed_at) : new Date(),
+      ...(sitesOk ? [where, site] : []),
     ]
   );
 
@@ -243,7 +357,7 @@ async function loadTickets(pool, ids) {
 
   const [tickets] = await pool.query(
     `SELECT id, order_id, ticket_no, kind, table_number, room_name, staff_name,
-            covers, note, rushed, placed_at, created_at
+            covers, note, rushed, placed_at, created_at${sitesOk ? ', terminal, site_id' : ''}
        FROM epos_kitchen_tickets
       WHERE id IN (${holes})`,
     ids
@@ -315,6 +429,10 @@ async function loadTickets(pool, ids) {
     note: t.note,
     rushed: t.rushed === 1,
     placedAt: t.placed_at,
+    // The till that fired it and that till's site, for a screen that cooks
+    // for some of the venue's sites only. Null from a kiosk or an old till.
+    terminal: t.terminal || null,
+    siteId: t.site_id || null,
     lines: linesByTicket.get(t.id) || [],
     stations: statesByTicket.get(t.id) || [],
   }));
@@ -329,6 +447,7 @@ async function loadTickets(pool, ids) {
  * across the wire every thirty seconds.
  */
 async function loadBoard(pool, office, recallMinutes) {
+  await ensureKitchenSites(pool);
   const minutes = Math.min(1440, Math.max(1, Number(recallMinutes) || 60));
 
   // One pass, grouped by ticket:
@@ -647,6 +766,44 @@ async function saveKitchenBranding(pool, office, patch) {
 // The back office
 // ---------------------------------------------------------------------------
 
+/** Set a screen's sites. Every site when [list] is empty. */
+async function saveScreenSites(pool, office, id, list) {
+  if (!sitesOk) return;
+  await pool.execute(
+    'UPDATE epos_kitchen_screens SET site_ids = ? WHERE id = ? AND office = ?',
+    [formatSites(list), id, office]);
+}
+
+/** Rename a screen; refuses an empty name or one another screen has. */
+async function renameScreen(pool, office, id, raw) {
+  const name = String(raw || '').trim().slice(0, 80);
+  if (!name) return { status: 400, error: 'The kitchen needs a name.' };
+  const [[clash]] = await pool.query(
+    'SELECT id FROM epos_kitchen_screens WHERE office = ? AND name = ? AND id <> ?', [office, name, id]);
+  if (clash) return { status: 409, error: `This venue already has a kitchen called "${name}".` };
+  await pool.execute('UPDATE epos_kitchen_screens SET name = ? WHERE id = ? AND office = ?', [name, id, office]);
+  return { name };
+}
+
+/**
+ * A new named screen from a till or a kitchen device: a name, and optionally
+ * its stations and sites. The rest takes the venue's defaults.
+ */
+async function createScreen(pool, office, body) {
+  await ensureKitchenSites(pool);
+  const name = String(body.name || '').trim().slice(0, 80);
+  if (!name) return { status: 400, error: 'The kitchen needs a name.' };
+  const [[clash]] = await pool.query(
+    'SELECT id FROM epos_kitchen_screens WHERE office = ? AND name = ?', [office, name]);
+  if (clash) return { status: 409, error: `This venue already has a kitchen called "${name}".` };
+  const [result] = await pool.execute(
+    'INSERT INTO epos_kitchen_screens (office, name, stations) VALUES (?, ?, ?)',
+    [office, name, formatStations(body.stations)]);
+  const id = result.insertId;
+  if (body.sites) await saveScreenSites(pool, office, id, body.sites);
+  return { id };
+}
+
 function kitchenRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
@@ -846,19 +1003,20 @@ function kitchenRoutes({ pool, broadcast, secret }) {
       const [rows] = await pool.query(
         `SELECT id, name, stations, columns_count, tv_size, zoom_percent, touch,
                 warn_seconds, late_seconds,
-                recall_minutes, sound, sort_order
+                recall_minutes, sound, sort_order${sitesOk ? ', site_ids' : ''}
            FROM epos_kitchen_screens
           WHERE office = ?
           ORDER BY sort_order, name`,
         [office]
       );
-      res.json(rows.map((r) => ({ ...r, stations: parseStations(r.stations) })));
+      res.json(rows.map((r) => screenOut(r)));
     } catch (e) {
       next(e);
     }
   });
 
   async function writeScreen(req, res, id) {
+    await ensureKitchenSites(pool);
     // Whether this is a create, decided *before* `id` is reassigned by the
     // insert below. Reading it off `id` afterwards made every create answer
     // 200: by the time the status was chosen, the new row's id was sitting in
@@ -933,6 +1091,9 @@ function kitchenRoutes({ pool, broadcast, secret }) {
       );
       id = result.insertId;
     }
+
+    // Its sites, when the form sent them: every site when none are ticked.
+    if (sent('sites')) await saveScreenSites(pool, office, id, req.body.sites);
 
     // Every screen in the venue re-reads its profile. A manager who widens the
     // grill board should see it widen on the wall, not at the next restart.
@@ -1078,6 +1239,8 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
    * visible pause.
    */
   async function profile(office) {
+    await ensureKitchenSites(pool);
+    const place = await venueSites(pool, office);
     const [[venue]] = await pool.query(
       'SELECT name, status FROM offices WHERE contact_email = ?',
       [office]
@@ -1085,7 +1248,7 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
     const [screens] = await pool.query(
       `SELECT id, name, stations, columns_count, tv_size, zoom_percent, touch,
                 warn_seconds, late_seconds,
-              recall_minutes, sound, sort_order
+              recall_minutes, sound, sort_order${sitesOk ? ', site_ids' : ''}
          FROM epos_kitchen_screens
         WHERE office = ?
         ORDER BY sort_order, name`,
@@ -1100,7 +1263,10 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
       // needs the server to be up is a logo nobody sees on the one morning the
       // line is down.
       branding: await kitchenBranding(pool, office),
-      screens: screens.map((s) => ({ ...s, stations: parseStations(s.stations) })),
+      screens: screens.map((s) => screenOut(s, place.tillSites)),
+      // The venue's sites, for naming them on the board and choosing them.
+      sites: place.sites,
+      tills: place.tills,
     };
   }
 
@@ -1430,6 +1596,62 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  /**
+   * Name this kitchen and choose the sites it cooks for, from the screen
+   * itself (2026-11-04: "kitchen can be named as well with the device").
+   *
+   * A screen set up with an account (Vesopa Go, or Continue with Vesopa) asks
+   * for the manager's PIN on the device first; one signed in with a kitchen
+   * login gives that login's password here, as branding does.
+   */
+  async function mayEditScreens(req) {
+    if (req.kitchen && (req.kitchen.via === 'go' || req.kitchen.via === 'vesopa')) return true;
+    return passwordMatches(req.office, req.kitchen.user, String(req.body?.password || ''));
+  }
+
+  router.post('/kitchen/profile/screens', kitchen, async (req, res, next) => {
+    try {
+      if (!(await mayEditScreens(req))) {
+        return res.status(403).json({ error: 'That is not the password for this screen.' });
+      }
+      const made = await createScreen(pool, req.office, req.body || {});
+      if (made.error) return res.status(made.status).json({ error: made.error });
+      broadcast({ type: 'kitchen.screens', office: req.office }, { office: req.office });
+      res.status(201).json({ id: made.id, ...(await profile(req.office)) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put('/kitchen/profile/screens/:id', kitchen, async (req, res, next) => {
+    try {
+      if (!(await mayEditScreens(req))) {
+        return res.status(403).json({ error: 'That is not the password for this screen.' });
+      }
+      const id = Number(req.params.id);
+      const [[row]] = await pool.query(
+        'SELECT id FROM epos_kitchen_screens WHERE id = ? AND office = ?', [id, req.office]);
+      if (!row) return res.status(404).json({ error: 'No such kitchen.' });
+      const body = req.body || {};
+      if ('name' in body) {
+        const renamed = await renameScreen(pool, req.office, id, body.name);
+        if (renamed.error) return res.status(renamed.status).json({ error: renamed.error });
+      }
+      if ('stations' in body) {
+        await pool.execute('UPDATE epos_kitchen_screens SET stations = ? WHERE id = ? AND office = ?',
+          [formatStations(body.stations), id, req.office]);
+      }
+      if ('sites' in body) {
+        await ensureKitchenSites(pool);
+        await saveScreenSites(pool, req.office, id, body.sites);
+      }
+      broadcast({ type: 'kitchen.screens', office: req.office }, { office: req.office });
+      res.json({ id, ...(await profile(req.office)) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.get('/kitchen/board', kitchen, async (req, res, next) => {
     try {
       res.json({
@@ -1628,16 +1850,19 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
   router.get('/till/kitchen/display', terminal, async (req, res, next) => {
     try {
       const office = req.office;
+      await ensureKitchenSites(pool);
       const branding = await kitchenBranding(pool, office);
       const [screens] = await pool.query(
-        `SELECT id, name, stations, tv_size, zoom_percent, touch
+        `SELECT id, name, stations, tv_size, zoom_percent, touch${sitesOk ? ', site_ids' : ''}
            FROM epos_kitchen_screens WHERE office = ?
           ORDER BY sort_order, name`,
         [office]
       );
+      const place = await venueSites(pool, office);
       res.json({
         sizes: TV_SIZES,
         tilesSupported: KITCHEN_TILES,
+        sites: place.sites,
         venue: {
           tvSize: branding.tvSize,
           zoom: branding.zoom,
@@ -1649,11 +1874,24 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
           id: r.id,
           name: r.name,
           stations: parseStations(r.stations),
+          sites: parseSites(r.site_ids),
           tvSize: r.tv_size || null,
           zoom: r.zoom_percent == null ? null : cleanZoom(r.zoom_percent),
           touch: r.touch == null ? null : r.touch !== 0,
         })),
       });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** A new named kitchen, from the till: its name, stations and sites. */
+  router.post('/till/kitchen/display', terminal, async (req, res, next) => {
+    try {
+      const made = await createScreen(pool, req.office, req.body || {});
+      if (made.error) return res.status(made.status).json({ error: made.error });
+      broadcast({ type: 'kitchen.screens', office: req.office }, { office: req.office });
+      res.status(201).json({ id: made.id });
     } catch (e) {
       next(e);
     }
@@ -1703,6 +1941,13 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
         'UPDATE epos_kitchen_screens SET tv_size = ?, zoom_percent = ?, touch = ? WHERE id = ? AND office = ?',
         [tvSize, zoom, touch, id, office]
       );
+      // Its name and sites, from the till as from the back office (2026-11-04).
+      const renamed = 'name' in body ? await renameScreen(pool, office, id, body.name) : null;
+      if (renamed && renamed.error) return res.status(renamed.status).json({ error: renamed.error });
+      if ('sites' in body) {
+        await ensureKitchenSites(pool);
+        await saveScreenSites(pool, office, id, body.sites);
+      }
       broadcast({ type: 'kitchen.screens', office }, { office });
       res.json({ id, tvSize, zoom, touch: touch == null ? null : touch !== 0 });
     } catch (e) {
@@ -1821,6 +2066,8 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
       return res.status(202).json({ status: 'unrouted' });
     }
 
+    // Before the transaction: adding a column commits whatever is open.
+    await ensureKitchenSites(pool);
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -2005,4 +2252,7 @@ module.exports = {
   formatStations,
   // So the back office can say "Grill: printed" rather than "kp1: printed".
   stationNames,
+  parseSites,
+  formatSites,
+  venueSites,
 };

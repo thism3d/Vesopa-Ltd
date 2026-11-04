@@ -347,6 +347,40 @@ class _KitchenScreenSettingsCardState
     );
   }
 
+  /// Name the chosen kitchen, set its sites, or add a kitchen (2026-11-04).
+  Future<void> _kitchen(Future<void> Function(KitchenRemote r) act) async {
+    setState(() => _saving = true);
+    try {
+      await act(ref.read(kitchenRemoteProvider));
+      await _load();
+    } catch (e) {
+      if (mounted) PosMessenger.error(context, '$e'.replaceFirst('Bad state: ', ''));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<String?> _askName(String title, String initial) {
+    final c = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          maxLength: 80,
+          decoration: const InputDecoration(hintText: 'Main kitchen, Lounge kitchen, Pizza oven'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    ).whenComplete(c.dispose);
+  }
+
   Future<void> _save({String? tvSize, int? zoom, bool? touch, bool useVenue = false}) async {
     final remote = ref.read(kitchenRemoteProvider);
     setState(() => _saving = true);
@@ -425,9 +459,84 @@ class _KitchenScreenSettingsCardState
                         selected: _target == x.id,
                         onSelected: (_) => setState(() => _target = x.id),
                       ),
+                    ActionChip(
+                      avatar: const Icon(Icons.add, size: 18),
+                      label: const Text('Add a kitchen'),
+                      onPressed: _saving
+                          ? null
+                          : () async {
+                              final name = await _askName('New kitchen', '');
+                              if (name != null && name.isNotEmpty) await _kitchen((r) => r.addScreen(name));
+                            },
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
+              ] else ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add a named kitchen'),
+                    onPressed: _saving
+                        ? null
+                          : () async {
+                              final name = await _askName('New kitchen', '');
+                              if (name != null && name.isNotEmpty) await _kitchen((r) => r.addScreen(name));
+                            },
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (_screen case final k?) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(k.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.edit, size: 18),
+                      label: const Text('Rename'),
+                      onPressed: _saving
+                          ? null
+                          : () async {
+                              final name = await _askName('Rename kitchen', k.name);
+                              if (name != null && name.isNotEmpty && name != k.name) {
+                                await _kitchen((r) => r.nameScreen(k.id, name: name));
+                              }
+                            },
+                    ),
+                  ],
+                ),
+                if (s.sites.isNotEmpty) ...[
+                  const Text('Sites it cooks for', style: TextStyle(fontWeight: FontWeight.w700)),
+                  Text(
+                    k.sites.isEmpty
+                        ? 'Every site. Tick sites to send only their orders here.'
+                        : "Orders from these sites' tills come to ${k.name}.",
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final site in s.sites)
+                        FilterChip(
+                          label: Text(site.name),
+                          selected: k.sites.contains(site.id),
+                          onSelected: _saving
+                              ? null
+                              : (on) => _kitchen((r) => r.nameScreen(k.id, sites: {
+                                    for (final id in k.sites)
+                                      if (id != site.id) id,
+                                    if (on) site.id,
+                                  })),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
               ],
               if (_screen != null)
                 Padding(

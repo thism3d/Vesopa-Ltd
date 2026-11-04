@@ -108,6 +108,7 @@ class KitchenTicket {
     this.staffName,
     this.covers,
     this.note,
+    this.terminal,
   });
 
   /// Minted here, and the server's idempotency key — exactly as an order id is.
@@ -138,7 +139,29 @@ class KitchenTicket {
   final int? covers;
   final String? note;
 
+  /// The till that fired it (2026-11-04). The server and the screens place
+  /// the ticket in that till's site, so a venue's kitchens each get their own
+  /// sites' orders.
+  final String? terminal;
+
   final List<KitchenTicketLine> lines;
+
+  /// The same ticket, naming the till that fired it.
+  KitchenTicket from(String? till) => KitchenTicket(
+    id: id,
+    office: office,
+    orderId: orderId,
+    kind: kind,
+    placedAt: placedAt,
+    lines: lines,
+    ticketNo: ticketNo,
+    tableNumber: tableNumber,
+    roomName: roomName,
+    staffName: staffName,
+    covers: covers,
+    note: note,
+    terminal: till,
+  );
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -152,6 +175,7 @@ class KitchenTicket {
     if (staffName != null) 'staff_name': staffName,
     if (covers != null) 'covers': covers,
     if (note != null && note!.isNotEmpty) 'note': note,
+    if (terminal != null) 'terminal': terminal,
     'lines': lines.map((l) => l.toJson()).toList(),
   };
 
@@ -167,6 +191,7 @@ class KitchenTicket {
     staffName: j['staff_name'] as String?,
     covers: (j['covers'] as num?)?.toInt(),
     note: j['note'] as String?,
+    terminal: j['terminal'] as String?,
     lines: ((j['lines'] as List?) ?? const [])
         .cast<Map<String, dynamic>>()
         .map(KitchenTicketLine.fromJson)
@@ -239,11 +264,15 @@ class KitchenScreenSender {
   KitchenScreenSender({
     required this.apiBase,
     required this.office,
+    this.terminal,
     http.Client? client,
   }) : _client = client ?? http.Client();
 
   final String apiBase;
   final String office;
+
+  /// This till's name, stamped on every ticket it sends (2026-11-04).
+  final String? terminal;
   final http.Client _client;
 
   static const _queueKey = 'vesopa_kitchen_queue';
@@ -268,6 +297,7 @@ class KitchenScreenSender {
   /// saved, and a kitchen screen that is switched off must not be able to undo
   /// either.
   Future<KitchenScreenResult> send(KitchenTicket ticket) async {
+    if (ticket.terminal == null && terminal != null) ticket = ticket.from(terminal);
     final stations = {for (final l in ticket.lines) ...l.stations};
     if (ticket.lines.isEmpty || stations.isEmpty) {
       return KitchenScreenResult(stations: const {});
