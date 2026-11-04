@@ -218,7 +218,7 @@ class DojoTapToPay implements PaymentService {
       final r = await call().timeout(limit);
       // Each step in the server's log with its time, so a slow or failing
       // iPhone can be read there (2026-11-04).
-      unawaited(api.reportTap({'platform': _platform, 'step': name, 'code': 'ok', 'message': '${watch.elapsedMilliseconds} ms', 'environment': _env}));
+      unawaited(api.reportTap({'platform': _platform, 'step': name, 'code': 'ok', 'message': '${watch.elapsedMilliseconds} ms${r == null ? '' : ' -> $r'}', 'environment': _env}));
       return r;
     } on PlatformException catch (e) {
       final info = e.details is Map ? '${(e.details as Map)['info'] ?? ''}' : '';
@@ -387,16 +387,15 @@ class DojoTapToPay implements PaymentService {
       _active = true;
       return;
     }
+    // Dojo's order (their sample app; confirmed by the iPhone's log
+    // 2026-11-04: before operational, isAccountLinked says "Order-id is
+    // missing" and linkAccount "Terminal is not in operational state"):
+    // wait until Dojo has provisioned the iPhone, then Apple's terms.
+    onStep?.call(PayStep.activating);
+    await _step<String>('ready', const Duration(minutes: 4), () => _channel.invokeMethod<String>('waitOperational', env));
+    _active = true;
     if (!link) return;
-    // Before activation the SDK cannot say (internalError): that reads as
-    // "not yet", and Apple's terms are offered.
-    bool linked;
-    try {
-      linked = await _step('link', const Duration(seconds: 25), () => _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret})) ?? false;
-    } on PlatformException catch (e) {
-      if (e.code == 'timeout') rethrow;
-      linked = false;
-    }
+    final linked = await _step('link', const Duration(seconds: 25), () => _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret})) ?? false;
     if (!linked) {
       if (!(canAcceptTerms?.call() ?? true)) {
         throw PlatformException(code: 'not_admin', message: notAdmin);
@@ -404,9 +403,6 @@ class DojoTapToPay implements PaymentService {
       onStep?.call(PayStep.linking);
       await _step('link', const Duration(minutes: 5), () => _channel.invokeMethod('linkAccount', {'secret': secret}));
     }
-    onStep?.call(PayStep.activating);
-    await _step<String>('ready', const Duration(minutes: 4), () => _channel.invokeMethod<String>('waitOperational', env));
-    _active = true;
   }
 
   /// Gets Tap to Pay ready before the first payment (Apple asks apps to

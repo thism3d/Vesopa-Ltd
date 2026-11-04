@@ -5,13 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/api.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
 import '../../nfc/staff_card.dart';
 import '../../payments/payment_service.dart';
+import '../tap_to_pay_intro.dart';
 import '../tap_to_pay_mark.dart';
 import '../theme.dart';
 import '../../data/recent_venues.dart';
@@ -259,24 +259,17 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
   Future<void> _setUp() async {
     final pay = ref.read(paymentsProvider);
     if (pay is! DojoTapToPay) return;
-    setState(() {
-      _busy = true;
-      _note = 'Setting up Tap to Pay on iPhone…';
-    });
-    final why = await pay.setUp();
+    // The full-screen set-up: its timer while Dojo provisions the iPhone,
+    // then Apple's terms and Apple's guide (lib/ui/tap_to_pay_intro.dart).
+    setState(() => _busy = true);
+    await showTapToPayIntro(context, setUp: true);
+    final now = await pay.isLinked();
     if (!mounted) return;
     setState(() {
       _busy = false;
-      _note = why ?? 'Ready. Customers can tap a card, phone or watch on the top of this iPhone.';
-      if (why == null) _linked = true;
+      _linked = now;
+      _note = now == true ? 'Ready. Customers can tap a card, phone or watch on the top of this iPhone.' : null;
     });
-    if (why == null) {
-      final p = await SharedPreferences.getInstance();
-      if (p.getBool('go_ttp_guide_seen') != true) {
-        await p.setBool('go_ttp_guide_seen', true);
-        await _guide();
-      }
-    }
   }
 
   Future<void> _guide() async {
@@ -338,12 +331,14 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
           if (_note != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_note!, style: t.bodySmall?.copyWith(color: context.goMuted))),
           const SizedBox(height: 12),
           Wrap(spacing: 10, runSpacing: 10, children: [
-            if (_linked != true)
-              FilledButton.icon(
-                onPressed: _busy ? null : _setUp,
-                icon: const TapToPayMark(size: 20),
-                label: const Text('Set up Tap to Pay on iPhone'),
-              ),
+            // Always here (Apple 3.6): set up, or check it again, on the
+            // same full-screen set-up as the introduction.
+            FilledButton.icon(
+              key: const ValueKey('ttp-settings-setup'),
+              onPressed: _busy ? null : _setUp,
+              icon: const TapToPayMark(size: 20),
+              label: Text(_linked == true ? 'Check Tap to Pay on iPhone' : 'Set up Tap to Pay on iPhone'),
+            ),
             OutlinedButton.icon(
               onPressed: _guide,
               icon: const Icon(Icons.school_rounded),

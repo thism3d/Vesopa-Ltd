@@ -15,6 +15,8 @@
 /// the words, and the wave.3.right.circle symbol Apple asks for.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -48,15 +50,18 @@ Future<void> maybeShowTapToPayIntro(BuildContext context, WidgetRef ref) async {
 }
 
 /// The introduction, full screen; also opened from Settings.
-Future<void> showTapToPayIntro(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(
+Future<void> showTapToPayIntro(BuildContext context, {bool setUp = false}) => Navigator.of(context).push(MaterialPageRoute<void>(
       fullscreenDialog: true,
-      builder: (_) => const TapToPayIntroPage(),
+      builder: (_) => TapToPayIntroPage(setUp: setUp),
     ));
 
 enum _Stage { intro, preparing, ready, problem }
 
 class TapToPayIntroPage extends ConsumerStatefulWidget {
-  const TapToPayIntroPage({super.key});
+  const TapToPayIntroPage({super.key, this.setUp = false});
+
+  /// Straight into set-up (Settings' button), skipping the introduction.
+  final bool setUp;
   @override
   ConsumerState<TapToPayIntroPage> createState() => _TapToPayIntroPageState();
 }
@@ -66,11 +71,24 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
   bool? _linked;
   String? _problem;
 
+  /// How long set-up has run: Dojo provisions a new iPhone (pending,
+  /// provisioning, operational) before Apple's terms can appear, a minute or
+  /// two the first time, like a card being added to Wallet (2026-11-04).
+  final Stopwatch _clock = Stopwatch();
+  Timer? _tick;
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
   bool get _manager => ref.read(tapProvider).clerk?.can(TillPermission.isManager) ?? false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.setUp) WidgetsBinding.instance.addPostFrameCallback((_) => _setUp());
     final pay = ref.read(paymentsProvider);
     if (pay is DojoTapToPay) {
       pay.isLinked().then((v) {
@@ -83,8 +101,17 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
     final pay = ref.read(paymentsProvider);
     if (pay is! DojoTapToPay) return;
     setState(() => _stage = _Stage.preparing);
+    _clock
+      ..reset()
+      ..start();
+    _tick?.cancel();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
     await pay.askNotifications();
     final why = await pay.setUp();
+    _tick?.cancel();
+    _clock.stop();
     if (!mounted) return;
     if (why != null) {
       setState(() {
@@ -119,8 +146,15 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
           const SizedBox(width: 56, height: 56, child: CircularProgressIndicator(strokeWidth: 5)),
           const SizedBox(height: 24),
           Text('Getting Tap to Pay on iPhone ready', textAlign: TextAlign.center, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          Text('Accept the terms when they appear. Setting up this iPhone can take a minute the first time; keep Vesopa Go open.',
+          const SizedBox(height: 10),
+          Text(_elapsed(_clock.elapsed), key: const ValueKey('ttp-timer'),
+              style: t.headlineMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: const [FontFeature.tabularFigures()])),
+          const SizedBox(height: 10),
+          Text(
+              _clock.elapsed.inSeconds < 150
+                  ? 'Dojo is setting up this iPhone, usually a minute or two the first time. '
+                      "Apple's Tap to Pay terms appear when it is done: accept them. Keep Vesopa Go open."
+                  : 'Still setting up. This can take a few minutes on a new iPhone; keep Vesopa Go open.',
               textAlign: TextAlign.center, style: t.bodyMedium?.copyWith(color: context.goMuted)),
         ]);
         buttons = const [];
@@ -202,3 +236,5 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
     );
   }
 }
+
+String _elapsed(Duration d) => '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';

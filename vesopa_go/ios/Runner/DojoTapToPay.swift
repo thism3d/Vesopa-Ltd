@@ -171,7 +171,9 @@ final class DojoTapToPayBridge {
         let known = DojoSDKErrorCode(rawValue: ns.code).map { String(describing: $0) }
         let said = ns.userInfo[NSLocalizedDescriptionKey] as? String
         result(FlutterError(code: known == "terminalNotOperational" ? "unsupported" : "dojo",
-                            message: said ?? known ?? "Dojo error \(ns.code)",
+                            message: known == "terminalNotOperational"
+                              ? "Dojo is still setting up Tap to Pay on this iPhone. Keep Vesopa Go open and try again in a minute."
+                              : (said ?? known ?? "Dojo error \(ns.code)"),
                             details: ["domain": ns.domain, "code": ns.code, "name": known ?? "", "info": info]))
         return
       }
