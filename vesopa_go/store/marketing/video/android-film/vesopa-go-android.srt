@@ -1,63 +1,55 @@
 1
-00:00:00,350 --> 00:00:03,681
-Friday night. Every table's full.
+00:00:01,700 --> 00:00:03,502
+Meet Vesopa Go.
 
 2
-00:00:04,731 --> 00:00:06,281
-This is Vesopa Go.
+00:00:05,150 --> 00:00:11,121
+Your whole till, right in your pocket. Orders and payments, on any Android phone.
 
 3
-00:00:07,731 --> 00:00:13,264
-Your whole till, in your pocket. Orders and payments on any Android phone.
+00:00:11,721 --> 00:00:19,362
+Your menu. Your tables. The kitchen. Allergens. And payments. All in one place.
 
 4
-00:00:13,714 --> 00:00:19,856
-Your menu, your tables, the kitchen, allergens and payments. All in one place.
+00:00:19,862 --> 00:00:22,109
+Take the order, right at the table.
 
 5
-00:00:20,306 --> 00:00:22,489
-Take the order right at the table.
+00:00:22,962 --> 00:00:26,761
+And before you're back at the bar, it's already in the kitchen.
 
 6
-00:00:23,406 --> 00:00:26,155
-And it's at the pass before you're back at the bar.
+00:00:27,211 --> 00:00:30,141
+Add the drinks. Then tap Pay.
 
 7
-00:00:26,906 --> 00:00:29,143
-Add the drinks, then tap Pay.
+00:00:30,541 --> 00:00:35,248
+Cash. Card. Tap to Pay. Or QR. However your guests like to pay.
 
 8
-00:00:30,006 --> 00:00:34,576
-Cash, card, Tap to Pay or QR. Whatever your guest likes.
+00:00:35,648 --> 00:00:40,331
+With QR Pay, they simply scan, pay, and go.
 
 9
-00:00:34,926 --> 00:00:37,957
-With QR Pay, they scan, pay and go.
+00:00:40,731 --> 00:00:44,970
+Paid! And the receipt is printed, or emailed, in one tap.
 
 10
-00:00:38,357 --> 00:00:42,509
-Paid. Print or email the receipt in one tap.
+00:00:45,570 --> 00:00:51,176
+Use it on Android phones, on the Dojo Pocket, and on Android tablets.
 
 11
-00:00:43,159 --> 00:00:45,084
-No more pen and paper.
-
-12
-00:00:46,459 --> 00:00:51,315
-It runs on Android phones, the Dojo Pocket, and Android tablets.
-
-13
-00:00:52,015 --> 00:00:55,011
+00:00:51,876 --> 00:00:54,589
 Work faster. Serve more.
 
-14
-00:00:55,461 --> 00:01:03,170
+12
+00:00:56,076 --> 00:01:02,405
 Quicker service. Bigger orders. Happier guests. And a team that's always in step.
 
-15
-00:01:03,620 --> 00:01:08,097
+13
+00:01:02,905 --> 00:01:07,632
 Get Vesopa Go on Google Play, or visit go.vesopa.com.
 
-16
-00:01:08,647 --> 00:01:12,467
+14
+00:01:08,232 --> 00:01:12,062
 Vesopa Go. Orders and payments, anywhere.

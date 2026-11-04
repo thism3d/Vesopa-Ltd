@@ -4,12 +4,20 @@ The owner's reference is ICRTouch's PocketTouch film again (logo reveal, the
 tagline with the phone flying in, an arc of features, venue footage, the
 phone with call-outs and a tapping hand, "no more pen and paper", the devices
 it runs on, a promise, the benefits, the call to action). This keeps that
-rhythm but is its own film: a cold open in a full pub, an Android phone (punch
-hole, not an island), a real sale tapped through from Pay to QR to Paid, the
-Android devices it runs on, a lime "drop" on the promise, a Google Play badge,
-a new voice and score, and sound effects on every tap and move.
+rhythm but is its own film: it opens on Vesopa Go itself, then an Android phone
+(punch hole, not an island), a real sale tapped through from Pay to QR to Paid,
+the Android devices it runs on, a lime "drop" on the promise, a Google Play
+badge, a score, and sound effects on every tap and move. The owner cut the pub
+cold open and "no more pen and paper" (2026-11-04).
 
-    python tool/make_android_film.py voice    # the voiceover lines (edge-tts); scene lengths follow them
+The voice is Kokoro (an open TTS model run here with onnxruntime, British
+"bf_emma"), read a phrase at a time with real pauses between, because the owner
+found one long read breathless and flat. Each scene's phrase timings are kept
+in voice/timing.json, and the chips, the benefits and the promise appear on
+their words. The model files (kokoro-v1.0.onnx, voices-v1.0.bin, from
+github.com/thewh1teagle/kokoro-onnx releases) live outside the repo, in KOKORO_DIR.
+
+    python tool/make_android_film.py voice    # the voiceover, a phrase at a time; scene lengths follow it
     python tool/make_android_film.py film     # the picture (STILLS=3,20.5 for a few frames only)
     python tool/make_android_film.py audio    # score, effects, voice, mixed and muxed; captions
     python tool/make_android_film.py all
@@ -19,6 +27,7 @@ here frame by frame; ffmpeg encodes. 1920x1080, 30 fps.
 Writes store/marketing/video/android-film/: vesopa-go-android.mp4 (with sound),
 vesopa-go-android.srt, and the stems.
 """
+import json
 import math
 import os
 import pathlib
@@ -37,7 +46,8 @@ from make_store_video import FPS, H, W, ease, put  # noqa: E402
 S, V = P.S, P.V
 LIME, INK = P.LIME, P.INK
 OUT = GO / "store" / "marketing" / "video" / "android-film"
-VOICE = "en-GB-LibbyNeural"
+VOICE = "bf_emma"
+KOKORO = pathlib.Path(os.environ.get("KOKORO_DIR", pathlib.Path.home() / "scratch" / "kokoro"))
 RATE = 44100
 P.ICON.update({"phone": "e32c", "tab": "e330"})
 
@@ -121,25 +131,29 @@ def chip_row(lines):
 
 
 # ---- the plan ------------------------------------------------------------------------
-# Each scene: name, seconds at least, voice line (or None), when the line starts in
-# the scene, and whether it cuts in hard (on the beat) instead of cross-fading.
+# Each scene: name, seconds at least, the voice as phrases (a phrase, or (phrase,
+# pause after it)), when the voice starts in the scene, whether the scene cuts in
+# hard (on the beat) instead of cross-fading, and the reading speed.
+P_SHORT, P_MID, P_LONG = .22, .38, .6
 SCENES = [
-    ("cold", 3.4, "Friday night. Every table's full.", .35, False),
-    ("logo", 3.6, "This is Vesopa Go.", .9, False),
-    ("tagline", 5.0, "Your whole till, in your pocket. Orders and payments on any Android phone.", .3, False),
-    ("arc", 5.2, "Your menu, your tables, the kitchen, allergens and payments. All in one place.", .3, False),
-    ("table", 3.2, "Take the order right at the table.", .3, True),
-    ("pass", 3.4, "And it's at the pass before you're back at the bar.", .2, True),
-    ("d_sale", 3.2, "Add the drinks, then tap Pay.", .3, False),
-    ("d_pay", 3.4, "Cash, card, Tap to Pay or QR. Whatever your guest likes.", .2, False),
-    ("d_qr", 3.2, "With QR Pay, they scan, pay and go.", .2, False),
-    ("d_paid", 3.4, "Paid. Print or email the receipt in one tap.", .25, False),
-    ("pen", 3.4, "No more pen and paper.", .5, False),
-    ("devices", 5.0, "It runs on Android phones, the Dojo Pocket, and Android tablets.", .4, False),
-    ("drop", 3.4, "Work faster. Serve more.", .55, True),
-    ("benefits", 5.4, "Quicker service. Bigger orders. Happier guests. And a team that's always in step.", .3, False),
-    ("cta", 4.6, "Get Vesopa Go on Google Play, or visit go dot vesopa dot com.", .3, False),
-    ("end", 4.0, "Vesopa Go. Orders and payments, anywhere.", .4, False),
+    ("logo", 4.8, [("Meet Vesopa Go.", 0)], 1.7, False, .92),
+    ("tagline", 5.0, [("Your whole till,", P_SHORT), ("right in your pocket.", P_LONG),
+                      ("Orders and payments, on any Android phone.", 0)], .35, False, .95),
+    ("arc", 5.2, [("Your menu.", P_SHORT), ("Your tables.", P_SHORT), ("The kitchen.", P_SHORT),
+                  ("Allergens.", P_SHORT), ("And payments.", P_MID), ("All in one place.", 0)], .45, False, .95),
+    ("table", 3.2, [("Take the order, right at the table.", 0)], .35, True, .95),
+    ("pass", 3.4, [("And before you're back at the bar,", P_SHORT), ("it's already in the kitchen.", 0)], .25, True, .97),
+    ("d_sale", 3.2, [("Add the drinks.", P_MID), ("Then tap Pay.", 0)], .3, False, .93),
+    ("d_pay", 3.4, [("Cash. Card. Tap to Pay. Or QR.", P_MID), ("However your guests like to pay.", 0)], .25, False, .95),
+    ("d_qr", 3.2, [("With QR Pay, they simply scan,", P_SHORT), ("pay,", P_SHORT), ("and go.", 0)], .25, False, .93),
+    ("d_paid", 3.4, [("Paid!", P_MID), ("And the receipt is printed, or emailed, in one tap.", 0)], .25, False, .95),
+    ("devices", 5.0, [("Use it on Android phones,", P_SHORT), ("on the Dojo Pocket,", P_SHORT),
+                      ("and on Android tablets.", 0)], .45, False, .95),
+    ("drop", 4.4, [("Work faster.", P_MID), ("Serve more.", 0)], .55, True, .9),
+    ("benefits", 5.4, [("Quicker service.", P_SHORT), ("Bigger orders.", P_SHORT), ("Happier guests.", P_MID),
+                       ("And a team that's always in step.", 0)], .35, False, .95),
+    ("cta", 4.6, [("Get Vesopa Go on Google Play,", P_SHORT), ("or visit go dot vesopa dot com.", 0)], .35, False, .95),
+    ("end", 4.0, [("Vesopa Go.", P_MID), ("Orders and payments, anywhere.", 0)], .45, False, .9),
 ]
 CAPTIONS = {"cta": "Get Vesopa Go on Google Play, or visit go.vesopa.com."}
 XF = .35
@@ -154,10 +168,23 @@ def probe(path):
                                  str(path)], capture_output=True, text=True).stdout)
 
 
+def phrases(name):
+    """When each phrase of a scene's voice starts, in seconds from the scene's start."""
+    i, sc = next((i, sc) for i, sc in enumerate(SCENES) if sc[0] == name)
+    tf = OUT / "voice" / "timing.json"
+    offs = json.loads(tf.read_text())[name] if tf.exists() else [k * 1.0 for k in range(len(sc[2]))]
+    return [sc[3] + o for o in offs]
+
+
+def line_text(phr):
+    return " ".join(x if isinstance(x, str) else x[0] for x in phr)
+
+
 def timeline():
-    """[(start, dur, name, line, line_at, cut)] with each scene long enough for its line."""
+    """[(start, dur, name, line, line_at, cut)] with each scene long enough for its voice."""
     rows, t = [], 0.0
-    for i, (name, dur, line, at, cut) in enumerate(SCENES):
+    for i, (name, dur, phr, at, cut, _) in enumerate(SCENES):
+        line = line_text(phr)
         vp = voice_path(i)
         if line and vp.exists():
             dur = max(dur, at + probe(vp) + .45)
@@ -167,20 +194,44 @@ def timeline():
 
 
 def make_voice():
+    """Each scene's phrases read one at a time and joined with their pauses, so
+    the voice breathes; the phrase starts go to voice/timing.json."""
+    from kokoro_onnx import Kokoro
+    k = Kokoro(str(KOKORO / "kokoro-v1.0.onnx"), str(KOKORO / "voices-v1.0.bin"))
     (OUT / "voice").mkdir(parents=True, exist_ok=True)
-    trim = "silenceremove=start_periods=1:start_threshold=-50dB"
-    for i, (name, dur, line, at, _) in enumerate(SCENES):
-        if not line:
-            continue
-        mp3 = voice_path(i).with_suffix(".mp3")
-        subprocess.run(["python", "-m", "edge_tts", "--voice", VOICE, "--rate=+4%", "--text", line,
-                        "--write-media", str(mp3)], check=True, capture_output=True)
-        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(mp3), "-af",
-                        f"{trim},areverse,{trim},areverse,apad=pad_dur=0.05", "-ar", str(RATE), str(voice_path(i))],
-                       check=True)
-        mp3.unlink()
-        d = probe(voice_path(i))
-        print(f"{name:9s} {d:4.1f}s  (scene {dur}s, line at {at}s){'  -> scene grows' if at + d + .45 > dur else ''}")
+    timing = {}
+
+    def trimmed(x, sr):
+        on = np.nonzero(np.abs(x) > .012)[0]
+        if not len(on):
+            return x
+        a_, b_ = max(0, on[0] - int(.015 * sr)), min(len(x), on[-1] + int(.06 * sr))
+        y = x[a_:b_].copy()
+        f = int(.01 * sr)
+        y[:f] *= np.linspace(0, 1, f)
+        y[-f:] *= np.linspace(1, 0, f)
+        return y
+
+    for i, (name, dur, phr, at, _, speed) in enumerate(SCENES):
+        parts, offs, t = [], [], 0.0
+        for x in phr:
+            text, pause = (x, P_SHORT) if isinstance(x, str) else x
+            sig, sr = k.create(text, voice=VOICE, speed=speed, lang="en-gb")
+            sig = trimmed(np.asarray(sig, dtype=np.float32), sr)
+            offs.append(round(t, 3))
+            parts += [sig, np.zeros(int(pause * sr), dtype=np.float32)]
+            t += len(sig) / sr + pause
+        y = np.concatenate(parts)
+        y = y / (np.max(np.abs(y)) + 1e-9) * .89
+        with wave.open(str(voice_path(i)), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(sr)
+            w.writeframes((y * 32767).astype(np.int16).tobytes())
+        timing[name] = offs
+        d = len(y) / sr
+        print(f"{name:9s} {d:4.1f}s  (scene {dur}s, voice at {at}s){'  -> scene grows' if at + d + .45 > dur else ''}")
+    (OUT / "voice" / "timing.json").write_text(json.dumps(timing, indent=1))
     print(f"film length {sum(r[1] for r in timeline()):.1f}s")
 
 
@@ -190,6 +241,9 @@ def make_film():
     print("drawing layers")
     bg = P.background()
     icon, word = P.logo_reveal()
+    # the icon again on a canvas big enough for its whole glow (logo_reveal's clips it square)
+    icon = P.shoot(f'<div style="padding:130px"><img src="{S.GO_LOGO.as_uri()}" style="width:300px;height:300px;'
+                   f'border-radius:70px;display:block;box-shadow:0 0 90px rgba(165,199,21,.45)"></div>', 600, 600)
     for_android = P.shoot('<div style="font-family:Mont;font-weight:500;font-size:56px;color:#D8DCD2;letter-spacing:6px">FOR ANDROID</div>', 700, 120)
     flow = ["01-sale", "02-pay", "03-qr-pay", "05-approved"]
     phones = {s: android_layer(s, fh=900) for s in flow}
@@ -203,7 +257,6 @@ def make_film():
                       'Orders and payments on any Android phone</div>', 920, 200)
     chips = [P.feature_chip(n, l) for n, l in (("menu", "Menu"), ("table", "Tables"), ("kitchen", "Kitchen"),
                                                ("allergen", "Allergens"), ("card", "Payments"))]
-    cold_txt = V.footage_text("Friday night. *Every table full.*", "And one till behind the bar")
     cap_table = V.footage_text("Take the order *at the table*", "The full menu, photos and allergens")
     cap_pass = V.footage_text("At the pass *in seconds*", "Straight to the kitchen printer or screen")
     demo = {
@@ -213,14 +266,12 @@ def make_film():
         "d_paid": (chip_row(["Paid. Done."]), chip_row(["Receipt:", "print it", "or email it"])),
     }
     touch = P.shoot(P.icon_html("touch", 150, "#FFFFFF"), 200, 200)
-    pen = P.shoot(f"""<div style="font-family:Mont;font-weight:500;font-size:100px;color:#FFF;text-align:center;line-height:1.25">
-      No more<br><span style="font-family:Script;color:{LIME};font-size:116px">pen and paper</span></div>""", 1500, 500)
     dev_labels = [P.shoot(f'<div style="display:flex;align-items:center;gap:14px;font-family:Mont;font-weight:700;font-size:44px;color:{c}">'
                           f'{P.icon_html(i, 54, c)}{t}</div>', 620, 90)
                   for i, t, c in (("android", "Android phones", "#FFFFFF"), ("card", "Dojo Pocket", INK), ("tab", "Android tablets", INK))]
     # on lime, the lime words go white
-    drop = P.shoot(f'<div style="width:1700px;font-family:Mont;font-weight:500;font-size:128px;color:{INK};text-align:center;'
-                   f'letter-spacing:-2px">Work <b style="color:#FFF">faster.</b> Serve <b style="color:#FFF">more.</b></div>', 1740, 400)
+    drop = [P.shoot(f'<div style="font-family:Mont;font-weight:500;font-size:150px;color:{INK};letter-spacing:-2px;white-space:nowrap">'
+                    f'{a} <b style="color:#FFF">{b}</b></div>', 1100, 300) for a, b in (("Work", "faster."), ("Serve", "more."))]
     benefits = [P.benefit("clock", "Quicker", "service"), P.benefit("trend", "Bigger", "orders"),
                 P.benefit("thumb", "Happier", "guests"), P.benefit("team", "A team", "always in step")]
     cta = caption("Get *Vesopa Go* today", size=100, width=900)
@@ -228,7 +279,6 @@ def make_film():
     end_line = P.shoot('<div style="font-family:Mont;font-weight:500;font-size:48px;color:#D8DCD2">Orders &amp; payments, anywhere</div>', 1000, 120)
 
     print("reading footage")
-    f_cold = V.clip("e2_venue", .2, 4.2)
     f_table = V.clip("m1_menu", 1.0, 4.0)
     f_pass = V.clip("v3_pass", .3, 4.6)
 
@@ -248,9 +298,6 @@ def make_film():
             k = ease((u - .25) / .7)
             put(f, cap, 120 - (1 - k) * 60, H - cap.height - 140, alpha=min(k, 1 - ease((u - (d - .35)) / .35)))
 
-    def s_cold(f, u, d):
-        footage(f_cold, cold_txt, f, u, d)
-
     def s_logo(f, u, d):
         k = ease(u / .8)
         put(f, P.rotated(icon, (1 - k) * -30), W / 2 - icon.width / 2 - 430 * ease((u - .9) / .7), H / 2 - icon.height / 2 - 40,
@@ -261,7 +308,7 @@ def make_film():
     def s_tagline(f, u, d):
         k = ease((u - .15) / .8)
         put(f, tag, 130 - (1 - k) * 80, H / 2 - tag.height / 2 - 70, alpha=k)
-        put(f, tag_sub, 130, H / 2 + tag.height / 2 - 40, alpha=ease((u - .6) / .7))
+        put(f, tag_sub, 130, H / 2 + tag.height / 2 - 40, alpha=ease((u - phrases("tagline")[2]) / .6))
         fl = ease(u / 1.0)
         r = P.rotated(hero, 12 - 5 * fl + math.sin(u * .9) * .8)
         x = 1400 - r.width / 2 + (1 - fl) * 950
@@ -277,9 +324,9 @@ def make_film():
         k = ease(u / .7)
         put(f, ph, W / 2 - ph.width / 2, H - ph.height * .52 + (1 - k) * 300, alpha=k)
         P.arc(f, int(cx), int(cy), 800, ease((u - .2) / 1.4), width=10)
-        for i, c in enumerate(chips):
+        for i, (c, ph_at) in enumerate(zip(chips, phrases("arc"))):
             a = math.radians(180 + 18 + i * 36)
-            kx = ease((u - .5 - i * .28) / .45)
+            kx = ease((u - ph_at + .05) / .4)
             x = cx + 800 * math.cos(a) - c.width / 2
             y = cy + 800 * math.sin(a) - c.height / 2
             put(f, c, x, y, alpha=kx, scale=.4 + .6 * kx + .08 * math.sin(kx * math.pi))
@@ -300,9 +347,9 @@ def make_film():
             put(f, ph, px + (0 if not first else (1 - ease(u / .6)) * 200), py, alpha=ease(u / .5) if first else 1)
             put(f, left, 120 - (1 - ease((u - .3) / .5)) * 120, 300, alpha=ease((u - .3) / .5))
             put(f, right, W - 120 - right.width + (1 - ease((u - .7) / .5)) * 120, 480, alpha=ease((u - .7) / .5))
-            if key == "d_sale":
+            if key == "d_sale":  # the press lands on "tap Pay"
                 hx, hy = screen_xy(ph, px, py, sale_tap)
-                P.hand(f, hx, hy, (u - (d - 1.45)) / 1.1, touch)
+                P.hand(f, hx, hy, (u - (phrases("d_sale")[1] - .05)) / 1.1, touch)
             if key == "d_pay":
                 hx, hy = screen_xy(ph, px, py, pay_tap)
                 P.hand(f, hx, hy, (u - (d - 1.45)) / 1.1, touch)
@@ -328,17 +375,6 @@ def make_film():
                         ImageDraw.Draw(lay).ellipse((cx - r, cy - r, cx + r, cy + r), outline=(165, 199, 21, int(220 * (1 - k))), width=6)
                         f.alpha_composite(lay)
         return draw
-
-    def s_pen(f, u, d):
-        k = ease(u / .8)
-        put(f, pen, W / 2 - pen.width / 2, H / 2 - pen.height / 2 + (1 - k) * 40, alpha=k)
-        # a lime line strikes through, then the words lift
-        if u > 1.4:
-            lay = Image.new("RGBA", f.size, (0, 0, 0, 0))
-            x0 = W / 2 - 470
-            x1 = x0 + 940 * ease((u - 1.4) / .5)
-            ImageDraw.Draw(lay).line((x0, H / 2 + 75, x1, H / 2 + 55), fill=(255, 255, 255, 235), width=9)
-            f.alpha_composite(lay)
 
     grounds = [("#1B1F22", 0), (LIME, 1), ("#E9E9E9", 2)]
 
@@ -369,8 +405,10 @@ def make_film():
         if k >= 1:
             ImageDraw.Draw(f).ellipse((W - 900, -500, W + 500, 900), fill=(186, 214, 70, 255))
             ImageDraw.Draw(f).ellipse((-600, 500, 700, 1800), fill=(176, 207, 50, 255))
-        kt = ease((u - .35) / .5)
-        put(f, drop, W / 2 - drop.width / 2, H / 2 - drop.height / 2 + (1 - kt) * 50, alpha=kt, scale=1.15 - .15 * kt)
+        for j, (lay_, ph_at) in enumerate(zip(drop, phrases("drop"))):
+            kt = ease((u - ph_at + .1) / .45)
+            y = H / 2 - lay_.height - 10 + j * (lay_.height + 20)
+            put(f, lay_, W / 2 - lay_.width / 2 + (1 - kt) * (-80 if j == 0 else 80), y, alpha=kt, scale=1.12 - .12 * kt)
 
     def s_benefits(f, u, d):
         ph = phones["05-approved"]
@@ -378,8 +416,8 @@ def make_film():
         small = ph.resize((int(ph.width * sc), int(ph.height * sc)), Image.LANCZOS)
         k = ease(u / .7)
         put(f, small, W - 220 - small.width + (1 - k) * 300, H / 2 - small.height / 2 + math.sin(u * 1.2) * 6, alpha=k)
-        for i, b in enumerate(benefits):
-            kb = ease((u - .3 - i * (d - 1.6) / 4) / .55)  # one per phrase of the line
+        for i, (b, ph_at) in enumerate(zip(benefits, phrases("benefits"))):
+            kb = ease((u - ph_at + .05) / .5)
             put(f, b, 200 - (1 - kb) * 80, 220 + i * 170, alpha=kb)
 
     def s_cta(f, u, d):
@@ -393,14 +431,14 @@ def make_film():
 
     def s_end(f, u, d):
         k = ease(u / .8)
-        put(f, icon, W / 2 - icon.width / 2, 170 - (1 - k) * 30, alpha=k, scale=.8 + .2 * k)
+        put(f, icon, W / 2 - icon.width / 2, 80 - (1 - k) * 30, alpha=k, scale=.8 + .2 * k)
         put(f, word, W / 2 - word.width / 2, 560, alpha=ease((u - .3) / .8))
         put(f, end_line, W / 2 - end_line.width / 2, 790, alpha=ease((u - .6) / .8))
 
-    draws = {"cold": s_cold, "logo": s_logo, "tagline": s_tagline, "arc": s_arc, "table": s_table, "pass": s_pass,
+    draws = {"logo": s_logo, "tagline": s_tagline, "arc": s_arc, "table": s_table, "pass": s_pass,
              "d_sale": s_demo("d_sale", "01-sale"), "d_pay": s_demo("d_pay", "02-pay"),
              "d_qr": s_demo("d_qr", "03-qr-pay"), "d_paid": s_demo("d_paid", "05-approved"),
-             "pen": s_pen, "devices": s_devices, "drop": s_drop, "benefits": s_benefits, "cta": s_cta, "end": s_end}
+             "devices": s_devices, "drop": s_drop, "benefits": s_benefits, "cta": s_cta, "end": s_end}
     rows = timeline()
     total = sum(r[1] for r in rows)
     n = int(total * FPS)
@@ -534,14 +572,14 @@ def make_audio():
     prog = [(49, [61, 64, 68, 73]), (45, [61, 64, 69, 73]), (40, [59, 64, 68, 71]), (47, [59, 63, 66, 71])]
 
     def level(t):
-        if t < start["logo"]:
-            return 0
+        if t < start["tagline"]:
+            return 0    # the logo: pads and plucks
         if t < start["table"]:
             return 1
-        if t < start["pen"]:
+        if t < start["devices"]:
             return 2
         if t < start["drop"]:
-            return .5   # breakdown under "pen and paper" and the devices, building
+            return .5   # it pulls back under the devices and builds to the drop
         if t < start["end"]:
             return 3
         return 4
@@ -606,18 +644,17 @@ def make_audio():
         fx[1, i:i + len(s)] += s * math.sqrt((1 + pan) / 2) * 1.4
 
     sfx(whoosh(.7), start["tagline"] - .1, .5, .5)                  # the phone flies in
-    for i in range(5):
-        sfx(blip(hz(76 + [0, 2, 4, 7, 9][i])), start["arc"] + .5 + i * .28 + .12, .22, -.6 + .3 * i)  # chips pop
-    for name in ("d_sale", "d_pay"):
-        sfx(tap(), start[name] + dur[name] - 1.45 + .55 * 1.1, .55)   # the finger presses
+    for i, t_ in enumerate(phrases("arc")[:5]):
+        sfx(blip(hz(76 + [0, 2, 4, 7, 9][i])), start["arc"] + t_ + .1, .22, -.6 + .3 * i)  # chips pop
+    sfx(tap(), start["d_sale"] + phrases("d_sale")[1] - .05 + .55 * 1.1, .55)   # the finger presses
+    sfx(tap(), start["d_pay"] + dur["d_pay"] - 1.45 + .55 * 1.1, .55)
     sfx(whoosh(.45), start["d_sale"], .35, -.3)
     sfx(blip(hz(93)), start["d_qr"] + 2.2, .2)                      # scanned
     sfx(chime(), start["d_paid"] + .1, .35)                         # paid
-    sfx(whoosh(.5, up=False), start["pen"] + 1.4, .35, .3)          # the strike-through
     for i in range(3):
         sfx(whoosh(.5), start["devices"] + i * .22, .25, -.5 + .5 * i)  # panels rise
-    for i in range(4):
-        sfx(blip(hz(81 + 2 * i)), start["benefits"] + .3 + i * (dur["benefits"] - 1.6) / 4 + .1, .15)
+    for i, t_ in enumerate(phrases("benefits")):
+        sfx(blip(hz(81 + 2 * i)), start["benefits"] + t_ + .1, .15)
     sfx(whoosh(.6), start["cta"], .3, .4)
 
     mix = np.stack([L, R])
@@ -665,10 +702,12 @@ def make_audio():
     parts, labels = [], []
     for i, (t0, _) in enumerate(clips):
         ms = int(t0 * 1000)
-        parts.append(f"[{i + 3}:a]aresample={RATE},aformat=channel_layouts=stereo,adelay={ms}|{ms},volume=1.8[v{i}]")
+        parts.append(f"[{i + 3}:a]aresample={RATE},aformat=channel_layouts=stereo,adelay={ms}|{ms},volume=1.6[v{i}]")
         labels.append(f"[v{i}]")
-    parts.append(f"{''.join(labels)}amix=inputs={len(clips)}:normalize=0,"
-                 "equalizer=f=3200:t=q:w=1:g=2,acompressor=threshold=0.1:ratio=3:attack=5:release=120[vo]")
+    parts.append(f"{''.join(labels)}amix=inputs={len(clips)}:normalize=0,highpass=f=80,"
+                 "equalizer=f=180:t=q:w=1:g=1.5,equalizer=f=3200:t=q:w=1.2:g=2.5,equalizer=f=9000:t=q:w=1:g=1.5,"
+                 "acompressor=threshold=0.08:ratio=3:attack=4:release=140:makeup=1.5,"
+                 "aecho=0.8:0.5:28|47:0.10|0.06[vo]")
     parts.append(f"[1:a]aresample={RATE},volume=.55[bed]")
     parts.append("[vo]asplit=2[vo1][vo2]")
     parts.append("[bed][vo2]sidechaincompress=threshold=0.03:ratio=5:attack=30:release=450[ducked]")
