@@ -14058,6 +14058,8 @@ async function loadDevices() {
       + 'itself when it starts, so this fills in the next time one is switched '
       + 'on.</p>';
 
+  loadGoModes().catch(() => {});
+  loadDisplayAdverts().catch(() => {});
   await loadSeats();
   // The whole licence picture, beside the till-only card above.
   await loadLicences();
@@ -14134,6 +14136,122 @@ async function loadLicences() {
       </tr>`).join('')
     + '</tbody></table>';
 }
+
+/** Pictures and films for Go customer displays (src/display_adverts.js). */
+let displayAdverts = [];
+async function loadDisplayAdverts() {
+  let data;
+  try {
+    data = await api('/display-adverts');
+  } catch {
+    $('display-adverts-card').hidden = true;
+    return;
+  }
+  $('display-adverts-card').hidden = false;
+  displayAdverts = data.adverts || [];
+  $('display-adverts-list').innerHTML = displayAdverts.length
+    ? '<div style="display:flex;flex-wrap:wrap;gap:12px">' + displayAdverts.map((a, i) => (
+      '<figure style="margin:0;width:180px">'
+      + (a.kind === 'video'
+        ? '<video src="' + esc(a.url) + '" muted playsinline preload="metadata" style="width:180px;height:101px;object-fit:cover;border-radius:10px;background:#000"></video>'
+        : '<img src="' + esc(a.url) + '" alt="" style="width:180px;height:101px;object-fit:cover;border-radius:10px;background:#eee">')
+      + '<figcaption class="small" style="margin-top:4px">' + esc(a.title || (a.kind === 'video' ? 'Film' : 'Picture'))
+      + '<br><span class="muted">' + (a.kind === 'video' ? 'film' : a.seconds + ' s') + ' · ' + Math.max(1, Math.round(a.bytes / 1024 / 1024)) + ' MB</span>'
+      + '<br><button class="btn small ghost" data-advert-move="' + i + '" data-dir="-1"' + (i === 0 ? ' disabled' : '') + ' aria-label="Earlier">&larr;</button>'
+      + '<button class="btn small ghost" data-advert-move="' + i + '" data-dir="1"' + (i === displayAdverts.length - 1 ? ' disabled' : '') + ' aria-label="Later">&rarr;</button>'
+      + '<button class="btn small danger-ghost" data-advert-delete="' + esc(a.id) + '">Delete</button></figcaption></figure>'
+    )).join('') + '</div>'
+    : '<p class="muted small">No adverts yet. A display with none shows the venue name and the time.</p>';
+}
+
+document.addEventListener('click', async (e) => {
+  if (e.target.id === 'display-advert-upload') {
+    const input = $('display-advert-file');
+    const file = input.files && input.files[0];
+    if (!file) return toast('Choose a picture or a film first.', 'error');
+    const form = new FormData();
+    form.append('file', file);
+    form.append('title', file.name);
+    form.append('seconds', $('display-advert-seconds').value || '10');
+    e.target.disabled = true;
+    e.target.textContent = 'Uploading…';
+    try {
+      const res = await fetch('/api/display-adverts', { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      input.value = '';
+      toast('Uploaded. Go customer displays play it from their next round.');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      e.target.disabled = false;
+      e.target.textContent = 'Upload';
+    }
+    return loadDisplayAdverts();
+  }
+  const del = e.target.dataset && e.target.dataset.advertDelete;
+  if (del) {
+    if (!await confirmDialog('Delete this advert?\n\nIt stops playing on every customer display.')) return;
+    try {
+      await api('/display-adverts/' + encodeURIComponent(del), { method: 'DELETE' });
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    return loadDisplayAdverts();
+  }
+  const move = e.target.dataset && e.target.dataset.advertMove;
+  if (move !== undefined && move !== null && move !== '') {
+    const i = Number(move);
+    const j = i + Number(e.target.dataset.dir);
+    if (j < 0 || j >= displayAdverts.length) return;
+    const ids = displayAdverts.map((a) => a.id);
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    try {
+      await api('/display-adverts/order', { method: 'PUT', body: JSON.stringify({ ids }) });
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    return loadDisplayAdverts();
+  }
+});
+
+/** What each Vesopa Go device runs as (src/go_modes.js): the venue decides. */
+async function loadGoModes() {
+  let data;
+  try {
+    data = await api('/go/device-modes');
+  } catch {
+    $('go-modes-card').hidden = true;
+    return;
+  }
+  const devices = data.devices || [];
+  $('go-modes-card').hidden = devices.length === 0;
+  if (!devices.length) return;
+  const label = (id) => ((data.modes || []).find((m) => m.id === id) || {}).label || id;
+  $('go-modes-list').innerHTML = '<table class="table"><thead><tr><th>Device</th><th>Runs as</th>'
+    + '<th>Showing now</th><th>Last called in</th></tr></thead><tbody>'
+    + devices.map((d) => '<tr>'
+      + '<td><b>' + esc(d.name) + '</b></td>'
+      + '<td><select data-go-mode="' + esc(d.device_id) + '" aria-label="What ' + esc(d.name) + ' runs as">'
+      + (data.modes || []).map((m) => '<option value="' + esc(m.id) + '"' + (m.id === d.mode ? ' selected' : '') + '>'
+        + esc(m.label) + '</option>').join('')
+      + '</select></td>'
+      + '<td class="small muted">' + (d.running ? esc(label(d.running)) : '—') + '</td>'
+      + '<td class="small muted">' + (d.last_seen_at ? new Date(d.last_seen_at).toLocaleString('en-GB') : '—') + '</td>'
+      + '</tr>').join('')
+    + '</tbody></table>';
+}
+
+document.addEventListener('change', async (e) => {
+  const id = e.target.dataset && e.target.dataset.goMode;
+  if (!id) return;
+  try {
+    await api('/go/device-modes/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ mode: e.target.value }) });
+    toast('Saved. The device switches the next time it opens or comes back online.');
+  } catch (err) {
+    toast(err.message, 'error');
+    loadGoModes();
+  }
+});
 
 async function loadSeats() {
   let data;

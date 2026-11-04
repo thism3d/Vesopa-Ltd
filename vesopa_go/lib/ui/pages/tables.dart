@@ -48,6 +48,28 @@ class _TablesPageState extends ConsumerState<TablesPage> {
     HapticFeedback.selectionClick();
     final s = ref.read(tapProvider);
     var bill = s.billForTable(table.id);
+    // Items rung up before the table was picked go onto it, as on the till.
+    final saleId = ref.read(currentSaleProvider);
+    final sale = saleId == null ? null : s.bills[saleId];
+    if (sale != null && sale.tableId == null && sale.lines.isNotEmpty && sale.paidMinor == 0 && bill?.heldBy == null) {
+      int covers = bill?.covers ?? 0;
+      if (bill == null) {
+        final asked = await _askCovers(table);
+        if (asked == null || !mounted) return;
+        covers = asked;
+      }
+      final moved = ref.read(tapProvider.notifier).moveSaleToTable(sale.id, table, covers: covers);
+      if (moved != null && mounted) {
+        final n = sale.lines.fold<int>(0, (a, l) => a + l.quantity);
+        ref.read(currentSaleProvider.notifier).show(moved.id);
+        ref.read(shellPageProvider.notifier).go(0);
+        Navigator.of(context).popUntil((r) => r.isFirst);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$n item${n == 1 ? '' : 's'} moved to ${table.name}'),
+        ));
+        return;
+      }
+    }
     if (bill == null) {
       final covers = await _askCovers(table);
       if (covers == null || !mounted) return;

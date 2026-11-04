@@ -23,6 +23,11 @@ import 'counter/ui/brand.dart';
 import 'counter/ui/shell.dart';
 import 'counter/ui/start_pages.dart';
 import 'data/demo_venue.dart';
+import 'data/models.dart' show VenueMode;
+import 'display/ui/display_mode_page.dart';
+import 'kitchen/ui/kitchen_mode_page.dart';
+import 'modes/device_mode.dart';
+import 'modes/mode_chooser_page.dart';
 import 'data/session.dart';
 import 'ui/appearance.dart';
 import 'ui/device_prefs.dart';
@@ -72,11 +77,29 @@ class GoApp extends ConsumerWidget {
     ref.listen(tapProvider.select((s) => s.phase), (_, next) {
       if (next == Phase.welcome && demoOnly) startGoDemo(ref);
     });
+    // Signed in to a venue with tills: EPOS, Kitchen or Customer display, as
+    // the back office set this device or as it chose (lib/modes).
+    final venueMode = ref.watch(tapProvider.select((s) => s.venue?.mode));
+    final demo = ref.watch(tapProvider.select((s) => s.demo));
+    final device = ref.watch(deviceModeProvider);
+    final signedOn = phase == Phase.locked || phase == Phase.ready;
+    final modes = signedOn && !demo && venueMode == VenueMode.connected;
+    if (signedOn) Future.microtask(() => ref.read(deviceModeProvider.notifier).load());
+    Widget orMode(Widget epos) {
+      if (!modes) return epos;
+      if (!device.loaded) return const Scaffold(key: ValueKey('mode-boot'), body: Center(child: GoMark(size: 72)));
+      return switch (device.mode) {
+        null => const ModeChooserPage(key: ValueKey('mode-choose')),
+        DeviceMode.kitchen => const KitchenModePage(key: ValueKey('mode-kitchen')),
+        DeviceMode.display => const DisplayModePage(key: ValueKey('mode-display')),
+        DeviceMode.epos => epos,
+      };
+    }
     return MaterialApp(
       navigatorKey: goNavigator,
       // Signed on: the licence, offline and idle rules over every page.
       // The start animation over the first screen, then the frame's rules.
-      builder: (context, child) => GoSplash(child: phase == Phase.ready ? GoFrame(child: child!) : child!),
+      builder: (context, child) => GoSplash(child: phase == Phase.ready && (!modes || device.mode == DeviceMode.epos) ? GoFrame(child: child!) : child!),
       title: appName,
       debugShowCheckedModeBanner: false,
       // In the venue's lettering once it has loaded, as the till is.
@@ -92,8 +115,8 @@ class GoApp extends ConsumerWidget {
           Phase.welcome => const LiteWelcomePage(key: ValueKey('welcome')),
           Phase.setup => const SetupPage(key: ValueKey('setup')),
           // The PIN pad stays dark, as the till's.
-          Phase.locked => Theme(data: Tp.theme(Brightness.dark), child: const LiteLockPage(key: ValueKey('locked'))),
-          Phase.ready => const Shell(key: ValueKey('ready')),
+          Phase.locked => orMode(Theme(key: const ValueKey('locked'), data: Tp.theme(Brightness.dark), child: const LiteLockPage())),
+          Phase.ready => orMode(const Shell(key: ValueKey('ready'))),
         },
       ),
     );

@@ -33,6 +33,7 @@ const payments = new Map();
 const cardLog = new Map();
 const offices = new Map(); // email -> {id, name, plan}
 const users = new Map();
+const machineRefunds = new Map();
 const pool = {
   async getConnection() {
     return {
@@ -98,7 +99,7 @@ const pool = {
       const row = settings.get(args[0]);
       return [row ? [row] : []];
     }
-    if (s.startsWith('UPDATE epos_tap_payments SET refunded_minor')) {
+    if (s.startsWith('UPDATE epos_tap_payments SET refunded_minor = ?,')) {
       const row = payments.get(args[2]);
       Object.assign(row, { refunded_minor: args[0], state: args[1] });
       return [{ affectedRows: 1 }];
@@ -116,6 +117,28 @@ const pool = {
       row.state = 'cancelled';
       return [{ affectedRows: 1 }];
     }
+    if (s.startsWith('CREATE TABLE IF NOT EXISTS epos_tap_machine_refunds')) return [{}];
+    if (s.startsWith('SELECT * FROM epos_tap_machine_refunds')) {
+      const row = machineRefunds.get(args[0]);
+      return [row && row.office === args[1] ? [{ ...row }] : []];
+    }
+    if (s.startsWith('INSERT INTO epos_tap_machine_refunds')) {
+      const [id, office, terminal, payment_id, machine_ref, linked, amount_minor, state, approved_by, reason, bill_ref, environment] = args;
+      machineRefunds.set(id, { id, office, terminal, payment_id, machine_ref, linked, amount_minor, state, approved_by, reason, bill_ref, environment });
+      return [{ affectedRows: 1 }];
+    }
+    if (s.startsWith('UPDATE epos_tap_machine_refunds SET state = ?')) {
+      const row = machineRefunds.get(args[2]);
+      if (!row || row.state !== 'waiting') return [{ affectedRows: 0 }];
+      Object.assign(row, { state: args[0], dojo_status: args[1] });
+      return [{ affectedRows: 1 }];
+    }
+    if (s.startsWith('UPDATE epos_tap_payments SET refunded_minor = COALESCE')) {
+      const row = payments.get(args[2]);
+      row.refunded_minor = (row.refunded_minor || 0) + args[0];
+      if (row.refunded_minor >= row.amount_minor + row.tip_minor) row.state = 'refunded';
+      return [{ affectedRows: 1 }];
+    }
     if (s.startsWith('INSERT IGNORE INTO epos_card_transactions')) {
       if (!cardLog.has(args[0])) cardLog.set(args[0], { office: args[1], outcome: args[3], amount: args[4] });
       return [{ affectedRows: 1 }];
@@ -127,12 +150,21 @@ const pool = {
 // ---- Dojo, faked ------------------------------------------------------------
 const calls = [];
 let intentStatus = 'Created';
+let sessionStatus = 'InitiateRequested';
+let sessionCancels = true;
+const signatures = [];
 let intentCount = 0;
 async function fakeFetch(url, init) {
   calls.push({ url, init });
   const reply = (status, body) => ({ ok: status < 300, status, statusText: '', text: async () => JSON.stringify(body) });
   if (url.endsWith('/tap/apple-terminal/secret')) return reply(200, { secret: 'tap-secret-123' });
-  if (url.endsWith('/terminal-sessions') && init.method === 'POST') return reply(200, { id: 'ts_1', status: 'InitiateRequested' });
+  if (url.endsWith('/terminal-sessions') && init.method === 'POST') {
+    const d = JSON.parse(init.body).details;
+    return reply(200, { id: d.sessionType === 'Sale' ? 'ts_1' : `ts_${d.sessionType}`, status: 'InitiateRequested' });
+  }
+  if (/\/terminal-sessions\/[^/]+\/signature$/.test(url)) { signatures.push(JSON.parse(init.body).accepted); return reply(200, {}); }
+  if (/\/terminal-sessions\/[^/]+\/cancel$/.test(url)) return sessionCancels ? reply(200, {}) : reply(422, { title: 'Card is in' });
+  if (/\/terminal-sessions\/[^/]+$/.test(url)) return reply(200, { status: sessionStatus, notificationEvents: [{ notificationType: 'EnterPin' }] });
   if (url.endsWith('/refunds') && init.method === 'POST') return reply(200, { refundId: 'rf_1' });
   if (url.endsWith('/payment-intents') && init.method === 'POST') {
     intentCount += 1;
@@ -278,8 +310,60 @@ async function main() {
     const started = calls.find((c) => c.url.endsWith('/terminal-sessions'));
     assert.strictEqual(started.url, 'https://api.dojo.tech/terminal-sessions');
     assert.strictEqual(JSON.parse(started.init.body).terminalId, 'tm_123');
+    // The machine's own session is followed, its prompt passed on.
+    const mm = { auth: token('machine@venue.test') };
+    const waiting = await go('GET', '/api/tap/payments/pay-0010-abcd', mm);
+    assert.strictEqual(waiting.body.state, 'waiting');
+    assert.strictEqual(waiting.body.prompt, 'EnterPin');
+    // TS-05/TS-08: a new Go asks, and is told to check the signature; an
+    // older one has it accepted for it, as the till does.
+    sessionStatus = 'SignatureVerificationRequired';
+    assert.strictEqual((await go('GET', '/api/tap/payments/pay-0010-abcd?signature=ask', mm)).body.state, 'signature');
+    assert.strictEqual((await go('GET', '/api/tap/payments/pay-0010-abcd', mm)).body.state, 'waiting');
+    assert.deepStrictEqual(signatures, [true]);
+    const sig = await go('POST', '/api/tap/payments/pay-0010-abcd/signature', { ...mm, body: { accepted: false } });
+    assert.strictEqual(sig.body.signature, 'declined');
+    assert.deepStrictEqual(signatures, [true, false]);
+    // ERR-422: a cancel the machine refuses leaves the payment waiting.
+    sessionStatus = 'Authorized';
+    sessionCancels = false;
+    const refused = await go('POST', '/api/tap/payments/pay-0010-abcd/cancel', mm);
+    assert.strictEqual(refused.body.cancel_refused, true);
+    assert.strictEqual(payments.get('pay-0010-abcd').state, 'waiting', 'never cancelled while the card is in');
+    sessionCancels = true;
+    // TS-14: an expired session is unconfirmed, not failed.
+    sessionStatus = 'Expired';
+    intentStatus = 'Created';
+    assert.strictEqual((await go('GET', '/api/tap/payments/pay-0010-abcd', mm)).body.state, 'expired');
+    assert.strictEqual(payments.get('pay-0010-abcd').state, 'waiting');
+    sessionStatus = 'Captured';
     intentStatus = 'Captured';
-    assert.strictEqual((await go('GET', '/api/tap/payments/pay-0010-abcd', { auth: token('machine@venue.test') })).body.state, 'paid');
+    assert.strictEqual((await go('GET', '/api/tap/payments/pay-0010-abcd', mm)).body.state, 'paid');
+    // TS-11: cancelled at the machine is not a sale.
+    await go('POST', '/api/tap/payments', { ...mm, body: { ...pay, id: 'pay-0012-abcd', via: 'machine' } });
+    sessionStatus = 'Canceled';
+    assert.strictEqual((await go('GET', '/api/tap/payments/pay-0012-abcd', mm)).body.state, 'cancelled');
+
+    // Refunds on the card machine: linked to the whole of what is left of a
+    // machine sale (RF-04), any amount without one (RF-03), declined never booked (RF-06a).
+    const noBoss = await go('POST', '/api/tap/machine-refunds', { ...mm, body: { id: 'mref-0001-abcd', amount_minor: 300 } });
+    assert.strictEqual(noBoss.status, 400, 'a manager approves');
+    const total10 = payments.get('pay-0010-abcd').amount_minor + payments.get('pay-0010-abcd').tip_minor;
+    const linked = await go('POST', '/api/tap/machine-refunds', { ...mm, body: { id: 'mref-0002-abcd', amount_minor: total10, payment_id: 'pay-0010-abcd', approved_by: 'Sam' } });
+    assert.strictEqual(linked.status, 201);
+    assert.strictEqual(linked.body.linked, true);
+    assert.strictEqual(JSON.parse(calls.filter((c) => c.url.endsWith('/terminal-sessions')).at(-1).init.body).details.matchedRefund.paymentIntentId,
+      payments.get('pay-0010-abcd').intent_id);
+    sessionStatus = 'Captured';
+    assert.strictEqual((await go('GET', '/api/tap/machine-refunds/mref-0002-abcd', mm)).body.state, 'paid');
+    assert.strictEqual(payments.get('pay-0010-abcd').state, 'refunded');
+    const over = await go('POST', '/api/tap/machine-refunds', { ...mm, body: { id: 'mref-0003-abcd', amount_minor: 100, payment_id: 'pay-0010-abcd', approved_by: 'Sam' } });
+    assert.strictEqual(over.status, 409, 'nothing left to refund');
+    const any = await go('POST', '/api/tap/machine-refunds', { ...mm, body: { id: 'mref-0004-abcd', amount_minor: 450, approved_by: 'Sam', reason: 'No receipt' } });
+    assert.strictEqual(any.body.linked, false);
+    assert.strictEqual(JSON.parse(calls.filter((c) => c.url.endsWith('/terminal-sessions')).at(-1).init.body).details.unlinkedRefund.amount.value, 450);
+    sessionStatus = 'Declined';
+    assert.strictEqual((await go('GET', '/api/tap/machine-refunds/mref-0004-abcd', mm)).body.state, 'failed');
     assert.match((await go('POST', '/api/tap/payments', { body: { ...pay, id: 'pay-0011-abcd', via: 'machine' } })).body.error, /No card machine/);
 
     // Refunds: a manager's approval, never more than was paid, part then the rest.

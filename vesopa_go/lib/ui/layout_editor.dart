@@ -46,6 +46,40 @@ class LayoutEditorPage extends ConsumerStatefulWidget {
 
 class _LayoutEditorPageState extends ConsumerState<LayoutEditorPage> {
   late final List<Map<String, dynamic>> _keys = [for (final b in widget.screen.buttons) b.toJson()];
+
+  /// DeepSeek's suggestion (owner, 2026-11-03): best sellers where the hand
+  /// goes first, departments together. Into the editor as it is, for the
+  /// manager to look at, change and Save, or not.
+  Future<void> _suggest() async {
+    if (ref.read(tapProvider).demo) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Suggestions use the venue's own sales: sign in to a venue to try them.")));
+      return;
+    }
+    final goal = TextEditingController();
+    final answer = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (c) => _SuggestSheet(goal: goal, ask: () => ref.read(apiProvider).suggestLayout(widget.form, widget.screen.id, goal: goal.text.trim())),
+    );
+    if (answer == null || !mounted) return;
+    final names = Map<String, dynamic>.from(answer['names'] as Map? ?? const {});
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _picked = null;
+      _keys
+        ..clear()
+        ..addAll([
+          for (final b in answer['buttons'] as List? ?? const [])
+            {
+              ...Map<String, dynamic>.from(b as Map),
+              if ('${b['label'] ?? ''}'.isEmpty && names['${b['pluId']}'] != null) 'label': names['${b['pluId']}'],
+            },
+        ]);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Suggested layout in place. Move anything you like, then Save.')));
+  }
   int? _picked;
   bool _saving = false;
 
@@ -126,6 +160,7 @@ class _LayoutEditorPageState extends ConsumerState<LayoutEditorPage> {
       appBar: AppBar(
         title: Text('Arrange ${widget.screen.name}'),
         actions: [
+          IconButton(tooltip: 'Suggest a layout (DeepSeek)', onPressed: _saving ? null : _suggest, icon: const Icon(Icons.auto_awesome_rounded)),
           TextButton(onPressed: _saving ? null : () => _save(reset: true), child: const Text('Back to the till\'s')),
           const SizedBox(width: 8),
           FilledButton(onPressed: _saving ? null : _save, child: const Text('Save')),
@@ -225,5 +260,90 @@ class _LayoutEditorPageState extends ConsumerState<LayoutEditorPage> {
     final h = '${hex ?? ''}'.replaceAll('#', '');
     final v = int.tryParse(h, radix: 16);
     return h.length == 6 && v != null ? Color(0xFF000000 | v) : null;
+  }
+}
+
+/// Asks for a suggestion and shows what it would do before it is used.
+class _SuggestSheet extends StatefulWidget {
+  const _SuggestSheet({required this.goal, required this.ask});
+  final TextEditingController goal;
+  final Future<Map<String, dynamic>> Function() ask;
+  @override
+  State<_SuggestSheet> createState() => _SuggestSheetState();
+}
+
+class _SuggestSheetState extends State<_SuggestSheet> {
+  bool _busy = false;
+  String? _error;
+  Map<String, dynamic>? _answer;
+
+  Future<void> _go() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final a = await widget.ask();
+      if (mounted) setState(() => _answer = a);
+    } on TapApiError catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final a = _answer;
+    final added = (a?['added'] as List? ?? const []).join(', ');
+    final dropped = (a?['dropped'] as List? ?? const []).join(', ');
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          const Icon(Icons.auto_awesome_rounded, color: Tp.lime),
+          const SizedBox(width: 8),
+          Text('Suggest a layout', style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+        ]),
+        const SizedBox(height: 6),
+        Text(
+          'DeepSeek looks at the last four weeks of sales and puts the best sellers where your hand goes first, '
+          'each department together. Page and function keys stay where they are.',
+          style: t.bodyMedium,
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: widget.goal,
+          maxLength: 300,
+          decoration: const InputDecoration(labelText: 'Anything to aim for? (optional)', hintText: 'e.g. draught first, cocktails together'),
+        ),
+        if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(_error!, style: const TextStyle(color: Tp.danger))),
+        if (a != null) ...[
+          Text('${a['summary'] ?? ''}', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          for (final r in a['reasons'] as List? ?? const []) Padding(padding: const EdgeInsets.only(top: 4), child: Text('• $r', style: t.bodyMedium)),
+          const SizedBox(height: 6),
+          Text(
+            ['${a['moved']} keys rearranged', if (added.isNotEmpty) 'added: $added', if (dropped.isNotEmpty) 'taken off: $dropped'].join(' · '),
+            style: t.bodySmall,
+          ),
+          const SizedBox(height: 12),
+        ],
+        Row(children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: _busy ? null : _go,
+              child: _busy
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Text(a == null ? 'Suggest' : 'Suggest again'),
+            ),
+          ),
+          if (a != null) ...[
+            const SizedBox(width: 10),
+            Expanded(child: FilledButton(onPressed: () => Navigator.pop(context, a), child: const Text('Use it'))),
+          ],
+        ]),
+      ]),
+    );
   }
 }

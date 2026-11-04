@@ -48,6 +48,9 @@ class _TapPromptState extends State<TapPrompt> with TickerProviderStateMixin {
         PayStep.linking => 'Linking the venue\'s account…',
         PayStep.waitingForCard => 'Hold the card here',
         PayStep.onMachine => 'Follow the card machine',
+        PayStep.pin => 'The customer is entering their PIN',
+        PayStep.signature => "Check the customer's signature",
+        PayStep.cancelling => 'Cancelling on the card machine…',
         PayStep.confirming => 'Confirming with Dojo…',
         PayStep.done => 'Done',
       };

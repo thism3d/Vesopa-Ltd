@@ -258,6 +258,20 @@ function startSession(key, { terminalId, intentId }, opts) {
   });
 }
 
+/**
+ * A refund on a card machine (Dojo's Pay at Counter refunds, as the till
+ * sends them -- vesopa_epos payment_provider.dart startRefundSession): linked
+ * to the sale's intent when [intentId] is given (MatchedRefund: what is left
+ * of that sale), else any amount (UnlinkedRefund). The customer presents
+ * their card on the machine either way.
+ */
+function startRefundSession(key, { terminalId, intentId, amountMinor }, opts) {
+  const details = intentId
+    ? { sessionType: 'MatchedRefund', matchedRefund: { paymentIntentId: intentId } }
+    : { sessionType: 'UnlinkedRefund', unlinkedRefund: { amount: { value: amountMinor, currencyCode: 'GBP' } } };
+  return call(key, 'POST', '/terminal-sessions', { ...opts, terminal: true, body: { terminalId, details } });
+}
+
 function getSession(key, sessionId, opts) {
   return call(key, 'GET', '/terminal-sessions/' + encodeURIComponent(sessionId), {
     ...opts,
@@ -337,6 +351,7 @@ module.exports = {
   refundIntent,
   cancelIntent,
   startSession,
+  startRefundSession,
   getSession,
   cancelSession,
   answerSignature,

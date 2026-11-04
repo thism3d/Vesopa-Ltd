@@ -454,6 +454,10 @@ class TapSession extends Notifier<TapState> {
   /// Set by main.dart.
   static String product = 'Vesopa Go';
 
+  /// Set while this device runs as a customer display, which joins the
+  /// venue's local link as a display (lib/display): the till side stays off it.
+  static bool lanHeldByDisplay = false;
+
   /// This phone as the other terminals see it: "iPhone (Vesopa Go) 3F2A".
   String get terminalName {
     final kind = kIsWeb ? 'Phone' : (Platform.isIOS ? 'iPhone' : 'Android');
@@ -895,6 +899,7 @@ class TapSession extends Notifier<TapState> {
   bool _lanJoined = false;
 
   Future<void> _joinLan() async {
+    if (lanHeldByDisplay) return;
     final token = ref.read(apiProvider).token;
     if (token == null || token.isEmpty || _deviceId.isEmpty) return;
     try {
@@ -1034,6 +1039,53 @@ class TapSession extends Notifier<TapState> {
     );
     _put(bill);
     return bill;
+  }
+
+  /// The sale on the screen goes to [table], as the till does when a table is
+  /// picked mid-sale (owner, 2026-11-03: the items "vanished" and had to be
+  /// rung up again). An empty table takes the sale itself, same id, so the
+  /// tills see one bill change rather than one close and another open; a
+  /// table already open gets the sale's lines added and the sale goes.
+  /// Answers the table's bill, or null when there was nothing to move.
+  Bill? moveSaleToTable(String saleId, TableInfo table, {int covers = 0}) {
+    final sale = state.bills[saleId];
+    if (sale == null || sale.tableId != null || sale.lines.isEmpty || sale.paidMinor > 0) return null;
+    final had = state.billForTable(table.id);
+    if (had == null) {
+      final bill = Bill(
+        id: sale.id,
+        name: table.name,
+        tableId: table.id,
+        tableNumber: table.number,
+        roomId: table.roomId,
+        covers: covers,
+        lines: sale.lines,
+        voids: sale.voids,
+        tickets: sale.tickets,
+        clerk: sale.clerk,
+        staffId: sale.staffId,
+        serviceChargePercent: sale.serviceChargePercent,
+        openedAt: sale.openedAt,
+        member: sale.member,
+        voucherCode: sale.voucherCode,
+        voucherMinor: sale.voucherMinor,
+        discountPercent: sale.discountPercent,
+        discountFixedMinor: sale.discountFixedMinor,
+        discountReason: sale.discountReason,
+      );
+      _put(bill);
+      return bill;
+    }
+    final merged = had.copyWith(
+      lines: [...had.lines, ...sale.lines],
+      voids: [...had.voids, ...sale.voids],
+      tickets: [...had.tickets, ...sale.tickets],
+      member: had.member ?? sale.member,
+    );
+    _put(merged);
+    state = state.copyWith(bills: Map.of(state.bills)..remove(saleId));
+    if (_connected) unawaited(ref.read(apiProvider).retireBill(saleId, reason: 'moved').then((_) {}, onError: (Object _) {}));
+    return merged;
   }
 
   Bill openTab(String name) {

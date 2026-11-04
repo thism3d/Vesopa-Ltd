@@ -17,6 +17,10 @@ void main() {
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     FlutterSecureStorage.setMockInitialValues({});
+    // The welcome tour loops for ever; with Reduce Motion it is one still
+    // frame (intro_tour.dart), so pumpAndSettle can settle.
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
     SharedPreferences.setMockInitialValues({});
     Journal.persist = false;
 

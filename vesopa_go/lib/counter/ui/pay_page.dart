@@ -10,7 +10,9 @@ library;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:vesopa_go/ui/adaptive.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
@@ -60,7 +62,43 @@ class _PayPageState extends ConsumerState<PayPage> {
   String? _resultNote;
   bool _testing = false;
 
+  /// The running payment's Cancel and signature check.
+  PayControl? _control;
+  bool _cancelling = false;
+
+  /// The card screen turned round for the customer across the counter.
+  bool _facing = false;
+
   Bill? get _bill => ref.read(tapProvider).bills[widget.billId];
+
+  /// The card machine asks the clerk to check the customer's signature
+  /// (Dojo TS-05/TS-08). An alert with the destructive choice on the left,
+  /// as Apple's guidelines lay a two-button alert out.
+  Future<bool> _checkSignature() async {
+    if (!mounted) return true;
+    HapticFeedback.mediumImpact();
+    final ok = await showAdaptiveDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => AlertDialog.adaptive(
+        title: const Text('Check the signature'),
+        content: const Text("Compare the customer's signature on the card machine's slip with the one on the back of their card."),
+        actions: [
+          adaptiveAction(c, label: 'Decline', destructive: true, onPressed: () => Navigator.pop(c, false)),
+          adaptiveAction(c, label: 'Accept', primary: true, onPressed: () => Navigator.pop(c, true)),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
+  void _cancelPayment() {
+    final c = _control;
+    if (c == null || c.cancelRequested) return;
+    HapticFeedback.selectionClick();
+    c.cancel();
+    setState(() => _cancelling = true);
+  }
 
   @override
   void initState() {
@@ -163,6 +201,16 @@ class _PayPageState extends ConsumerState<PayPage> {
       _presetTip = 0;
       _step = PayStep.preparing;
     });
+    final control = PayControl(checkSignature: _checkSignature)
+      ..onCancelRefused = () {
+        if (!mounted) return;
+        setState(() => _cancelling = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('The card is already in, so the card machine will finish the payment. Wait for its answer.'),
+        ));
+      };
+    _control = control;
+    _cancelling = false;
     final outcome = await payments.take(
       amountMinor: _cardAmount,
       tipMinor: tip,
@@ -170,7 +218,10 @@ class _PayPageState extends ConsumerState<PayPage> {
       clerk: ref.read(tapProvider).clerk?.name,
       via: via,
       onStep: (st) => mounted ? setState(() => _step = st) : null,
+      control: control,
     );
+    _control = null;
+    _cancelling = false;
     if (!mounted) return;
     if (outcome.paid) {
       // The rail finishes on Complete before the receipt, as the till's.
@@ -320,23 +371,82 @@ class _PayPageState extends ConsumerState<PayPage> {
       null => mapped?.detail,
     };
     final bill = ref.read(tapProvider).bills[widget.billId];
+    final running = _result == null && step != CardStep.done;
+    // Cancel while the machine waits for the card or the PIN (Dojo: cancel
+    // from the till; the machine refuses once the card is in, ERR-422).
+    final cancellable = running && _control != null && machine &&
+        const {PayStep.onMachine, PayStep.pin, PayStep.cancelling}.contains(_step);
+    // Turn to the customer while Tap to Pay waits for their card, as Dojo's
+    // and Apple's guides show the merchant turning the iPhone round.
+    final turnable = !machine && (_result != null || _testing || _step == PayStep.waitingForCard || _step == PayStep.confirming || _cardStep != null);
+    if (!turnable && _facing) _facing = false;
+    final screen = CardPayScreen(
+      amountMinor: _cardAmount + _tip,
+      heading: _facing ? (ref.read(tapProvider).venue?.name ?? 'Pay by card') : (machine ? 'Card machine' : 'Tap to Pay'),
+      step: step,
+      detail: _facing && step == CardStep.present ? 'Hold your card or phone flat against the top of this device' : words,
+      device: _facing ? null : (machine ? "The venue's card machine" : ref.read(tapProvider.notifier).terminalName),
+      partner: _facing || config.softwareHouseId.isEmpty ? null : 'Software house ${config.softwareHouseId}${config.resellerId.isEmpty ? '' : ' · Reseller ${config.resellerId}'}',
+      result: _result,
+      resultNote: _facing ? null : _resultNote,
+      actions: bill == null || _facing ? const [] : _resultActions(bill),
+      test: _testing,
+      machine: machine,
+      online: _facing ? null : ref.watch(tapProvider).online,
+      onCancel: cancellable && !_facing ? _cancelPayment : null,
+      cancelling: _cancelling,
+      onTurnToCustomer: turnable && running && !_facing ? () => _turn(true) : null,
+    );
     return Theme(
       data: Tp.theme(Brightness.dark, font: Theme.of(context).textTheme.bodyMedium?.fontFamily),
-      child: CardPayScreen(
-        amountMinor: _cardAmount + _tip,
-        heading: machine ? 'Card machine' : 'Tap to Pay',
-        step: step,
-        detail: words,
-        device: machine ? "The venue's card machine" : ref.read(tapProvider.notifier).terminalName,
-        partner: config.softwareHouseId.isEmpty ? null : 'Software house ${config.softwareHouseId}${config.resellerId.isEmpty ? '' : ' · Reseller ${config.resellerId}'}',
-        result: _result,
-        resultNote: _resultNote,
-        actions: bill == null ? const [] : _resultActions(bill),
-        test: _testing,
-        machine: machine,
-        online: ref.watch(tapProvider).online,
-      ),
+      child: Builder(builder: (context) {
+        final reduce = MediaQuery.of(context).disableAnimations;
+        return Stack(children: [
+          // A half turn about the screen's centre, on Apple's emphasised
+          // curve, so the customer across the counter reads it upright.
+          TweenAnimationBuilder<double>(
+            tween: Tween(end: _facing ? 1 : 0),
+            duration: reduce ? Duration.zero : const Duration(milliseconds: 620),
+            curve: kEmphasised,
+            builder: (context, v, child) => Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, 0.0012)
+                ..rotateZ(v * 3.14159265)
+                ..scaleByDouble(1 - 0.08 * (1 - (2 * v - 1).abs()), 1 - 0.08 * (1 - (2 * v - 1).abs()), 1, 1),
+              child: child,
+            ),
+            child: screen,
+          ),
+          // The clerk's side stays the clerk's: turn back, or cancel.
+          if (_facing)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    FilledButton.tonalIcon(
+                      key: const ValueKey('turn-back'),
+                      onPressed: () => _turn(false),
+                      icon: const Icon(Icons.screen_rotation_alt_rounded),
+                      label: const Text('Turn back'),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+        ]);
+      }),
     );
+  }
+
+  void _turn(bool facing) {
+    HapticFeedback.mediumImpact();
+    setState(() => _facing = facing);
   }
 
   /// QR Pay: the customer scans and pays on their own phone.

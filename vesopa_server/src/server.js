@@ -494,6 +494,12 @@ app.use('/api', timesheetRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use(deviceRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Each machine's hardware and network health, the fleet for admin.vesopa.com,
 // and a venue updating its own tills when Vesopa allows it. src/device_health.js.
+// What each Vesopa Go device runs as: EPOS, Kitchen or Customer display (src/go_modes.js).
+app.use(require('./go_modes').goModeRoutes({ pool, secret: JWT_SECRET, auth: requireAuth(JWT_SECRET) }));
+// Pictures and films for customer displays, uploaded here (src/display_adverts.js).
+app.use(require('./display_adverts').displayAdvertRoutes({ pool, secret: JWT_SECRET, auth: requireAuth(JWT_SECRET) }));
+// DeepSeek's suggested layout for a till screen, for the back office and Go (src/layout_ai.js).
+app.use(require('./layout_ai').layoutAiRoutes({ pool, secret: JWT_SECRET, auth: requireAuth(JWT_SECRET) }));
 app.use(require('./device_health').deviceHealthRoutes({
   pool,
   broadcast,

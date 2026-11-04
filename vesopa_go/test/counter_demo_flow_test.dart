@@ -21,6 +21,10 @@ void main() {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = name == 'phone' ? 3 : 2;
       addTearDown(tester.view.reset);
+      // The welcome tour loops for ever; with Reduce Motion it is one still
+      // frame (intro_tour.dart), so pumpAndSettle can settle.
+      tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
       FlutterSecureStorage.setMockInitialValues({});
       SharedPreferences.setMockInitialValues({});
       Journal.persist = false;
@@ -105,6 +109,10 @@ void main() {
       await tester.tap(find.textContaining('Receipt 2'));
       await tester.pumpAndSettle();
       await tapKey(tester, 'refund');
+      // The sheet: by item or amount, back to the card, the reason (2026-11-03).
+      expect(find.text('Back to the card'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const ValueKey('refund-go')));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Refund £3.00'));
       await tester.pumpAndSettle();
       expect(find.text('£3.00 refunded to the card'), findsOneWidget);

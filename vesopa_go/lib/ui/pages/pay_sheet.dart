@@ -148,6 +148,9 @@ class _PaySheetState extends ConsumerState<PaySheet> {
         PayStep.linking => 'Linking the venue\'s account…',
         PayStep.waitingForCard => 'Hold the card or phone near the top of this phone',
         PayStep.onMachine => 'Follow the card machine',
+        PayStep.pin => 'The customer is entering their PIN',
+        PayStep.signature => "Check the customer's signature",
+        PayStep.cancelling => 'Cancelling on the card machine…',
         PayStep.confirming => 'Confirming with Dojo…',
         PayStep.done => 'Done',
       };

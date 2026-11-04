@@ -34,6 +34,8 @@ import 'package:vesopa_go/ui/sounds.dart';
 import '../data/lite_state.dart';
 import 'brand.dart';
 import 'cash_page.dart';
+import 'dojo_checklist_page.dart';
+import '../../modes/device_mode.dart';
 import 'quick_sale_page.dart';
 import 'printer_scan.dart';
 import 'receipt_print.dart';
@@ -245,7 +247,36 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             title: Text('Dojo · ${s.config.environment == 'live' ? 'Live' : 'Sandbox'}'),
             subtitle: Text('Software house ${s.config.softwareHouseId} · Reseller ${s.config.resellerId}'),
           ),
+        // Dojo's accreditation cases, run from this device (owner, 2026-11-03).
+        if (!s.config.teya.enabled && (s.clerk?.can(TillPermission.refund) ?? false))
+          ListTile(
+            leading: const Icon(Icons.fact_check_rounded),
+            title: const Text('Dojo checklist'),
+            subtitle: const Text('Every accreditation case: run it here and share the report'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DojoChecklistPage())),
+          ),
       ]),
+      // EPOS, Kitchen or Customer display (owner, 2026-11-03): the back
+      // office's choice, else the device's, changed here by a manager.
+      if (s.venue?.mode == VenueMode.connected && !s.demo)
+        _group('This device', [
+          Consumer(builder: (context, ref, _) {
+            final m = ref.watch(deviceModeProvider);
+            final manager = s.clerk?.can(TillPermission.isManager) ?? false;
+            return ListTile(
+              leading: Icon(m.mode?.icon ?? Icons.point_of_sale_rounded),
+              title: Text('Runs as ${m.mode?.label ?? DeviceMode.epos.label}'),
+              subtitle: Text(m.fixed
+                  ? 'Set in the back office (Devices)'
+                  : manager
+                      ? 'Use this device as Vesopa Kitchen or a customer display instead'
+                      : 'A manager can change this'),
+              trailing: m.fixed ? const Icon(Icons.lock_rounded) : const Icon(Icons.chevron_right_rounded),
+              onTap: m.fixed || !manager ? null : () => ref.read(deviceModeProvider.notifier).forget(),
+            );
+          }),
+        ]),
       _group('Printing', const [_ReceiptPrinterTile()]),
       _group('Appearance', [
         Padding(

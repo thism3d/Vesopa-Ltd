@@ -87,9 +87,14 @@ async function get(conn, tid, requestId, opts) {
 }
 
 async function acceptSignature(conn, tid, requestId, opts) {
+  await answerSignature(conn, tid, requestId, true, opts);
+}
+
+/** The clerk's verdict on the customer's signature: accepted, or declined (no sale). */
+async function answerSignature(conn, tid, requestId, accepted, opts) {
   await call(conn, 'PUT', `/pac/terminals/${encodeURIComponent(tid)}/transactions/${encodeURIComponent(requestId)}/signature`, {
     ...opts,
-    body: { accepted: true },
+    body: { accepted: !!accepted },
   });
 }
 
@@ -128,4 +133,4 @@ function parseRef(value) {
   return m ? { tid: m[1], requestId: m[2] } : null;
 }
 
-module.exports = { ConnectError, listTerminals, start, get, acceptSignature, cancel, state, ref, parseRef, headers };
+module.exports = { ConnectError, listTerminals, start, get, acceptSignature, answerSignature, cancel, state, ref, parseRef, headers };

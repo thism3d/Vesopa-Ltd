@@ -262,6 +262,12 @@ class TapApi {
   Future<void> saveLayout(String form, int screenId, List<Map<String, dynamic>>? buttons, {required int clerkId, required String pin}) =>
       _send('PUT', '/api/tap/layouts/$form/$screenId', {'buttons': buttons, 'clerk_id': clerkId, 'pin': pin});
 
+  /// DeepSeek's suggested layout of [screenId] for this kind of device, from
+  /// four weeks of sales (vesopa_server layout_ai.js). Not saved: the editor
+  /// shows it and a manager saves it or not.
+  Future<Map<String, dynamic>> suggestLayout(String form, int screenId, {String goal = ''}) =>
+      _send('POST', '/api/tap/layouts/suggest', {'form': form, 'screen_id': screenId, 'goal': goal});
+
   /// The venue's mix & match deals, as the till reads them.
   Future<List<dynamic>> deals() async => (await _send('GET', '/till/deals?office=$_o'))['items'] as List? ?? const [];
 
@@ -448,6 +454,48 @@ class TapApi {
 
   Future<Map<String, dynamic>> payment(String id) => _send('GET', '/api/tap/payments/$id');
   Future<Map<String, dynamic>> cancelPayment(String id) => _send('POST', '/api/tap/payments/$id/cancel');
+
+  /// What the back office set this device to run as (vesopa_server
+  /// go_modes.js): `ask`, `epos`, `kitchen` or `display`, and whether fixed.
+  Future<Map<String, dynamic>> goMode() => _send('GET', '/api/go/mode');
+
+  /// A kitchen or display credential for this device's venue.
+  Future<Map<String, dynamic>> goModeToken(String mode, {String? deviceName}) =>
+      _send('POST', '/api/go/mode-token', {'mode': mode, 'device_name': ?deviceName});
+
+  /// What this device is showing now, for the back office's Devices page.
+  Future<void> reportGoMode(String running) => _send('POST', '/api/go/mode/report', {'running': running});
+
+  /// A card machine payment, asked so the machine's "check the signature"
+  /// comes back as `signature` for the clerk to answer (Dojo TS-05/TS-08).
+  Future<Map<String, dynamic>> machinePayment(String id) => _send('GET', '/api/tap/payments/$id?signature=ask');
+  Future<void> answerSignature(String id, {required bool accepted, String? by}) =>
+      _send('POST', '/api/tap/payments/$id/signature', {'accepted': accepted, 'by': ?by});
+
+  /// A refund on the venue's card machine: linked to [paymentId] when given
+  /// (what is left of that sale), else any amount. The customer presents the card.
+  Future<Map<String, dynamic>> startMachineRefund({
+    required String id,
+    required int amountMinor,
+    required String approvedBy,
+    required String reason,
+    String? paymentId,
+    String? billRef,
+    String? terminalId,
+  }) =>
+      _send('POST', '/api/tap/machine-refunds', {
+        'id': id,
+        'amount_minor': amountMinor,
+        'approved_by': approvedBy,
+        'reason': reason,
+        'payment_id': ?paymentId,
+        'bill_ref': ?billRef,
+        'terminal_id': ?terminalId,
+      });
+  Future<Map<String, dynamic>> machineRefund(String id) => _send('GET', '/api/tap/machine-refunds/$id');
+  Future<void> answerRefundSignature(String id, {required bool accepted}) =>
+      _send('POST', '/api/tap/machine-refunds/$id/signature', {'accepted': accepted});
+  Future<Map<String, dynamic>> cancelMachineRefund(String id) => _send('POST', '/api/tap/machine-refunds/$id/cancel');
   Future<Map<String, dynamic>> refund(String id, {int? amountMinor, required String approvedBy, required String reason}) async {
     // A Teya payment goes back to its card through Teya, as on the till.
     if (id.startsWith('teya:')) {

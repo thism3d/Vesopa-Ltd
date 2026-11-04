@@ -84,6 +84,7 @@ class TeyaCardMachine implements PaymentService {
     String? clerk,
     String via = 'machine',
     void Function(PayStep step)? onStep,
+    PayControl? control,
   }) async {
     onStep?.call(PayStep.preparing);
     final machine = await _machine();
@@ -111,7 +112,19 @@ class TeyaCardMachine implements PaymentService {
     // and only then say it is not confirmed.
     var failures = 0;
     final deadline = DateTime.now().add(const Duration(minutes: 6));
+    var cancelSent = false;
     while (DateTime.now().isBefore(deadline)) {
+      if (control != null && control.cancelRequested && !cancelSent) {
+        // The clerk's cancel; Teya refuses it once the card is read, and the
+        // status below then carries on to the real verdict.
+        cancelSent = true;
+        onStep?.call(PayStep.cancelling);
+        try {
+          await cancel(id);
+        } on TapApiError {
+          control.onCancelRefused?.call();
+        }
+      }
       try {
         final st = await api.teyaStatus(id, wait: 15);
         failures = 0;

@@ -44,6 +44,9 @@ enum CardStep {
   PayStep.linking => (step: CardStep.starting, detail: "Linking the venue's Dojo account"),
   PayStep.waitingForCard => (step: CardStep.present, detail: 'Ask the customer to hold their card or phone at the top of this device'),
   PayStep.onMachine => (step: CardStep.present, detail: 'Ask the customer to tap, insert or swipe on the card machine'),
+  PayStep.pin => (step: CardStep.pin, detail: 'The customer is entering their PIN'),
+  PayStep.signature => (step: CardStep.processing, detail: "Compare the customer's signature with the one on their card"),
+  PayStep.cancelling => (step: CardStep.processing, detail: 'Cancelling on the card machine…'),
   PayStep.confirming => (step: CardStep.processing, detail: 'Authorising with the bank'),
   PayStep.done => (step: CardStep.done, detail: 'Payment approved'),
 };
@@ -70,9 +73,22 @@ class CardPayScreen extends StatefulWidget {
     this.test = false,
     this.machine = false,
     this.online,
+    this.onCancel,
+    this.cancelling = false,
+    this.onTurnToCustomer,
   });
 
   final int amountMinor;
+
+  /// The clerk's Cancel while the payment runs (Dojo: cancel from the till);
+  /// null hides it, e.g. once the bank is deciding.
+  final VoidCallback? onCancel;
+
+  /// A cancel has been sent and the machine has not said yet.
+  final bool cancelling;
+
+  /// Tap to Pay: turn this screen round for the customer to read and tap.
+  final VoidCallback? onTurnToCustomer;
 
   /// On the venue's card machine rather than this device's own reader.
   final bool machine;
@@ -282,6 +298,43 @@ class _CardPayScreenState extends State<CardPayScreen> {
                   ),
                 ),
               ),
+              // While it runs: the clerk can stop it, and on Tap to Pay turn
+              // the screen to the customer. Plain and quiet, as Apple's own
+              // payment sheets keep Cancel: never in the customer's way.
+              if (!failed && !paid && (w.onCancel != null || w.onTurnToCustomer != null))
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      if (w.onTurnToCustomer != null)
+                        SizedBox(
+                          height: 50,
+                          child: OutlinedButton.icon(
+                            key: const ValueKey('turn-to-customer'),
+                            onPressed: w.onTurnToCustomer,
+                            icon: const Icon(Icons.screen_rotation_alt_rounded),
+                            label: const Text('Turn to customer'),
+                          ),
+                        ),
+                      if (w.onCancel != null)
+                        SizedBox(
+                          height: 50,
+                          child: TextButton.icon(
+                            key: const ValueKey('cancel-payment'),
+                            onPressed: w.cancelling ? null : w.onCancel,
+                            style: TextButton.styleFrom(foregroundColor: Tp.danger),
+                            icon: w.cancelling
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Icon(Icons.close_rounded),
+                            label: Text(w.cancelling ? 'Cancelling…' : 'Cancel payment'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               if (failed && w.actions.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),

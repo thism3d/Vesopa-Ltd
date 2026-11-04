@@ -1,0 +1,408 @@
+// Copied from vesopa_epos_display/lib/data/basket_feed.dart by tool/sync_go_modes.py. Edit it there, then run that.
+/// Reading what the till is ringing up.
+///
+/// The till publishes the current basket as a small JSON file and stops caring
+/// what happens next — see `vesopa_epos/lib/data/customer_display.dart` for why
+/// it is a file and not a socket. This is the other end of it.
+///
+/// WATCHING, WITH A POLL UNDERNEATH
+///
+/// Windows raises a change event for the rename the till does, and that is the
+/// fast path. It is not the only path: a file watcher on Windows misses
+/// renames under some conditions, dies silently if the folder is recreated, and
+/// does not exist at all if the folder is on a network share. So there is also
+/// a poll on the modification time, at a second. A display that misses a push
+/// is then a second behind rather than frozen with somebody's previous round on
+/// it, and a frozen customer display is the fault this whole feature exists to
+/// avoid.
+///
+/// EVERY READ IS DEFENSIVE
+///
+/// The writer is a different process on a different release cadence. A file
+/// that is missing, truncated, half-renamed, or written by a newer till than
+/// this build understands must all end the same way: the last good basket stays
+/// on screen and the display carries on. Nothing here throws.
+library;
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+/// The newest file format this build knows how to read.
+///
+/// A file claiming a higher one is ignored rather than guessed at: a display
+/// showing a bill it has half-understood is worse than one showing adverts.
+const supportedFormat = 1;
+
+/// One line on the customer's bill.
+class BasketLine {
+  const BasketLine({
+    required this.name,
+    required this.quantity,
+    required this.totalMinor,
+    this.isModifier = false,
+    this.allergens = const [],
+  });
+
+  final String name;
+  final double quantity;
+  final int totalMinor;
+
+  /// A choice made under the item above it — "Dash Lime" under a gin. Drawn
+  /// indented and without a price, the way the till's own check draws it.
+  final bool isModifier;
+
+  /// What is in it, already in the words a customer reads.
+  ///
+  /// The till resolves the codes before writing the file. This application is
+  /// deliberately offline — it reads a file and has no HTTP client — so it
+  /// could not turn `tree_nuts` into "Tree nuts", and a screen facing a
+  /// customer must never show a database code.
+  ///
+  /// Empty means "nothing to say", which covers both a product nobody has
+  /// filled in and a till that has never managed to read the list. It never
+  /// means "contains none of the fourteen", so nothing here prints that.
+  final List<String> allergens;
+
+  static BasketLine? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final name = raw['name'];
+    if (name is! String || name.isEmpty) return null;
+    return BasketLine(
+      name: name,
+      quantity: (raw['quantity'] as num?)?.toDouble() ?? 1,
+      totalMinor: (raw['total_minor'] as num?)?.toInt() ?? 0,
+      isModifier: raw['modifier'] == true,
+      allergens: [
+        for (final a in (raw['allergens'] as List?) ?? const [])
+          if (a is String && a.isNotEmpty) a,
+      ],
+    );
+  }
+}
+
+/// A card payment in progress on the till's card machine, as the customer
+/// should see it: what to do now, and then how it ended.
+///
+/// Written by the till only while its card dialog is open (EPOS 1.16 and
+/// later). Absent otherwise, and absent from every older till, which leaves
+/// the screen exactly as it was.
+class CardStatus {
+  const CardStatus({
+    required this.phase,
+    required this.title,
+    this.detail,
+    this.outcome,
+    this.amountMinor = 0,
+    this.cashbackMinor = 0,
+    this.heading,
+    this.qr,
+  });
+
+  /// Above the amount, when the till names it: "Card refund" while a refund
+  /// runs on the card machine (EPOS 1.16.3 and later). Absent on a sale.
+  final String? heading;
+
+  /// 'progress' while the machine is working, 'result' once it has answered.
+  final String phase;
+  final String title;
+  final String? detail;
+
+  /// approved | declined | cancelled | signatureRejected | busy | expired |
+  /// unknown | failed. Null while still in progress.
+  final String? outcome;
+  final int amountMinor;
+
+  /// Cash back asked for on the card (EPOS 1.16.31 and later): the card is
+  /// charged [amountMinor] plus this. Zero when there is none.
+  final int cashbackMinor;
+
+  /// A link to pay on the customer's own phone (Barclaycard, EPOS 1.16.25):
+  /// drawn as a QR code while the payment waits. Absent for a card machine.
+  final String? qr;
+
+  bool get isResult => phase == 'result';
+  bool get approved => outcome == 'approved';
+
+  /// A result that is neither a yes nor a no: the till is still checking.
+  bool get uncertain => outcome == 'expired' || outcome == 'unknown';
+
+  static CardStatus? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final title = raw['title'];
+    if (title is! String || title.trim().isEmpty) return null;
+    return CardStatus(
+      phase: raw['phase'] == 'result' ? 'result' : 'progress',
+      title: title.trim(),
+      detail: switch (raw['detail']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
+      outcome: raw['outcome'] as String?,
+      amountMinor: (raw['amount_minor'] as num?)?.toInt() ?? 0,
+      cashbackMinor: (raw['cashback_minor'] as num?)?.toInt() ?? 0,
+      qr: switch (raw['qr']) {
+        final String s when s.startsWith('https://') => s,
+        _ => null,
+      },
+      heading: switch (raw['heading']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
+    );
+  }
+}
+
+/// What the till says the customer should be looking at.
+class Basket {
+  const Basket({
+    required this.state,
+    required this.updatedAt,
+    this.lines = const [],
+    this.subtotalMinor = 0,
+    this.discountMinor = 0,
+    this.taxMinor = 0,
+    this.totalMinor = 0,
+    this.paidMinor = 0,
+    this.changeMinor = 0,
+    this.message,
+    this.terminal,
+    this.notifyAllowed = false,
+    this.customerName,
+    this.customerPoints,
+    this.customerDetail,
+    this.greeting,
+    this.card,
+  });
+
+  /// The state before the till has ever written a file: a display switched on
+  /// first thing in the morning, before anybody has signed on.
+  static final unknown = Basket(state: 'idle', updatedAt: DateTime(1970));
+
+  /// 'idle' | 'sale' | 'paid'
+  final String state;
+
+  /// When the till wrote it, by the till's clock. Used only to notice that the
+  /// till has stopped writing — see [BasketFeed.staleAfter].
+  final DateTime updatedAt;
+
+  final List<BasketLine> lines;
+  final int subtotalMinor;
+  final int discountMinor;
+  final int taxMinor;
+  final int totalMinor;
+  final int paidMinor;
+  final int changeMinor;
+  final String? message;
+  final String? terminal;
+
+  /// The member on this bill, and what they had saved up when they went on it.
+  ///
+  /// Both null on most sales, and on every sale written by a till that has not
+  /// been updated yet. The panel draws nothing at all for null rather than an
+  /// empty greeting -- see bill_panel.dart -- so an old till against this
+  /// build shows exactly the screen it showed yesterday.
+  final String? customerName;
+  final int? customerPoints;
+
+  /// A member's plan, number and the day their membership runs to, as one
+  /// line ("Gold · No. 00012 · until 1 Dec 2026"). Null from older tills.
+  final String? customerDetail;
+
+  /// What the venue says above the name. Null for the built-in "Welcome".
+  final String? greeting;
+
+  /// The card machine's progress while the till is taking a card. Null when no
+  /// card payment is open.
+  final CardStatus? card;
+
+  /// Whether there is a bill worth showing a customer.
+  ///
+  /// An empty basket is not a sale in progress. It is a till somebody has just
+  /// walked up to, and the right thing on the screen is the venue's advert.
+  /// Whether the venue lets this screen raise a Windows toast.
+  ///
+  /// Decided in the back office and carried in the file, because this
+  /// application has no network of its own. Off unless somebody turns it on:
+  /// a screen facing a queue is the one surface in the building that should
+  /// not interrupt anybody. See schema_till_notifications.sql.
+  final bool notifyAllowed;
+
+  bool get hasSale => state != 'idle' && lines.isNotEmpty;
+
+  static Basket? fromJson(Map<String, Object?> raw) {
+    final format = (raw['format'] as num?)?.toInt() ?? 0;
+    if (format > supportedFormat) return null;
+
+    final stamp = DateTime.tryParse(raw['updated_at'] as String? ?? '');
+    return Basket(
+      state: raw['state'] as String? ?? 'idle',
+      // A file with no usable timestamp is treated as having just arrived
+      // rather than as ancient: the alternative is a display that declares the
+      // till dead because one field was missing.
+      updatedAt: stamp ?? DateTime.now(),
+      lines: [
+        for (final line in (raw['lines'] as List?) ?? const [])
+          ?BasketLine.fromJson(line),
+      ],
+      subtotalMinor: (raw['subtotal_minor'] as num?)?.toInt() ?? 0,
+      discountMinor: (raw['discount_minor'] as num?)?.toInt() ?? 0,
+      taxMinor: (raw['tax_minor'] as num?)?.toInt() ?? 0,
+      totalMinor: (raw['total_minor'] as num?)?.toInt() ?? 0,
+      paidMinor: (raw['paid_minor'] as num?)?.toInt() ?? 0,
+      changeMinor: (raw['change_minor'] as num?)?.toInt() ?? 0,
+      message: raw['message'] as String?,
+      // Absent is null, which is what a till on the previous release writes
+      // and what a bill with nobody on it writes. Unknown keys are ignored by
+      // this parser either way, so a NEW till against an OLD display is the
+      // screen that venue had yesterday rather than one that will not draw.
+      customerName: switch (raw['customer_name']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
+      customerPoints: (raw['customer_points'] as num?)?.toInt(),
+      customerDetail: switch (raw['customer_detail']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
+      greeting: switch (raw['greeting']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
+      terminal: raw['terminal'] as String?,
+      card: CardStatus.fromJson(raw['card']),
+      // Absent on a till that predates this, and absent means off — which is
+      // also the default for a venue that has one and has not turned it on.
+      notifyAllowed: raw['notify_display'] == true,
+    );
+  }
+}
+
+/// Follows the till's basket file.
+class BasketFeed {
+  BasketFeed({
+    required this.path,
+    this.pollEvery = const Duration(seconds: 1),
+    this.staleAfter = const Duration(minutes: 10),
+  });
+
+  /// The file the till writes.
+  ///
+  /// Passed in rather than worked out here. Finding the till is its own problem
+  /// with three tiers and a lot of judgement in it — see `data/settings.dart` —
+  /// and this class does one thing: follow a path, and never fall over doing it.
+  final String path;
+
+  /// The backstop under the file watcher. See the note at the top.
+  final Duration pollEvery;
+
+  /// How long without a write before the till is assumed to be off.
+  ///
+  /// Long, deliberately. A quiet Tuesday afternoon is not a fault, and a
+  /// display that puts "no connection" over the adverts because nobody has
+  /// bought anything for five minutes is worse than one that says nothing.
+  final Duration staleAfter;
+
+  final _baskets = StreamController<Basket>.broadcast();
+  Stream<Basket> get baskets => _baskets.stream;
+
+  StreamSubscription<FileSystemEvent>? _watch;
+  Timer? _timer;
+  DateTime? _lastModified;
+  bool _disposed = false;
+
+  Basket _current = Basket.unknown;
+  Basket get current => _current;
+
+  /// Whether a basket has ever been read from [path].
+  ///
+  /// What the display page uses to decide whether to keep looking for the till.
+  /// False means the path has never produced anything — a till that has not
+  /// started, or a path that is simply wrong — and those are worth re-checking.
+  /// True means this is the file, and it should be left alone.
+  bool get hasRead => _hasRead;
+  bool _hasRead = false;
+
+  /// Whether the till has stopped writing.
+  bool get isStale =>
+      DateTime.now().difference(_current.updatedAt) > staleAfter;
+
+  void start() {
+    _disposed = false;
+    // A till on another computer has no file here; its baskets arrive over
+    // the live link through [inject].
+    if (path.trim().isEmpty) return;
+    unawaited(_read());
+    _timer = Timer.periodic(pollEvery, (_) => unawaited(_read()));
+    _startWatching();
+  }
+
+  /// The fast path. Best effort: if it cannot be established, or dies later,
+  /// the poll above is still running and the display stays correct.
+  void _startWatching() {
+    try {
+      final folder = File(path).parent;
+      if (!folder.existsSync()) return;
+      _watch = folder.watch(events: FileSystemEvent.all).listen(
+        (_) => unawaited(_read()),
+        onError: (Object _) {},
+        cancelOnError: false,
+      );
+    } catch (_) {
+      // No watcher. The poll carries it.
+    }
+  }
+
+  Future<void> _read() async {
+    if (_disposed) return;
+    try {
+      final file = File(path);
+      final stat = await file.stat();
+      if (stat.type == FileSystemEntityType.notFound) return;
+
+      // Nothing has changed since the last read. Skipping the parse here is
+      // what keeps this at effectively no cost once a second.
+      if (_lastModified != null && !stat.modified.isAfter(_lastModified!)) {
+        return;
+      }
+
+      final text = await file.readAsString();
+      final raw = jsonDecode(text);
+      if (raw is! Map<String, Object?>) return;
+
+      final basket = Basket.fromJson(raw);
+      if (basket == null) return;
+
+      _lastModified = stat.modified;
+      _hasRead = true;
+      _current = basket;
+      if (!_baskets.isClosed) _baskets.add(basket);
+    } catch (_) {
+      // A read that lands mid-rename, a file being written, a folder that has
+      // gone: all of them mean "try again in a second", and none of them mean
+      // anything the customer should be told about.
+    }
+  }
+
+  /// A basket that arrived over the live link (data/till_link.dart): drawn at
+  /// once, without waiting for the file.
+  void inject(Object? raw) {
+    if (_disposed || raw is! Map) return;
+    try {
+      final basket = Basket.fromJson(raw.cast<String, Object?>());
+      if (basket == null) return;
+      _hasRead = true;
+      _current = basket;
+      if (!_baskets.isClosed) _baskets.add(basket);
+    } catch (_) {
+      // A message this build cannot read; the file still arrives.
+    }
+  }
+
+  Future<void> dispose() async {
+    _disposed = true;
+    _timer?.cancel();
+    await _watch?.cancel();
+    await _baskets.close();
+  }
+}

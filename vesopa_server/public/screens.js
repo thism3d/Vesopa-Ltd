@@ -3866,6 +3866,7 @@ function spBind() {
     loadScreens().catch((e) => console.error(e));
   });
   $('sp-save').addEventListener('click', spSaveLayout);
+  $('sp-ai')?.addEventListener('click', spSuggestLayout);
   $('sp-schedule')?.addEventListener('click', spScheduleOpen);
   $('sp-schedules')?.addEventListener('click', async () => { await spLoadSchedules(); spSchedulesOpen(); });
   $('sp-undo').addEventListener('click', spUndo);
@@ -4735,6 +4736,74 @@ async function spLayOutBuiltInBar() {
       imageUrl: null,
     }));
     spSelection = new Set();
+  });
+}
+
+/**
+ * A suggested layout from DeepSeek (src/layout_ai.js): where each product key
+ * should go on this page, from four weeks of sales. Shown first, with what
+ * moves, comes on and goes off; Use it puts it in the editor as one undoable
+ * change, and nothing is live until Save layout, as with any other edit.
+ */
+async function spSuggestLayout() {
+  if (!spCurrent) return;
+  if (spCurrent.surface && spCurrent.surface !== 'sale') {
+    toast('Suggestions are for sale pages.', 'warn');
+    return;
+  }
+  const dlg = document.createElement('dialog');
+  dlg.className = 'modal';
+  dlg.style.maxWidth = '560px';
+  dlg.innerHTML = '<h3 style="margin-top:0">Suggest a layout for ' + esc(spCurrent.name) + '</h3>'
+    + '<p class="muted small">DeepSeek looks at what this venue sold in the last four weeks and suggests where each product key on this page should go: '
+    + 'best sellers top left, each department together. Page and function keys stay where they are.</p>'
+    + (spDirty() ? '<p class="small" style="color:#8a5200">It works from the saved layout; your unsaved changes here are not included.</p>' : '')
+    + '<label class="small">Anything to aim for? (optional)<br><input id="sp-ai-goal" style="width:100%" maxlength="300" '
+    + 'placeholder="e.g. draught first for Friday nights, cocktails together"></label>'
+    + '<div id="sp-ai-out" style="margin-top:12px"></div>'
+    + '<div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px">'
+    + '<button class="btn ghost" id="sp-ai-close">Close</button>'
+    + '<button class="btn" id="sp-ai-go">Suggest</button>'
+    + '<button class="btn primary" id="sp-ai-use" hidden>Use it</button></div>';
+  document.body.appendChild(dlg);
+  dlg.showModal();
+  let suggestion = null;
+  const out = dlg.querySelector('#sp-ai-out');
+  const go = dlg.querySelector('#sp-ai-go');
+  const use = dlg.querySelector('#sp-ai-use');
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.querySelector('#sp-ai-close').addEventListener('click', close);
+  dlg.addEventListener('cancel', close);
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    go.textContent = 'Thinking…';
+    out.innerHTML = '<p class="muted small">Asking DeepSeek. This takes a few seconds.</p>';
+    try {
+      suggestion = await api('/screens/' + spCurrent.id + '/suggest', {
+        method: 'POST',
+        body: JSON.stringify({ goal: dlg.querySelector('#sp-ai-goal').value }),
+      });
+      const list = (items) => items.map((n) => esc(n)).join(', ');
+      out.innerHTML = '<p><b>' + esc(suggestion.summary || 'A suggested layout.') + '</b></p>'
+        + (suggestion.reasons.length ? '<ul class="small">' + suggestion.reasons.map((r) => '<li>' + esc(r) + '</li>').join('') + '</ul>' : '')
+        + '<p class="small muted">' + suggestion.moved + ' key' + (suggestion.moved === 1 ? '' : 's') + ' rearranged'
+        + (suggestion.added.length ? '; added: ' + list(suggestion.added) : '')
+        + (suggestion.dropped.length ? '; taken off: ' + list(suggestion.dropped) : '') + '.</p>';
+      use.hidden = false;
+      go.textContent = 'Suggest again';
+    } catch (e) {
+      out.innerHTML = '<p class="small" style="color:#b3261e">' + esc(e.message) + '</p>';
+      go.textContent = 'Try again';
+    } finally {
+      go.disabled = false;
+    }
+  });
+  use.addEventListener('click', () => {
+    if (!suggestion) return;
+    spEdit(() => { spCurrent.buttons = suggestion.buttons.map((b) => ({ ...b })); });
+    spRenderGrid();
+    close();
+    toast('Suggested layout in the editor. Check it, then Save layout to put it live (Undo takes it back).');
   });
 }
 

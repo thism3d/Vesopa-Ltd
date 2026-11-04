@@ -778,6 +778,54 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     } catch (e) { send(res, e, next); }
   });
 
+  /**
+   * The card machine's own reference for a payment or a refund on it: a
+   * Connect transaction (connect:<tid>:<requestId>) or a Dojo terminal
+   * session id. Null for Tap to Pay.
+   */
+  function machineRef(row) {
+    if (connectClient.parseRef(row.intent_id)) return row.intent_id;
+    return row.via === 'machine' && row.session_id ? row.session_id : null;
+  }
+
+  /**
+   * Where a card machine has got to with [ref]: paid, failed, cancelled,
+   * signature (it waits for the clerk to check one), expired (it stopped
+   * answering; the money may have moved) or waiting, with its latest prompt
+   * (PresentCard, EnterPin...) for the screen.
+   */
+  async function machineState(m, ref) {
+    const connected = connectClient.parseRef(ref);
+    if (connected) {
+      const tx = await connectClient.get(m.connect, connected.tid, connected.requestId, opts);
+      const notes = (tx && tx.notifications) || [];
+      return { state: connectClient.state(tx), status: tx.transactionResult || null, prompt: notes.length ? String(notes[notes.length - 1]) : null };
+    }
+    const session = await dojoClient.getSession(m.key, ref, opts);
+    const s = dojoClient.sessionState(session);
+    const status = session && session.status ? String(session.status) : null;
+    return {
+      state: s === 'failed' ? (/cancel/i.test(status || '') ? 'cancelled' : 'failed') : s === 'uncertain' ? 'expired' : s,
+      status,
+      prompt: dojoClient.lastPrompt(session),
+    };
+  }
+
+  function answerMachine(m, ref, accepted) {
+    const connected = connectClient.parseRef(ref);
+    return connected
+      ? connectClient.answerSignature(m.connect, connected.tid, connected.requestId, accepted, opts)
+      : dojoClient.answerSignature(m.key, ref, accepted, opts);
+  }
+
+  /** True when the machine took the cancel; false once a card is in. */
+  function cancelMachine(m, ref) {
+    const connected = connectClient.parseRef(ref);
+    return connected
+      ? connectClient.cancel(m.connect, connected.tid, connected.requestId, opts)
+      : dojoClient.cancelSession(m.key, ref, opts);
+  }
+
   /** Dojo's intent for a payment, from the host and key that made it. */
   async function intentOf(row) {
     if (row.via === 'machine') {
@@ -796,19 +844,35 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
       if (row.state !== 'waiting') return res.json(view(row));
       let intent;
       let state;
-      const connected = connectClient.parseRef(row.intent_id);
+      let prompt = null;
+      // Vesopa Go 1.2.30+ checks a signature itself (owner, 2026-11-03, and
+      // Dojo's TS-05/TS-08): it asks with ?signature=ask and is told
+      // `signature`. Anything older is answered as the till does by default.
+      const ask = req.query.signature === 'ask';
+      const mref = machineRef(row);
       try {
-        if (connected) {
-          // Connect: the machine's own transaction. A signature is accepted,
-          // as the till does by default, so the sale is not left hanging.
+        if (mref) {
           const m = await machineFor(row.office);
-          const tx = await connectClient.get(m.connect, connected.tid, connected.requestId, opts);
-          state = connectClient.state(tx);
+          const got = await machineState(m, mref);
+          prompt = got.prompt;
+          intent = { status: got.status };
+          state = got.state;
           if (state === 'signature') {
-            await connectClient.acceptSignature(m.connect, connected.tid, connected.requestId, opts).catch(() => null);
+            if (ask) return res.json({ ...view(row), state: 'signature', prompt });
+            await answerMachine(m, mref, true).catch(() => null);
             state = 'waiting';
           }
-          intent = { status: tx.transactionResult || null };
+          if (state === 'expired') {
+            // The machine stopped answering; the card may still have gone
+            // through. Dojo's intent says whether the money moved (TS-14).
+            const i = connectClient.parseRef(row.intent_id) ? null : await intentOf(row).catch(() => null);
+            if (i && paymentState(i) === 'paid') {
+              state = 'paid';
+              intent = i;
+            } else {
+              return res.json({ ...view(row), state: 'expired', prompt });
+            }
+          }
         } else {
           intent = await intentOf(row);
           state = paymentState(intent);
@@ -822,10 +886,35 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
         const [r] = await pool.query(
           "UPDATE epos_tap_payments SET state = ?, dojo_status = ? WHERE id = ? AND office = ? AND state = 'waiting'",
           [state, intent.status || null, row.id, row.office]);
-        if (r.affectedRows) await logAttempt(row, state === 'paid' ? 'approved' : 'declined', intent.status);
+        if (r.affectedRows) {
+          await logAttempt(row, state === 'paid' ? 'approved' : state === 'cancelled' ? 'cancelled' : 'declined', intent.status);
+        }
         row.state = state;
       }
-      res.json(view(row));
+      res.json({ ...view(row), prompt });
+    } catch (e) { send(res, e, next); }
+  });
+
+  /**
+   * The clerk's answer to the machine's "check the signature" (Dojo TS-05:
+   * accepted completes the sale; TS-08: declined is never money taken).
+   */
+  router.post('/api/tap/payments/:id/signature', terminal, express.json(), async (req, res, next) => {
+    try {
+      const [[row]] = await pool.query('SELECT * FROM epos_tap_payments WHERE id = ? AND office = ?', [req.params.id, req.office]);
+      if (!row) throw new TapError(404, 'No such payment.');
+      const mref = machineRef(row);
+      if (!mref) throw new TapError(400, 'Only a card machine payment asks for a signature.');
+      const accepted = (req.body || {}).accepted === true;
+      const m = await machineFor(row.office);
+      try {
+        await answerMachine(m, mref, accepted);
+      } catch (e) {
+        throw new TapError(502, 'The card machine did not take the answer: ' + e.message);
+      }
+      await logAttempt({ ...row, id: `${row.id}:sig:${accepted ? 'y' : 'n'}` }, accepted ? 'signature accepted' : 'signature declined',
+        'SignatureVerification', `Signature ${accepted ? 'accepted' : 'declined'} by ${String((req.body || {}).by || who(req)).slice(0, 120)}`);
+      res.json({ ...view(row), signature: accepted ? 'accepted' : 'declined' });
     } catch (e) { send(res, e, next); }
   });
 
@@ -835,10 +924,15 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
       const [[row]] = await pool.query('SELECT * FROM epos_tap_payments WHERE id = ? AND office = ?', [req.params.id, req.office]);
       if (!row) throw new TapError(404, 'No such payment.');
       if (row.state !== 'waiting') return res.json(view(row));
-      const connected = connectClient.parseRef(row.intent_id);
-      if (connected) {
+      const mref = machineRef(row);
+      if (mref) {
+        // The machine's own cancel. Refused once the card is in (Dojo
+        // ERR-422): then the payment is left alone and followed to its
+        // verdict, never marked cancelled while the money may be moving.
         const m = await machineFor(req.office);
-        await connectClient.cancel(m.connect, connected.tid, connected.requestId, opts);
+        if (!(await cancelMachine(m, mref))) {
+          return res.json({ ...view(row), cancel_refused: true });
+        }
       } else {
         const { key } = await keyFor(req.office);
         await dojo(key, 'POST', '/payment-intents/' + encodeURIComponent(row.intent_id) + '/cancel', opts).catch(() => null);
@@ -848,6 +942,179 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
       if (r.affectedRows) await logAttempt(row, 'cancelled', 'Canceled');
       row.state = r.affectedRows ? 'cancelled' : row.state;
       res.json(view(row));
+    } catch (e) { send(res, e, next); }
+  });
+
+  // ---- Refunds on the card machine (2026-11-03) --------------------------------
+  //
+  // The till's three refund routes (vesopa_epos dojo_refund.dart), in Go:
+  // straight back to the card (POST /payments/:id/refund, above), and these
+  // two, where the customer presents the card on the venue's machine:
+  //   linked     a Dojo MatchedRefund on the sale's intent: what is left of it
+  //              (Dojo RF-04), only for a sale taken on the same machine account
+  //   any amount a Dojo UnlinkedRefund, or Connect's REFUND: no sale needed, a
+  //              manager approves (RF-03)
+  // Started and then followed, like a sale, so the phone shows each prompt and
+  // can answer a signature or cancel; a declined refund is said as declined
+  // (RF-06a) and never booked.
+
+  let refundsReady = null;
+  function ensureRefunds() {
+    refundsReady ||= pool.query(`CREATE TABLE IF NOT EXISTS epos_tap_machine_refunds (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        office VARCHAR(191) NOT NULL,
+        terminal VARCHAR(128) NULL,
+        payment_id VARCHAR(64) NULL,
+        machine_ref VARCHAR(191) NOT NULL,
+        linked TINYINT(1) NOT NULL DEFAULT 0,
+        amount_minor INT NOT NULL,
+        state VARCHAR(16) NOT NULL DEFAULT 'waiting',
+        dojo_status VARCHAR(64) NULL,
+        approved_by VARCHAR(120) NOT NULL,
+        reason VARCHAR(200) NULL,
+        bill_ref VARCHAR(64) NULL,
+        environment VARCHAR(12) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY office_created (office, created_at)
+      )`).catch((e) => { refundsReady = null; throw e; });
+    return refundsReady;
+  }
+
+  const refundView = (row) => ({
+    id: row.id,
+    payment_id: row.payment_id || null,
+    amount_minor: row.amount_minor,
+    linked: !!Number(row.linked),
+    state: row.state,
+    environment: row.environment,
+  });
+
+  router.post('/api/tap/machine-refunds', terminal, express.json(), async (req, res, next) => {
+    try {
+      await ensureRefunds();
+      const b = req.body || {};
+      const id = String(b.id || '');
+      if (!PAYMENT_ID.test(id)) throw new TapError(400, 'A refund needs its own id.');
+      const [[had]] = await pool.query('SELECT * FROM epos_tap_machine_refunds WHERE id = ? AND office = ?', [id, req.office]);
+      if (had) return res.json(refundView(had));
+      let amount = cleanMinor(b.amount_minor);
+      if (amount === null) throw new TapError(400, 'That amount cannot be refunded.');
+      const approvedBy = String(b.approved_by || '').slice(0, 120);
+      if (!approvedBy) throw new TapError(400, 'A refund needs a manager\'s approval.');
+      const reason = String(b.reason || 'Refund').slice(0, 200);
+      const m = await machineFor(req.office);
+      const terminalId = String(b.terminal_id || m.terminalId || '');
+      if (!terminalId) throw new TapError(400, 'No card machine is set for this venue. Choose one under Card payments.');
+
+      // The sale it is against, when there is one: never more than is left.
+      let sale = null;
+      if (b.payment_id) {
+        [[sale]] = await pool.query('SELECT * FROM epos_tap_payments WHERE id = ? AND office = ?', [String(b.payment_id), req.office]);
+        if (!sale) throw new TapError(404, 'That card payment is not in the back office.');
+        if (sale.state !== 'paid') throw new TapError(409, 'Only a paid payment can be refunded.');
+        const left = sale.amount_minor + sale.tip_minor - (Number(sale.refunded_minor) || 0);
+        if (amount > left) throw new TapError(400, `At most ${(left / 100).toFixed(2)} can be refunded.`);
+      }
+      // Linked only where Dojo can match it: the whole of what is left of a
+      // sale taken on this machine account. A part refund goes as any amount.
+      const left = sale ? sale.amount_minor + sale.tip_minor - (Number(sale.refunded_minor) || 0) : 0;
+      const linked = !!(sale && !m.connect && sale.via === 'machine' && !connectClient.parseRef(sale.intent_id) && amount === left && b.linked !== false);
+      let ref;
+      try {
+        if (m.connect) {
+          const requestId = await connectClient.start(m.connect, terminalId, { type: 'REFUND', amountMinor: amount }, opts);
+          ref = connectClient.ref(terminalId, requestId);
+        } else {
+          const session = await dojoClient.startRefundSession(m.key, linked
+            ? { terminalId, intentId: sale.intent_id }
+            : { terminalId, amountMinor: amount }, opts);
+          if (!session || !session.id) throw new Error('no session');
+          ref = String(session.id);
+        }
+      } catch (e) {
+        throw new TapError(502, 'The card machine did not start the refund: ' + e.message);
+      }
+      if (linked) amount = left;
+      const row = {
+        id, office: req.office, terminal: who(req), payment_id: sale ? sale.id : null, machine_ref: ref, linked: linked ? 1 : 0,
+        amount_minor: amount, state: 'waiting', approved_by: approvedBy, reason,
+        bill_ref: String(b.bill_ref || (sale && sale.bill_ref) || '').slice(0, 64) || null,
+        environment: m.connect ? 'live' : m.environment,
+      };
+      await pool.query(
+        `INSERT INTO epos_tap_machine_refunds
+           (id, office, terminal, payment_id, machine_ref, linked, amount_minor, state, approved_by, reason, bill_ref, environment)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [row.id, row.office, row.terminal, row.payment_id, row.machine_ref, row.linked, row.amount_minor, row.state,
+          row.approved_by, row.reason, row.bill_ref, row.environment]);
+      res.status(201).json(refundView(row));
+    } catch (e) { send(res, e, next); }
+  });
+
+  router.get('/api/tap/machine-refunds/:id', terminal, async (req, res, next) => {
+    try {
+      await ensureRefunds();
+      const [[row]] = await pool.query('SELECT * FROM epos_tap_machine_refunds WHERE id = ? AND office = ?', [req.params.id, req.office]);
+      if (!row) throw new TapError(404, 'No such refund.');
+      if (row.state !== 'waiting') return res.json(refundView(row));
+      const m = await machineFor(row.office);
+      let got;
+      try {
+        got = await machineState(m, row.machine_ref);
+      } catch (e) {
+        throw new TapError(502, 'The card machine could not be asked: ' + e.message);
+      }
+      if (got.state === 'signature' || got.state === 'expired') return res.json({ ...refundView(row), state: got.state, prompt: got.prompt });
+      if (got.state === 'waiting') return res.json({ ...refundView(row), prompt: got.prompt });
+      const [r] = await pool.query(
+        "UPDATE epos_tap_machine_refunds SET state = ?, dojo_status = ? WHERE id = ? AND office = ? AND state = 'waiting'",
+        [got.state, got.status, row.id, row.office]);
+      if (r.affectedRows) {
+        if (got.state === 'paid' && row.payment_id) {
+          await pool.query(
+            `UPDATE epos_tap_payments SET refunded_minor = COALESCE(refunded_minor, 0) + ?,
+                    state = IF(COALESCE(refunded_minor, 0) + ? >= amount_minor + tip_minor, 'refunded', state)
+              WHERE id = ? AND office = ?`, [row.amount_minor, row.amount_minor, row.payment_id, row.office]);
+        }
+        const rid = crypto.createHash('sha1').update(`tap-machine-refund:${row.id}:${got.state}`).digest('hex');
+        await pool.query(
+          `INSERT IGNORE INTO epos_card_transactions
+             (id, office, terminal, at, kind, outcome, amount_minor, intent_id, dojo_status, message, order_id, software_house_id)
+           VALUES (?, ?, ?, UTC_TIMESTAMP(), ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [rid, row.office, row.terminal, row.linked ? 'refund' : 'unlinked refund',
+            got.state === 'paid' ? 'approved' : got.state === 'cancelled' ? 'cancelled' : 'declined',
+            row.amount_minor, row.machine_ref, got.status, `${row.reason || 'Refund'} (approved by ${row.approved_by})`.slice(0, 500),
+            row.bill_ref, partnerIds('').softwareHouseId]
+        ).catch((e) => console.warn('[tap] machine refund log:', e.message));
+      }
+      row.state = got.state;
+      res.json(refundView(row));
+    } catch (e) { send(res, e, next); }
+  });
+
+  router.post('/api/tap/machine-refunds/:id/signature', terminal, express.json(), async (req, res, next) => {
+    try {
+      await ensureRefunds();
+      const [[row]] = await pool.query('SELECT * FROM epos_tap_machine_refunds WHERE id = ? AND office = ?', [req.params.id, req.office]);
+      if (!row) throw new TapError(404, 'No such refund.');
+      const m = await machineFor(row.office);
+      await answerMachine(m, row.machine_ref, (req.body || {}).accepted === true)
+        .catch((e) => { throw new TapError(502, 'The card machine did not take the answer: ' + e.message); });
+      res.json(refundView(row));
+    } catch (e) { send(res, e, next); }
+  });
+
+  router.post('/api/tap/machine-refunds/:id/cancel', terminal, async (req, res, next) => {
+    try {
+      await ensureRefunds();
+      const [[row]] = await pool.query('SELECT * FROM epos_tap_machine_refunds WHERE id = ? AND office = ?', [req.params.id, req.office]);
+      if (!row) throw new TapError(404, 'No such refund.');
+      if (row.state !== 'waiting') return res.json(refundView(row));
+      const m = await machineFor(row.office);
+      if (!(await cancelMachine(m, row.machine_ref))) return res.json({ ...refundView(row), cancel_refused: true });
+      await pool.query("UPDATE epos_tap_machine_refunds SET state = 'cancelled' WHERE id = ? AND office = ? AND state = 'waiting'", [row.id, row.office]);
+      res.json({ ...refundView(row), state: 'cancelled' });
     } catch (e) { send(res, e, next); }
   });
 

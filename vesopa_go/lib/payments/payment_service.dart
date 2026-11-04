@@ -42,7 +42,108 @@ class PaymentOutcome {
 }
 
 /// Where a step of the payment has got to, for the screen.
-enum PayStep { preparing, activating, linking, waitingForCard, onMachine, confirming, done }
+enum PayStep { preparing, activating, linking, waitingForCard, onMachine, pin, signature, cancelling, confirming, done }
+
+/// What the clerk can do to a payment while it runs: cancel it, and check a
+/// customer's signature when the card machine asks (Dojo's accreditation:
+/// TS-05 accepting completes the sale, TS-08 declining is never money taken;
+/// a cancel before the card is in stops it, ERR-422 after it is left alone).
+class PayControl {
+  PayControl({this.checkSignature});
+
+  /// Asks the clerk to compare the signature with the card: true accepts.
+  Future<bool> Function()? checkSignature;
+
+  /// Told when the machine would not cancel (the card is already in).
+  void Function()? onCancelRefused;
+
+  bool _cancel = false;
+  bool get cancelRequested => _cancel;
+  void cancel() => _cancel = true;
+}
+
+/// Follow a sale or refund on the venue's card machine to its verdict: each
+/// prompt as a step, a signature answered by the clerk, a cancel sent when
+/// the clerk asks. Shared by sales and refunds on the machine.
+Future<PaymentOutcome> followMachine({
+  required String id,
+  required Future<Map<String, dynamic>> Function() poll,
+  required Future<Map<String, dynamic>> Function() cancel,
+  required Future<void> Function(bool accepted) answer,
+  void Function(PayStep step)? onStep,
+  PayControl? control,
+  int seconds = 180,
+}) async {
+  var until = DateTime.now().add(Duration(seconds: seconds));
+  var cancelSent = false;
+  var answered = false;
+  bool? signature;
+  PayStep? last;
+  void step(PayStep s) {
+    if (s == last) return;
+    last = s;
+    onStep?.call(s);
+  }
+
+  while (DateTime.now().isBefore(until)) {
+    if (control != null && control.cancelRequested && !cancelSent) {
+      cancelSent = true;
+      step(PayStep.cancelling);
+      try {
+        final r = await cancel();
+        if (r['state'] == 'cancelled') return PaymentOutcome(PayResult.cancelled, paymentId: id);
+        if (r['cancel_refused'] == true) control.onCancelRefused?.call();
+      } on TapApiError {
+        // asked again below: the verdict is the machine's
+      }
+    }
+    try {
+      final p = await poll();
+      switch ('${p['state'] ?? ''}') {
+        case 'paid':
+          return PaymentOutcome(PayResult.paid, paymentId: id);
+        case 'failed':
+          return PaymentOutcome(PayResult.declined,
+              paymentId: id, message: signature == false ? 'The signature was declined, so nothing was taken.' : 'Declined');
+        case 'cancelled':
+          return PaymentOutcome(PayResult.cancelled, paymentId: id);
+        case 'expired':
+          return PaymentOutcome(PayResult.uncertain,
+              paymentId: id, message: 'The card machine stopped answering. Check its screen before taking the payment again.');
+        case 'signature':
+          if (!answered) {
+            answered = true;
+            step(PayStep.signature);
+            final ok = await (control?.checkSignature?.call() ?? Future.value(true));
+            signature = ok;
+            try {
+              await answer(ok);
+            } on TapApiError {
+              answered = false; // the machine did not hear it: ask again
+            }
+            // The machine has the answer; give it time to finish.
+            until = DateTime.now().add(const Duration(seconds: 90));
+            step(PayStep.confirming);
+          }
+        default:
+          answered = false;
+          final prompt = '${p['prompt'] ?? ''}'.toLowerCase();
+          if (!cancelSent) {
+            step(prompt.contains('pin')
+                ? PayStep.pin
+                : (prompt.contains('author') || prompt.contains('process') || prompt.contains('remove'))
+                    ? PayStep.confirming
+                    : PayStep.onMachine);
+          }
+      }
+    } on TapApiError {
+      // keep asking: the phone may be between wifi and mobile data
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+  }
+  return PaymentOutcome(PayResult.uncertain,
+      paymentId: id, message: 'No answer from the card machine yet. Check it before taking the payment again.');
+}
 
 abstract class PaymentService {
   /// Whether this phone can take a tap at all, and why not if not.
@@ -55,6 +156,7 @@ abstract class PaymentService {
     String? clerk,
     String via = 'tap',
     void Function(PayStep step)? onStep,
+    PayControl? control,
   });
 }
 
@@ -137,9 +239,10 @@ class DojoTapToPay implements PaymentService {
     String? clerk,
     String via = 'tap',
     void Function(PayStep step)? onStep,
+    PayControl? control,
   }) async {
     final paymentId = const Uuid().v4();
-    if (via == 'machine') return _onMachine(paymentId, amountMinor, tipMinor, billRef, clerk, onStep);
+    if (via == 'machine') return _onMachine(paymentId, amountMinor, tipMinor, billRef, clerk, onStep, control);
     if (Platform.isAndroid) return _onPocket(amountMinor + tipMinor, onStep, reference: billRef);
     var created = false;
     var step = 'secret';
@@ -281,14 +384,21 @@ class DojoTapToPay implements PaymentService {
   /// The venue's Dojo card machine: the server starts it, the customer uses
   /// the machine, and the phone asks how it is going -- the kiosk's way.
   Future<PaymentOutcome> _onMachine(String paymentId, int amountMinor, int tipMinor, String? billRef, String? clerk,
-      void Function(PayStep step)? onStep) async {
+      void Function(PayStep step)? onStep, PayControl? control) async {
     try {
       onStep?.call(PayStep.preparing);
       await api.createPayment(
           id: paymentId, amountMinor: amountMinor, tipMinor: tipMinor, billRef: billRef, clerk: clerk, via: 'machine', terminalId: await deviceMachine());
       onStep?.call(PayStep.onMachine);
-      final outcome = await _confirm(paymentId, seconds: 120);
-      onStep?.call(PayStep.done);
+      final outcome = await followMachine(
+        id: paymentId,
+        poll: () => api.machinePayment(paymentId),
+        cancel: () => api.cancelPayment(paymentId),
+        answer: (ok) => api.answerSignature(paymentId, accepted: ok, by: clerk),
+        onStep: onStep,
+        control: control,
+      );
+      if (outcome.paid) onStep?.call(PayStep.done);
       return outcome;
     } on TapApiError catch (e) {
       return PaymentOutcome(PayResult.unavailable, paymentId: paymentId, message: e.message);
@@ -406,7 +516,8 @@ PaymentOutcome pocketOutcome(Map<String, Object?>? r) {
 }
 
 /// The demo venue's pretend card payments. An amount ending in 13p is
-/// declined, so a decline can be shown and rehearsed.
+/// declined, and one ending in 42p on the card machine asks for a signature,
+/// so a decline and a signature check can be shown and rehearsed.
 class DemoPayments implements PaymentService {
   @override
   Future<String?> whyUnavailable() async => null;
@@ -419,15 +530,24 @@ class DemoPayments implements PaymentService {
     String? clerk,
     String via = 'tap',
     void Function(PayStep step)? onStep,
+    PayControl? control,
   }) async {
+    final id = const Uuid().v4();
     onStep?.call(PayStep.preparing);
     await Future<void>.delayed(const Duration(milliseconds: 400));
     onStep?.call(via == 'machine' ? PayStep.onMachine : PayStep.waitingForCard);
-    await Future<void>.delayed(const Duration(milliseconds: 1600));
+    for (var i = 0; i < 16; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      if (control?.cancelRequested == true) return PaymentOutcome(PayResult.cancelled, paymentId: id);
+    }
+    if (via == 'machine' && (amountMinor + tipMinor) % 100 == 42) {
+      onStep?.call(PayStep.signature);
+      final ok = await (control?.checkSignature?.call() ?? Future.value(true));
+      if (!ok) return PaymentOutcome(PayResult.declined, paymentId: id, message: 'The signature was declined, so nothing was taken.');
+    }
     onStep?.call(PayStep.confirming);
     await Future<void>.delayed(const Duration(milliseconds: 500));
     onStep?.call(PayStep.done);
-    final id = const Uuid().v4();
     return (amountMinor + tipMinor) % 100 == 13
         ? PaymentOutcome(PayResult.declined, paymentId: id, message: 'Declined by the card issuer (demo)')
         : PaymentOutcome(PayResult.paid, paymentId: id);
