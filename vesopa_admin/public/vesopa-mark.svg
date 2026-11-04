@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Vesopa">
+  <circle cx="32" cy="32" r="32" fill="#000000"/>
+  <path fill="#FFFFFF" fill-rule="evenodd" d="M21.409,18.750L13.440,18.750L27.864,45.250L35.832,45.250Z"/>
+  <path fill="#FFFFFF" fill-rule="evenodd" d="M35.384,32.004L43.352,32.004L50.560,18.750L42.591,18.750Z"/>
+  <path fill="#A5C715" fill-rule="evenodd" d="M35.384,32.004L28.168,45.250L36.136,45.250L43.352,32.004Z"/>
+</svg>

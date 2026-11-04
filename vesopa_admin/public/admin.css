@@ -1,6 +1,6 @@
 :root {
   --bg: #f4f5f1; --panel: #ffffff; --panel-2: #f8f9f5; --ink: #1b1f17; --muted: #697160; --line: #e2e5db;
-  --brand: #8cc63f; --brand-ink: #1d2a0c; --brand-soft: #eef7e1;
+  --brand: #A5C715; --brand-ink: #0B0E0A; --brand-soft: #eef7e1;
   --green: #2f9e44; --green-soft: #e6f4ea; --amber: #b7791f; --amber-soft: #fdf3e1; --red: #c0392b; --red-soft: #fbe9e7;
   --grey-soft: #eceee8; --shadow: 0 1px 2px rgba(20, 30, 10, .06), 0 6px 18px rgba(20, 30, 10, .05);
   --radius: 14px;
@@ -31,7 +31,9 @@ code { font-size: 13px; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-size: 17px; font-weight: 600; }
 .brand b { font-weight: 800; }
 .brand.big { font-size: 22px; justify-content: center; margin-bottom: 8px; }
-.mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--brand); color: var(--brand-ink); font-weight: 900; }
+.mark { width: 30px; height: 30px; object-fit: contain; flex: none; }
+.btn.sso { gap: 10px; }
+.sso-mark { width: 22px; height: 22px; flex: none; border-radius: 50%; box-shadow: 0 0 0 2px rgba(255,255,255,.85); }
 .rail nav { display: flex; flex-direction: column; gap: 2px; }
 .rail nav a { padding: 9px 12px; border-radius: 9px; text-decoration: none; color: var(--muted); font-weight: 600; }
 .rail nav a:hover { background: var(--panel-2); color: var(--ink); }

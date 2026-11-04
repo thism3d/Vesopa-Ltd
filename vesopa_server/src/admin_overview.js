@@ -24,8 +24,15 @@ async function rows(db, sql, params = []) {
   }
 }
 
-/** A device not heard from in this long counts as offline whatever its flag says. */
-const ONLINE_MINUTES = 10;
+/**
+ * A device not heard from in this long counts as offline whatever its flag says.
+ *
+ * Fifteen: what a running device sends regularly is its hardware report
+ * (bo_device_health, every ten minutes) and its update check-in
+ * (bo_app_installs); bo_devices is written only when a till starts. Ten minutes against bo_devices alone read every venue as
+ * offline (2026-11-04: 0 of 36 online on the admin home page).
+ */
+const ONLINE_MINUTES = 15;
 
 async function overview(db) {
   let offices = await rows(db,
@@ -35,11 +42,47 @@ async function overview(db) {
     offices = await rows(db, 'SELECT id, name, contact_email, status, plan FROM offices ORDER BY name');
   }
 
-  const devices = await rows(db,
-    `SELECT office, kind, COUNT(*) AS total,
-            SUM(online = 1 AND last_seen_at > DATE_SUB(NOW(), INTERVAL ${ONLINE_MINUTES} MINUTE)) AS online,
-            MAX(last_seen_at) AS last_seen_at
-       FROM bo_devices GROUP BY office, kind`);
+  // Every machine and the latest it was heard from, the way Fleet reads it
+  // (device_health.js): bo_devices (written when a till starts), the apps'
+  // update check-ins (bo_app_installs) and the hardware reports
+  // (bo_device_health), merged by machine id here rather than joined (the
+  // tables' collations have differed). Ages are worked out by the database so
+  // its clock is the only one that matters. Machines quiet for 60 days are
+  // left out, as Fleet leaves them out.
+  const ageOf = (col) => `TIMESTAMPDIFF(SECOND, ${col}, NOW())`;
+  const machines = await rows(db,
+    `SELECT office, device_id, kind, last_seen_at AS at, ${ageOf('last_seen_at')} AS age FROM bo_devices`);
+  const installs = await rows(db,
+    `SELECT office, device_id, app AS kind, MAX(last_seen_at) AS at, ${ageOf('MAX(last_seen_at)')} AS age
+       FROM bo_app_installs GROUP BY office, device_id, app`);
+  const reports = await rows(db,
+    `SELECT office, device_id, app AS kind, MAX(updated_at) AS at, ${ageOf('MAX(updated_at)')} AS age
+       FROM bo_device_health GROUP BY office, device_id, app`);
+  const seen = new Map();
+  for (const [list, names] of [[machines, true], [installs, false], [reports, false]]) {
+    for (const r of list) {
+      if (!r.device_id) continue;
+      const id = `${String(r.office).toLowerCase()}|${r.device_id}`;
+      const age = r.age == null ? Infinity : Number(r.age);
+      const m = seen.get(id);
+      if (!m) seen.set(id, { office: r.office, kind: r.kind || 'unknown', at: r.at, age });
+      else {
+        if (names) m.kind = r.kind || m.kind;
+        if (age < m.age) { m.age = age; m.at = r.at; }
+      }
+    }
+  }
+  const grouped = new Map();
+  for (const m of seen.values()) {
+    if (m.age > 60 * 86400) continue;
+    const k = `${String(m.office).toLowerCase()}|${m.kind}`;
+    const g = grouped.get(k) || { office: m.office, kind: m.kind, total: 0, online: 0, last_seen_at: null };
+    g.total += 1;
+    if (m.age <= ONLINE_MINUTES * 60) g.online += 1;
+    if (m.at && (!g.last_seen_at || new Date(m.at) > new Date(g.last_seen_at))) g.last_seen_at = m.at;
+    grouped.set(k, g);
+  }
+  const devices = [...grouped.values()];
   const sales = await rows(db,
     `SELECT email AS office, COUNT(*) AS orders, COALESCE(SUM(total_minor), 0) AS total_minor
        FROM epos_orders WHERE closed_at >= CURDATE() GROUP BY email`);

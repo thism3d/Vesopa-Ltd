@@ -1,10 +1,10 @@
 <%- include('_top', { title: 'Sign in', me: null }) %>
 <div class="signin card">
-  <div class="brand big"><span class="mark">v</span><span>vesopa <b>admin</b></span></div>
+  <div class="brand big"><img class="mark" src="/vesopa-mark.svg" alt="" width="30" height="30"><span>vesopa <b>admin</b></span></div>
   <p class="lead">One place to run every Vesopa app, venue and licence.</p>
   <% if (locals.error) { %><div class="flash bad"><%= error %></div><% } %>
   <% if (ready) { %>
-    <a class="btn primary wide" href="/start">Continue with Vesopa</a>
+    <a class="btn primary wide sso" href="/start"><img class="sso-mark" src="/vesopa-mark.svg" alt="" width="22" height="22"><span>Continue with Vesopa</span></a>
     <a class="link small" href="/start?switch=1">Use a different Vesopa account</a>
   <% } else { %>
     <div class="flash bad">Sign-in is not set up on this server yet: VESOPA_AUTH_CLIENT_ID and VESOPA_AUTH_CLIENT_SECRET are missing.</div>
