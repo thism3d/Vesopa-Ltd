@@ -15133,7 +15133,7 @@ function dojoSay(text, ok) {
 
 /** Pay at Counter | Online checkout on the Card Payments page. */
 function dojoTabs(which) {
-  for (const tab of ['counter', 'online', 'teya', 'barclays']) {
+  for (const tab of ['counter', 'online', 'teya', 'barclays', 'stripe']) {
     const on = tab === which;
     $('dojo-tab-' + tab).hidden = !on;
     $('dojo-tab-' + tab + '-btn').setAttribute('aria-selected', String(on));
@@ -15141,6 +15141,78 @@ function dojoTabs(which) {
   }
   $('dojo-save').hidden = which !== 'counter';
   if (which !== 'teya') teyaStopTimers();
+}
+
+/**
+ * Stripe tab (2026-11-04): the venue's own connected account beside Dojo,
+ * Teya and Barclaycard. Onboarding, payments and payouts are Stripe's
+ * embedded components (Connect.js), signed in by an account session the
+ * server makes; no Stripe key reaches this page but the publishable one.
+ */
+let stripeConnect = null;
+async function loadStripe() {
+  const say = (t, ok) => { const el = $('stripe-msg'); el.textContent = t || ''; el.style.color = ok ? '#06784f' : '#b42318'; };
+  const render = (s) => {
+    $('stripe-enabled').checked = s.enabled;
+    for (const el of document.querySelectorAll('[data-stripe-use]')) el.checked = Boolean(s.uses[el.dataset.stripeUse]);
+    $('stripe-account-btn').hidden = Boolean(s.account);
+    $('stripe-login-btn').hidden = !s.account;
+    $('stripe-state').innerHTML = !s.configured
+      ? '<span class="pill">Not set up on the server</span> Vesopa adds the Stripe keys; nothing here takes payments until then.'
+      : !s.account
+        ? '<span class="pill">' + esc(s.environment) + '</span> No Stripe account for this venue yet.'
+        : '<span class="pill">' + esc(s.environment) + '</span> ' + esc(s.account) + ' · ' +
+          (s.ready ? '<b style="color:#06784f">Ready to take payments</b>'
+            : '<b style="color:#b54708">Finish setting up below</b>' + (s.requirements_due ? ' · ' + s.requirements_due + ' things to provide' : ''));
+    if (s.account && s.publishable_key) mountStripe(s.publishable_key).catch((e) => say(e.message, false));
+  };
+  let s;
+  try { s = await api('/stripe-settings?refresh=1'); } catch (e) { say(e.message, false); return; }
+  render(s);
+  const put = async (body) => {
+    try { render(await api('/stripe-settings', { method: 'PUT', body: JSON.stringify(body) })); say('Saved.', true); } catch (e) { say(e.message, false); }
+  };
+  $('stripe-enabled').onchange = (e) => put({ enabled: e.target.checked });
+  for (const el of document.querySelectorAll('[data-stripe-use]')) {
+    el.onchange = () => put({ uses: { [el.dataset.stripeUse]: el.checked } });
+  }
+  $('stripe-account-btn').onclick = async () => {
+    try { render(await api('/stripe/account', { method: 'POST' })); say('Account made. Fill in the venue\'s details below.', true); } catch (e) { say(e.message, false); }
+  };
+  $('stripe-refresh-btn').onclick = async () => {
+    try { render(await api('/stripe-settings?refresh=1')); say('Up to date.', true); } catch (e) { say(e.message, false); }
+  };
+  $('stripe-login-btn').onclick = async () => {
+    try { const r = await api('/stripe/login-link', { method: 'POST' }); window.open(r.url, '_blank', 'noopener'); } catch (e) { say(e.message, false); }
+  };
+}
+
+/** Connect.js from Stripe, then the embedded components into the tab. */
+async function mountStripe(publishableKey) {
+  if (stripeConnect) return;
+  await new Promise((resolve, reject) => {
+    if (window.StripeConnect) return resolve();
+    const tag = document.createElement('script');
+    tag.src = 'https://connect-js.stripe.com/v1.0/connect.js';
+    tag.async = true;
+    tag.onload = () => resolve();
+    tag.onerror = () => reject(new Error('Stripe could not be loaded.'));
+    document.head.appendChild(tag);
+  });
+  const ready = () => (window.StripeConnect && window.StripeConnect.init ? Promise.resolve()
+    : new Promise((r) => { window.StripeConnect = window.StripeConnect || {}; window.StripeConnect.onLoad = r; }));
+  await ready();
+  stripeConnect = window.StripeConnect.init({
+    publishableKey,
+    fetchClientSecret: async () => (await api('/stripe/account-session', { method: 'POST' })).client_secret,
+    appearance: { variables: { colorPrimary: '#5E7A0E', fontFamily: 'inherit' } },
+  });
+  const put = (id, name) => { const box = $(id); box.innerHTML = ''; box.appendChild(stripeConnect.create(name)); };
+  put('stripe-banner', 'notification-banner');
+  put('stripe-onboarding', 'account-onboarding');
+  put('stripe-payments', 'payments');
+  put('stripe-payouts', 'payouts');
+  $('stripe-embedded-card').hidden = false;
 }
 
 /** Barclaycard Smartpay Fuse tab (2026-10-20): the online menu's card payments. */
@@ -15716,6 +15788,7 @@ async function loadCardPayments() {
   $('dojo-tab-online-btn').onclick = () => { dojoTabs('online'); loadOnlineCheckout(); };
   $('dojo-tab-teya-btn').onclick = () => { dojoTabs('teya'); loadTeya(); };
   $('dojo-tab-barclays-btn').onclick = () => { dojoTabs('barclays'); loadBarclays(); };
+  $('dojo-tab-stripe-btn').onclick = () => { dojoTabs('stripe'); loadStripe(); };
   dojoTabs('counter');
   dojoState = await api('/dojo-settings');
   $('dojo-key-state').innerHTML = dojoKeyState(dojoState);

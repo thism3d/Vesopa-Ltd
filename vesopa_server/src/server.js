@@ -52,6 +52,7 @@ const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
 const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
 const { dojoSettingsRoutes } = require('./dojo_settings');
 const { teyaRoutes } = require('./teya');
+const { stripeRoutes } = require('./stripe');
 const { barclaycardRoutes } = require('./barclaycard');
 const { terminalRoutes, timesheetRoutes } = require('./terminals');
 const { deviceRoutes } = require('./devices');
@@ -384,6 +385,10 @@ app.use('/api', permissionRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', backofficeRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Dojo card settings per venue, and the card log every till reports to.
 app.use('/api', dojoSettingsRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Stripe, the third provider beside Dojo and Teya (src/stripe.js): off for
+// every venue until a manager turns it on; connect-recommend-plan.md.
+app.use('/api', stripeRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
 // Teya, the second card acquirer (src/teya.js): off for every venue until a
 // manager turns it on. Its payment webhook settles menu orders through
 // dinein.js, which is mounted further down, hence the hook list.

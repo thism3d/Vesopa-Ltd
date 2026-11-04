@@ -4540,6 +4540,7 @@
             <button class="btn" type="button" role="tab" id="dojo-tab-online-btn" aria-selected="false">Online checkout</button>
             <button class="btn" type="button" role="tab" id="dojo-tab-teya-btn" aria-selected="false">Teya</button>
             <button class="btn" type="button" role="tab" id="dojo-tab-barclays-btn" aria-selected="false">Barclaycard</button>
+            <button class="btn" type="button" role="tab" id="dojo-tab-stripe-btn" aria-selected="false">Stripe</button>
           </div>
           <div id="dojo-tab-online" hidden>
             <div class="card rd-card" style="max-width:760px">
@@ -4740,6 +4741,40 @@
           </div>
           <!-- Barclaycard Smartpay Fuse for the online menu (2026-10-20). Off
                until a manager saves keys and turns it on. -->
+          <!-- Stripe beside Dojo, Teya and Barclaycard (2026-11-04): each venue its
+               own connected account, onboarded here with Stripe's embedded
+               components. Off until a manager turns it on. -->
+          <div id="dojo-tab-stripe" hidden>
+            <div class="card rd-card" style="max-width:860px">
+              <h3 style="margin:0 0 4px">Stripe</h3>
+              <p class="muted small" style="margin:0 0 12px">
+                Tap to Pay on phones, online payments for QR ordering, menus and tickets, and members'
+                subscriptions, through the venue's own Stripe account. Dojo and Teya stay exactly as they
+                are: choose Stripe only for the ways of paying you want it for.
+              </p>
+              <div id="stripe-state" class="small" style="margin:0 0 12px"></div>
+              <label style="display:flex;gap:8px;align-items:center;margin:0 0 8px">
+                <input type="checkbox" id="stripe-enabled"> <b>Use Stripe at this venue</b>
+              </label>
+              <div id="stripe-uses" style="display:flex;gap:16px;flex-wrap:wrap;margin:0 0 12px">
+                <label><input type="checkbox" data-stripe-use="tap"> Tap to Pay (Vesopa Go)</label>
+                <label><input type="checkbox" data-stripe-use="online"> Online (QR, menus, tickets)</label>
+                <label><input type="checkbox" data-stripe-use="memberships"> Memberships</label>
+              </div>
+              <div class="denom-actions" style="gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn primary" id="stripe-account-btn">Set up the venue's Stripe account</button>
+                <button type="button" class="btn" id="stripe-refresh-btn">Check status</button>
+                <button type="button" class="btn ghost" id="stripe-login-btn">Open the Stripe dashboard</button>
+              </div>
+              <p class="small" id="stripe-msg" style="margin:10px 0 0"></p>
+            </div>
+            <div class="card rd-card" style="max-width:860px;margin-top:12px" id="stripe-embedded-card" hidden>
+              <div id="stripe-banner"></div>
+              <div id="stripe-onboarding"></div>
+              <div id="stripe-payments" style="margin-top:16px"></div>
+              <div id="stripe-payouts" style="margin-top:16px"></div>
+            </div>
+          </div>
           <div id="dojo-tab-barclays" hidden>
             <div class="card rd-card" style="max-width:760px">
               <div class="row" style="gap:12px;align-items:center">
