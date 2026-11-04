@@ -107,7 +107,10 @@ def screen_file(src, shot, tablet=False):
     """The screenshot, with product photos on their tiles and any staff
     initials replaced by the Vesopa V."""
     from PIL import Image
-    path = GO / "store" / "screenshots" / src / f"{shot}.png"
+    # The iPad's plain screens are kept apart: store/screenshots/ipad-13 holds
+    # the framed pictures App Store Connect takes (app_store_connect.py store).
+    raw = GO / "store" / f"raw-screens-{src}"
+    path = (raw if raw.is_dir() else GO / "store" / "screenshots" / src) / f"{shot}.png"
     im = Image.open(path).convert("RGBA")
     for args in PHOTOS.get((src, shot), []):
         im = _photo_tile(im, *args)
