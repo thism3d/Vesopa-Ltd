@@ -137,7 +137,7 @@ final class DojoTapToPayBridge {
           result(FlutterError(code: "bad_args", message: "No payment intent.", details: nil))
           return
         }
-        let outcome = try await current().startPayment(paymentIntentId: intent, secret: secret)
+        let outcome = try await current().startPayment(paymentIntentId: intent, secret: secret, isRefund: args["isRefund"] as? Bool ?? false)
         // The status is reported, never trusted: the server asks Dojo for the
         // intent before the bill is settled.
         result([
