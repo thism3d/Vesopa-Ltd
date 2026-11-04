@@ -29,22 +29,21 @@ class _Waves extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // wave.3.right.circle: a ring and three waves opening to the right, drawn
+    // in the one colour (2026-11-04: the filled version cut its waves out
+    // with a clear blend, which some renderers ignore, leaving a plain disc).
     final r = size.width / 2;
     final centre = Offset(r, r);
-    canvas.drawCircle(centre, r, Paint()..color = c);
-    final cut = Paint()
-      ..blendMode = BlendMode.clear
+    final line = Paint()
+      ..color = c
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
-      ..strokeWidth = size.width * 0.085;
-    canvas.saveLayer(Offset.zero & size, Paint());
-    canvas.drawCircle(centre, r, Paint()..color = c);
-    // The waves start left of centre and open to the right.
+      ..strokeWidth = size.width * 0.08;
+    canvas.drawCircle(centre, r - line.strokeWidth / 2, line);
     final origin = Offset(r * 0.62, r);
-    for (final k in [0.30, 0.55, 0.80]) {
-      canvas.drawArc(Rect.fromCircle(center: origin, radius: r * k), -math.pi / 3.4, math.pi / 1.7, false, cut);
+    for (final k in [0.22, 0.42, 0.62]) {
+      canvas.drawArc(Rect.fromCircle(center: origin, radius: r * k), -math.pi / 3.4, math.pi / 1.7, false, line);
     }
-    canvas.restore();
   }
 
   @override

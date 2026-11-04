@@ -99,25 +99,29 @@ final class DojoTapToPayBridge {
     let secret = args["secret"] as? String ?? ""
     do {
       switch call.method {
+      // 2026-11-04: activation in three steps, so Apple's terms can come in
+      // between (Apple's reader cannot finish preparing until the merchant
+      // has accepted them, and waiting for "operational" first waited for
+      // ever). Never deactivated on a stall: that threw away the progress.
+      case "status":
+        let dojo = sdkFor(args["env"] as? String ?? "staging")
+        result(String(describing: try await dojo.getTerminalActivationStatus(secret: secret)))
+
       case "activate":
         let dojo = sdkFor(args["env"] as? String ?? "staging")
-        do {
-          let first = try await dojo.activateTerminal(secret)
-          if first != .operational {
-            // Not ready yet: wait until Dojo says the terminal is operational.
-            let now = try await dojo.getTerminalActivationStatus(notifyWhenOperational: true, secret: secret)
-            if now == .failed {
-              dojo.deactiveTerminal()
-              result(FlutterError(code: "dojo", message: "Dojo could not activate this iPhone for Tap to Pay.", details: nil))
-              return
-            }
-          }
-        } catch {
-          // Dojo's guide: after a failed activation, deactivate so the next
-          // try starts clean rather than on a half-activated terminal.
-          dojo.deactiveTerminal()
-          throw error
+        result(String(describing: try await dojo.activateTerminal(secret)))
+
+      case "waitOperational":
+        let now = try await current().getTerminalActivationStatus(notifyWhenOperational: true, secret: secret)
+        if now == .failed {
+          result(FlutterError(code: "dojo", message: "Dojo could not activate this iPhone for Tap to Pay.", details: ["code": -1, "name": "failed"]))
+          return
         }
+        result(String(describing: now))
+
+      case "reset":
+        // Only on purpose (a failed status), never on a time-out.
+        (sdk as? DojoTapToPayOniPhone)?.deactiveTerminal()
         result(nil)
 
       case "isAccountLinked":

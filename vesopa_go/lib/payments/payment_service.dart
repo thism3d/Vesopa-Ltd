@@ -227,11 +227,11 @@ class DojoTapToPay implements PaymentService {
       _active = false;
       final e = PlatformException(
         code: 'timeout',
-        message: name == 'activate'
-            ? 'Dojo did not finish switching on Tap to Pay for this iPhone. This version of Vesopa Go may not have '
-                "Apple's Tap to Pay permission yet (TestFlight builds don't until Apple approves the app), or Dojo has not "
-                "enabled Tap to Pay on iPhone for the venue's account. Use the card machine or QR Pay for now."
-            : "Apple's Tap to Pay terms did not come back. Try again, and accept the terms when they appear.",
+        message: name == 'link'
+            ? "Apple's Tap to Pay terms did not come back. Try again, and accept the terms when they appear."
+            : 'Dojo has not finished setting up Tap to Pay on this iPhone ($name). It carries on in the background: '
+                "try again in a minute. If it keeps happening, Dojo may not have enabled Tap to Pay on iPhone for the "
+                "venue's account. Use the card machine or QR Pay meanwhile.",
         details: {'code': 'timeout', 'name': name},
       );
       unawaited(api.reportTapSetupError(step: name, env: _env, code: 'timeout', message: e.message ?? ''));
@@ -289,16 +289,12 @@ class DojoTapToPay implements PaymentService {
     try {
       onStep?.call(PayStep.preparing);
       final secret = await _freshSecret();
-      if (!_active) {
-        step = 'activate';
-        onStep?.call(PayStep.activating);
-        await _step('activate', const Duration(seconds: 90), () => _channel.invokeMethod('activate', {'secret': secret, 'env': _env}));
-        _active = true;
-      }
+      step = 'activate';
+      if (!_active) await _ready(secret, onStep: onStep);
       step = 'link';
+      // Apple 3.7: the terms can be accepted from checkout, but only by an
+      // administrator (3.8); anyone else is told who can (3.8.1).
       if (!(await _step('link', const Duration(seconds: 25), () => _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret})) ?? false)) {
-        // Apple 3.7: the terms can be accepted from checkout, but only by an
-        // administrator (3.8); anyone else is told who can (3.8.1).
         if (!(canAcceptTerms?.call() ?? true)) return const PaymentOutcome(PayResult.unavailable, message: notAdmin);
         onStep?.call(PayStep.linking);
         await _step('link', const Duration(minutes: 5), () => _channel.invokeMethod('linkAccount', {'secret': secret}));
@@ -345,6 +341,9 @@ class DojoTapToPay implements PaymentService {
         if (created) unawaited(api.cancelPayment(paymentId).then((_) {}, onError: (Object _) {}));
         return PaymentOutcome(PayResult.cancelled, paymentId: paymentId);
       }
+      if (e.code == 'not_admin' || e.code == 'timeout') {
+        return PaymentOutcome(PayResult.unavailable, message: e.message);
+      }
       if (!created) {
         // It never reached a payment: nothing to check, nothing was taken.
         // The server hears which step failed, so it shows in the venue's logs.
@@ -359,6 +358,48 @@ class DojoTapToPay implements PaymentService {
     }
   }
 
+  /// Tap to Pay on iPhone made ready, one at a time however many screens ask
+  /// (2026-11-04): Dojo's status; activation when it is not operational;
+  /// Apple's terms when the venue has not accepted them (a manager only);
+  /// then the wait until Dojo says operational. [link] false leaves the terms
+  /// to whoever asks next (the background warm-up).
+  Future<void>? _readying;
+  Future<void> _ready(String secret, {bool link = true, void Function(PayStep step)? onStep}) {
+    final going = _readying;
+    if (going != null) return going;
+    final run = _readyOnce(secret, link: link, onStep: onStep).whenComplete(() => _readying = null);
+    _readying = run;
+    return run;
+  }
+
+  Future<void> _readyOnce(String secret, {required bool link, void Function(PayStep step)? onStep}) async {
+    final env = {'secret': secret, 'env': _env};
+    var status = await _step<String>('status', const Duration(seconds: 25), () => _channel.invokeMethod<String>('status', env)) ?? '';
+    if (status == 'operational') {
+      _active = true;
+      return;
+    }
+    if (status == 'failed') await _channel.invokeMethod('reset');
+    onStep?.call(PayStep.activating);
+    status = await _step<String>('activate', const Duration(seconds: 60), () => _channel.invokeMethod<String>('activate', env)) ?? '';
+    if (status == 'operational') {
+      _active = true;
+      return;
+    }
+    if (!link) return;
+    final linked = await _step('link', const Duration(seconds: 25), () => _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret})) ?? false;
+    if (!linked) {
+      if (!(canAcceptTerms?.call() ?? true)) {
+        throw PlatformException(code: 'not_admin', message: notAdmin);
+      }
+      onStep?.call(PayStep.linking);
+      await _step('link', const Duration(minutes: 5), () => _channel.invokeMethod('linkAccount', {'secret': secret}));
+    }
+    onStep?.call(PayStep.activating);
+    await _step<String>('ready', const Duration(minutes: 4), () => _channel.invokeMethod<String>('waitOperational', env));
+    _active = true;
+  }
+
   /// Gets Tap to Pay ready before the first payment (Apple asks apps to
   /// prepare the reader early, so the customer is not kept waiting): a fresh
   /// secret and the activation, in the background. Errors are ignored here;
@@ -368,8 +409,7 @@ class DojoTapToPay implements PaymentService {
     if (!Platform.isIOS || _active) return;
     try {
       final secret = await _freshSecret();
-      await _step('activate', const Duration(seconds: 90), () => _channel.invokeMethod('activate', {'secret': secret, 'env': _env}));
-      _active = true;
+      await _ready(secret, link: false);
     } catch (_) {}
   }
 
@@ -383,8 +423,7 @@ class DojoTapToPay implements PaymentService {
     if (why != null) return why;
     try {
       final secret = await _freshSecret();
-      await _step('activate', const Duration(seconds: 90), () => _channel.invokeMethod('activate', {'secret': secret, 'env': _env}));
-      _active = true;
+      await _ready(secret);
       if (!(await _step('link', const Duration(seconds: 25), () => _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret})) ?? false)) {
         if (!(canAcceptTerms?.call() ?? true)) return notAdmin;
         await _step('link', const Duration(minutes: 5), () => _channel.invokeMethod('linkAccount', {'secret': secret}));
@@ -403,10 +442,7 @@ class DojoTapToPay implements PaymentService {
     if (!Platform.isIOS) return null;
     try {
       final secret = await _freshSecret();
-      if (!_active) {
-        await _step('activate', const Duration(seconds: 90), () => _channel.invokeMethod('activate', {'secret': secret, 'env': _env}));
-        _active = true;
-      }
+      await _step<String>('status', const Duration(seconds: 25), () => _channel.invokeMethod<String>('status', {'secret': secret, 'env': _env}));
       return await _step('link', const Duration(seconds: 25), () => _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret}));
     } catch (_) {
       return null;
