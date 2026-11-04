@@ -153,6 +153,11 @@ def cmd_signing(out_dir):
     }
     if adhoc:
         rel["devices"] = {"data": [{"type": "devices", "id": d["id"]} for d in devices]}
+        # A new device means a new profile: the last run's, of the same name,
+        # goes first (Apple refuses two with one name).
+        for old in c.all("/v1/profiles", **{"filter[name]": name}):
+            c.delete(f"/v1/profiles/{old['id']}")
+            asc.note(f"  replaced the previous {name}")
     prof = c.post("/v1/profiles", {"data": {
         "type": "profiles",
         "attributes": {"name": name, "profileType": "IOS_APP_DEVELOPMENT" if adhoc else "IOS_APP_STORE"},
