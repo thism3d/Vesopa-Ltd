@@ -2,6 +2,7 @@
 
     python tool/make_store_shots.py android
     python tool/make_store_shots.py ipad      # 13-inch iPad, landscape, 2732x2048
+    python tool/make_store_shots.py iphone    # 6.9-inch iPhone, 1290x2796
 
 Real app screens from store/screenshots/<device>/ go into a phone frame under a
 headline, on the Vesopa brand ground (black, lime light), headline in
@@ -34,13 +35,18 @@ DEVICES = {
     "android": dict(W=1080, H=1920, src="android-phone", frame_w=740, radius=92, bezel=24),
     # App Store 13-inch iPad, landscape; the headline and lockup scaled up to match
     "ipad": dict(W=2732, H=2048, src="ipad-13", radius=70, bezel=34, tablet=True, k=1.45, head=400, foot=200),
+    # App Store 6.9-inch iPhone: the phone's layout at 1290/1080 of its size.
+    # Its screens are already tall, so its status and home bars are thinner.
+    "iphone": dict(W=1290, H=2796, src="iphone-6.9", radius=110, bezel=29, k=1.19, head=500, foot=180,
+                   bars=(.085, .05)),
 }
 
 
 # Screens that show a staff member's initials: (device, shot) -> avatar circle
 # centre x, y and radius in the screenshot's pixels. A brand badge covers it.
 AVATARS = {("android-phone", "01-sale"): [(998.5, 83.5, 46, "circle"), (213, 82, 45, "box")],
-           ("ipad-13", "01-sale"): [(2532.5, 56, 30, "circle"), (143.5, 55.5, 31.5, "box")]}
+           ("ipad-13", "01-sale"): [(2532.5, 56, 30, "circle"), (143.5, 55.5, 31.5, "box")],
+           ("iphone-6.9", "01-sale"): [(1208.5, 83.5, 45, "circle"), (215.5, 83.5, 47.5, "box")]}
 
 
 # Product photos laid onto the screenshot's own tiles, as the app draws a tile
@@ -65,6 +71,14 @@ PHOTOS = {("android-phone", "01-sale"): [
     ((792, 636, 1099, 937), "coca-cola.png", "#FFFFFF", "Coca-Cola", "£2.50", .8),
     ((1115, 636, 1422, 937), "40bf993b-bb19-442b-ba0f-d2560964607a.png", "#FFFFFF", "Diet Coke", "£2.50", .8),
     ((1438, 636, 1745, 937), "lemonade.jpg", "cover", "Lemonade", "£2.30", .8),
+], ("iphone-6.9", "01-sale"): [  # the phone's 3-wide grid at the iPhone's size
+    ((446, 480, 843, 822), "f9046f88-adb8-43f2-99c7-d03505dfe7eb.png", "#FFFFFF", "Carling ½", "£6.05", 1.19),
+    ((868, 480, 1265, 822), "048d0e79-413f-477a-9ecd-07b24b302489.png", "#0B0B0B", "Guinness", "£3.00", 1.19),
+    ((446, 846, 843, 1188), "e04f4376-1bd5-46f7-8503-e07d59277091.png", "#FFFFFF", "Peroni", "£5.00", 1.19),
+    ((868, 846, 1265, 1188), "food.jpg", "cover", "FOOD", "›››", 1.19),
+    ((24, 1212, 421, 1554), "coca-cola.png", "#FFFFFF", "Coca-Cola", "£2.50", 1.19),
+    ((446, 1212, 843, 1554), "40bf993b-bb19-442b-ba0f-d2560964607a.png", "#FFFFFF", "Diet Coke", "£2.50", 1.19),
+    ((868, 1212, 1265, 1554), "lemonade.jpg", "cover", "Lemonade", "£2.30", 1.19),
 ]}
 ROBOTO = pathlib.Path("C:/Users/azureuser/develop/flutter/bin/cache/artifacts/material_fonts")
 
@@ -103,7 +117,7 @@ def _photo_tile(im, box, url, ground, name, price, k=1.0):
     return im
 
 
-def screen_file(src, shot, tablet=False):
+def screen_file(src, shot, tablet=False, bars=None):
     """The screenshot, with product photos on their tiles and any staff
     initials replaced by the Vesopa V."""
     from PIL import Image
@@ -116,19 +130,20 @@ def screen_file(src, shot, tablet=False):
         im = _photo_tile(im, *args)
     for cx, cy, r, shape in AVATARS.get((src, shot), []):
         im = _badge(im, cx, cy, r, shape)
-    im = _tall(im, tablet)
+    im = _tall(im, tablet, bars)
     out = pathlib.Path(R.tempfile.mkdtemp(prefix="vesopa-logo-shot-")) / f"{shot}.png"
     im.save(out)
     return out
 
 
-def _tall(im, tablet=False):
+def _tall(im, tablet=False, bars=None):
     """A modern tall phone screen: a status bar above the app, the gesture bar
     below it, in the app's own top and bottom colours. An iPad's bars are the
     same, only thinner for its width."""
     from PIL import Image, ImageDraw, ImageFont
     w, h = im.size
-    top, bottom = (int(w * .026), int(w * .016)) if tablet else (int(w * .12), int(w * .09))
+    tb = bars or ((.026, .016) if tablet else (.12, .09))
+    top, bottom = int(w * tb[0]), int(w * tb[1])
     out = Image.new("RGBA", (w, h + top + bottom), im.getpixel((3, 2)))
     out.paste(Image.new("RGBA", (w, bottom), im.getpixel((3, h - 3))), (0, h + top))
     out.alpha_composite(im, (0, top))
@@ -199,7 +214,7 @@ def page(shot, title, sub, d, i):
     head = d.get("head", 420)  # headline zone, the same on every frame so the devices line up
     foot = d.get("foot", 150)
     tablet = d.get("tablet", False)
-    scr_path = screen_file(d["src"], shot, tablet)
+    scr_path = screen_file(d["src"], shot, tablet, d.get("bars"))
     scr = scr_path.as_uri()
     # the screen's own aspect decides the frame's height
     from PIL import Image
