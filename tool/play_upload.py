@@ -160,7 +160,7 @@ def listing(play, edit, store: pathlib.Path, p):
         files = []
         for s in sources:
             path = store / s
-            files += sorted(path.glob("*.png")) if path.is_dir() else [path] if path.is_file() else []
+            files += sorted(f for f in path.iterdir() if f.suffix.lower() in (".png", ".jpg", ".jpeg")) if path.is_dir() else [path] if path.is_file() else []
         if not files:
             print(f"   {kind}: no pictures, left as it is")
             continue
@@ -169,7 +169,7 @@ def listing(play, edit, store: pathlib.Path, p):
             play.call("DELETE", base)
             for f in files:
                 play.call("POST", f"{UPLOAD}/{play.package}/edits/{edit}/listings/{lang}/{kind}?uploadType=media",
-                          data=f.read_bytes(), ctype="image/png")
+                          data=f.read_bytes(), ctype="image/png" if f.suffix.lower() == ".png" else "image/jpeg")
             print(f"   {kind}: {len(files)} uploaded")
         except PlayError as e:
             # Wear OS pictures need the Wear OS form factor switched on first.
