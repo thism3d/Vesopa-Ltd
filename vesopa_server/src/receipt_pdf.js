@@ -51,7 +51,7 @@ const STATUS = { paid: 'PAID', part_refunded: 'PART REFUNDED', refunded: 'REFUND
  * @returns {Promise<Buffer>}
  */
 function receiptPdf(r, venue) {
-  const { order, lines = [], payments = [], status } = r;
+  const { order, lines = [], payments = [], status, label = 'COPY RECEIPT' } = r;
   const inner = WIDTH - MARGIN * 2;
 
   // Two passes: measure the height on a throwaway document, then draw on a page
@@ -87,7 +87,7 @@ function receiptPdf(r, venue) {
     };
 
     text(venue || 'Vesopa EPOS', { bold: true, size: 11, align: 'center' });
-    text('COPY RECEIPT', { size: 7.5, align: 'center', color: '#555' });
+    text(label, { size: 7.5, align: 'center', color: '#555' });
     text(fmt(order.closed_at), { size: 8, align: 'center' });
     text(
       `Receipt ${String(order.id).slice(0, 8)}${order.table_number ? ` · Table ${order.table_number}` : ''}`,

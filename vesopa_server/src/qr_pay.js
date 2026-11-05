@@ -26,6 +26,48 @@
  */
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const { receiptPdf } = require('./receipt_pdf');
+
+/** The way out of a paid page: read it, keep it or print it. */
+function receiptActions(code) {
+  const c = encodeURIComponent(code);
+  return `<div class="actions"><a class="print" href="/pay/${c}/receipt.pdf" target="_blank" rel="noopener">View PDF</a>`
+    + `<a class="print" href="/pay/${c}/receipt.pdf?save=1">Save PDF</a>`
+    + '<button class="print" onclick="window.print()">Print</button></div>';
+}
+
+/** ImageMagick: a dark disc over the card's circle, the logo on top of it. */
+function logoArgs(file) {
+  return [
+    '-fill', '#0b0e0a', '-draw', 'circle 110,118 110,44',
+    '(', file, '-resize', '132x132', ')',
+    '-gravity', 'NorthWest', '-geometry', '+44+52', '-composite',
+  ];
+}
+
+/** A QR payment in the shape the PDF receipt draws. */
+function receiptFor(row) {
+  let it = null;
+  try { it = row.items ? JSON.parse(row.items) : null; } catch (_) { it = null; }
+  const lines = it && Array.isArray(it.lines) ? it.lines.map((l) => ({
+    name: l.name,
+    quantity: l.qty,
+    unit_price_minor: Math.round((Number(l.total_minor) || 0) / (Number(l.qty) || 1)),
+    note: Array.isArray(l.notes) ? l.notes.join(', ') : l.notes,
+  })) : [{ name: row.bill_name || 'Your bill', quantity: 1, unit_price_minor: row.amount_minor }];
+  return {
+    label: 'RECEIPT',
+    order: { id: row.code.toUpperCase(), closed_at: row.paid_at, total_minor: row.amount_minor },
+    lines,
+    payments: [{ method: 'card', amount_minor: row.amount_minor }],
+    status: null,
+  };
+}
+
 const crypto = require('crypto');
 const express = require('express');
 
@@ -398,7 +440,7 @@ function qrPayRoutes({ pool, broadcast, secret, fetchImpl }) {
     const addr = [brand.address_line1, brand.address_line2, brand.city, brand.postcode].filter(Boolean).map(esc).join(', ');
     return `<div class="receipt"><b>Receipt</b> ${esc(row.code.slice(0, 8).toUpperCase())}<br>${esc(date)} &middot; Card, Apple Pay or Google Pay via Dojo
       ${addr ? `<br>${addr}` : ''}${brand.vat_number ? `<br>VAT no. ${esc(brand.vat_number)}` : ''}${brand.footer_message ? `<br>${esc(brand.footer_message)}` : ''}</div>
-      <button class="print" onclick="window.print()">Save or print receipt</button>`;
+      ${receiptActions(row.code)}`;
   }
 
   function page({ venue, title, body, refresh, share, logo }) {
@@ -435,8 +477,8 @@ h1{font-size:22px;margin:0 0 4px}.amount{font-size:46px;font-weight:800;margin:1
 .items td.p{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.items .o{display:block;color:var(--muted);font-size:13px}
 .items tr.t td{border-bottom:0;font-weight:800;padding-top:10px}.items tr.s td{border-bottom:0;color:var(--muted);padding:3px 0}
 .receipt{text-align:left;font-size:13px;color:var(--muted);margin-top:14px;line-height:1.6}.receipt b{color:var(--ink)}
-.print{display:inline-block;margin-top:14px;padding:10px 16px;border-radius:12px;border:1px solid var(--line);color:var(--ink);background:transparent;font:inherit;font-weight:700;cursor:pointer}
-@media print{body{background:#fff;color:#000}.card{border:0}.pay,.print,.badges{display:none}}
+.actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px}.actions .print{margin-top:0;text-decoration:none}.print{display:inline-block;margin-top:14px;padding:10px 16px;border-radius:12px;border:1px solid var(--line);color:var(--ink);background:transparent;font:inherit;font-weight:700;cursor:pointer}
+@media print{body{background:#fff;color:#000}.card{border:0}.pay,.print,.actions,.badges{display:none}}
 .cross{background:#c0392b}.test{display:inline-block;margin-top:10px;padding:3px 10px;border-radius:99px;background:#fff3cd;color:#7a5b00;font-size:12px;font-weight:700}
 </style></head><body><main><div class="card">${logo ? `<img class="logo" src="${esc(logo)}" alt="">` : ''}<p class="venue">${esc(venue)}</p>${body}</div>
 <p class="muted" style="text-align:center;margin-top:16px">Payments by Dojo · Vesopa</p></main></body></html>`;
@@ -500,7 +542,36 @@ h1{font-size:22px;margin:0 0 4px}.amount{font-size:46px;font-weight:800;margin:1
   /** Words for -annotate: % and \ are its own, and a leading @ reads a file. */
   const said = (v) => String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/%/g, '%%').replace(/^@/, ' @');
 
-  function cardArgs({ venue, customer, billName, amountMinor, status, test }) {
+  /**
+   * The venue's own logo as a file for ImageMagick, or null.
+   *
+   * The club's crest where it has a look of its own (public/assets/venues),
+   * else the logo on its receipts. A link preview showing "P" in a circle is
+   * not a venue's logo (owner, 2026-11-05).
+   */
+  async function logoFile(office, brand) {
+    try {
+      const [[v]] = await pool.query(
+        'SELECT d.slug FROM dinein_venue d JOIN offices o ON o.id = d.office_id WHERE o.contact_email = ?', [office]);
+      if (v && /^[a-z0-9-]+$/.test(v.slug || '')) {
+        const crest = path.join(__dirname, '..', 'public', 'assets', 'venues', v.slug, 'crest.png');
+        if (fs.existsSync(crest)) return { file: crest };
+      }
+    } catch (_) { /* no menu for this venue: its receipt logo, below */ }
+    if (!brand.logo || !/^https:/.test(brand.logo)) return null;
+    try {
+      const res = await fetch(brand.logo, { signal: AbortSignal.timeout(4000) });
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (!res.ok || !bytes.length || bytes.length > 5 * 1024 * 1024) return null;
+      const file = path.join(os.tmpdir(), `qrpay-logo-${crypto.randomUUID()}`);
+      fs.writeFileSync(file, bytes);
+      return { file, temporary: true };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function cardArgs({ venue, customer, billName, amountMinor, status, test, logo }) {
     const paid = status === 'paid';
     const closed = !paid && status !== 'waiting';
     const black = `${FONTS}/Lato-Black.ttf`;
@@ -509,8 +580,9 @@ h1{font-size:22px;margin:0 0 4px}.amount{font-size:46px;font-weight:800;margin:1
     const text = (font, size, colour, x, y, words) => ['-font', font, '-pointsize', String(size), '-fill', colour, '-annotate', `+${x}+${y}`, said(words)];
     return [
       `${ASSETS}/card-base.png`,
-      // The venue's initial in the lime circle (centred on 110,118).
-      '-gravity', 'center', '-font', black, '-pointsize', '60', '-fill', '#10130a', '-annotate', '-490-197', said((String(venue).trim()[0] || 'V').toUpperCase()),
+      // The venue's logo over the circle (centred on 110,118), or its initial
+      // in the lime circle when it has none.
+      ...(logo ? logoArgs(logo) : ['-gravity', 'center', '-font', black, '-pointsize', '60', '-fill', '#10130a', '-annotate', '-490-197', said((String(venue).trim()[0] || 'V').toUpperCase())]),
       '-gravity', 'NorthWest',
       ...text(black, 46, '#ffffff', 190, 62, String(venue).slice(0, 34)),
       ...text(regular, 30, '#9a9a96', 190, 128, paid ? 'Paid, thank you' : closed ? 'This payment is closed' : 'Pay your bill on your phone'),
@@ -543,6 +615,7 @@ h1{font-size:22px;margin:0 0 4px}.amount{font-size:46px;font-weight:800;margin:1
       const key = `${row.code}|${row.status}`;
       let png = cards.get(key);
       if (!png) {
+        const logo = await logoFile(row.office, await brandingFor(row.office));
         const args = cardArgs({
           venue: await venueName(row.office),
           customer: row.customer_name,
@@ -550,13 +623,35 @@ h1{font-size:22px;margin:0 0 4px}.amount{font-size:46px;font-weight:800;margin:1
           amountMinor: row.amount_minor,
           status: row.status,
           test: row.environment === 'sandbox',
+          logo: logo && logo.file,
         });
-        png = await toPng(args);
+        try {
+          png = await toPng(args);
+        } finally {
+          if (logo && logo.temporary) fs.unlink(logo.file, () => {});
+        }
         if (cards.size > 300) cards.delete(cards.keys().next().value);
         cards.set(key, png);
       }
       res.set('Cache-Control', row.status === 'waiting' ? 'public, max-age=60' : 'public, max-age=86400');
       res.type('image/png').send(png);
+    } catch (e) { next(e); }
+  });
+
+  /**
+   * The receipt as a real PDF: opens in the phone's own viewer, or saves with
+   * ?save=1. Only for a paid payment, and the code in the address is the only
+   * way to it, as with the page itself.
+   */
+  router.get('/pay/:code/receipt.pdf', async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      const row = await rowByCode(String(req.params.code));
+      if (!row || row.status !== 'paid') return res.status(404).type('text').send('No receipt for this payment yet.');
+      const pdf = await receiptPdf(receiptFor(row), await venueName(row.office));
+      const name = `receipt-${row.code.slice(0, 8)}.pdf`;
+      res.set('Content-Disposition', `${req.query.save ? 'attachment' : 'inline'}; filename="${name}"`);
+      res.type('application/pdf').send(pdf);
     } catch (e) { next(e); }
   });
 
@@ -678,4 +773,4 @@ h1{font-size:22px;margin:0 0 4px}.amount{font-size:46px;font-weight:800;margin:1
   return router;
 }
 
-module.exports = { qrPayRoutes, view };
+module.exports = { qrPayRoutes, view, receiptActions, logoArgs, receiptFor };
