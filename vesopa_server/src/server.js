@@ -505,6 +505,15 @@ app.use(require('./go_modes').goModeRoutes({ pool, secret: JWT_SECRET, auth: req
 app.use(require('./display_adverts').displayAdvertRoutes({ pool, secret: JWT_SECRET, auth: requireAuth(JWT_SECRET) }));
 // DeepSeek's suggested layout for a till screen, for the back office and Go (src/layout_ai.js).
 app.use(require('./layout_ai').layoutAiRoutes({ pool, secret: JWT_SECRET, auth: requireAuth(JWT_SECRET) }));
+// Terminals licensed once by access key, their settings kept here (src/terminal_licences.js).
+app.use(require('./terminal_licences').terminalLicenceRoutes({
+  pool,
+  secret: JWT_SECRET,
+  auth: requireAuth(JWT_SECRET),
+  requireAdmin: (req, res, next) => (req.user && req.user.role === 'admin'
+    ? next()
+    : res.status(403).json({ error: 'Administrator access only' })),
+}));
 app.use(require('./device_health').deviceHealthRoutes({
   pool,
   broadcast,
