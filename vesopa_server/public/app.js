@@ -14018,6 +14018,10 @@ async function loadDevices() {
   loadAppInstalls().catch(() => {});
   loadDeviceHealth().catch(() => {});
   if (typeof loadLan === 'function') loadLan().catch(() => {});
+  if (typeof loadTerminals === 'function') {
+    bindTerminals();
+    loadTerminals().catch(() => {});
+  }
   let rows = [];
   try {
     rows = await api('/devices');

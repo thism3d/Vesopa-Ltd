@@ -475,7 +475,7 @@ function terminalStore(pool) {
   }
 
   return {
-    ensure, list, get, create, reissue, update, unbind, revoke, settings,
+    pool, ensure, list, get, create, reissue, update, unbind, revoke, settings,
     writeSettings, copy, enrol, ping,
   };
 }
@@ -511,7 +511,13 @@ function pageRoutes(store, router, officeOf, { enforce, guard }) {
       const office = await load(req, res);
       if (!office) return;
       const rows = await store.list(office);
-      res.json({ terminals: rows.map(terminalView), kinds: LICENSED_KINDS });
+      const [[venue]] = await store.pool.query('SELECT id FROM offices WHERE contact_email = ?', [office]);
+      res.json({
+        terminals: rows.map(terminalView),
+        kinds: LICENSED_KINDS,
+        // What a person types on the device, with the number and the key.
+        venue_code: venue ? venue.id : null,
+      });
     } catch (e) { next(e); }
   });
 
