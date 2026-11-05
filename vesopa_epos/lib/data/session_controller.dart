@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/constants.dart';
 import 'hardware_fingerprint.dart';
 import 'licence_key.dart';
+import 'terminal_sync.dart';
 import 'terminal_identity.dart';
 import 'vesopa_sso.dart';
 import '../main.dart' show apiBaseProvider;
@@ -275,6 +276,8 @@ class SessionController extends AsyncNotifier<Session> {
     });
     await writeLicenceKey(key);
     await _adopt(body);
+    // A till being set up again: its printers and the rest come straight back.
+    await restoreTerminalSettings(apiBase: apiBase, version: VesopaBrand.appVersion);
   }
 
   /// Ask the back office whether a till may be commissioned with a Vesopa

@@ -55,6 +55,10 @@ const Map<String, String> terminalSettings = {
   'till.keyboard_scale': 'Appearance',
 };
 
+/// A stored JSON object where only some fields are settings. Everything else in
+/// it stays on the machine.
+const Map<String, Set<String>> terminalFields = {};
+
 const _revKey = 'terminal_settings_rev';
 const _sentKey = 'terminal_settings_sent';
 
@@ -85,8 +89,10 @@ List<TerminalSetting> settingsFrom(Map<String, Object?> stored) {
       out.add(TerminalSetting(entry.value, entry.key, value));
       continue;
     }
+    final only = terminalFields[entry.key];
     decoded.forEach((field, fieldValue) {
       if (_secret.hasMatch(field)) return;
+      if (only != null && !only.contains(field)) return;
       out.add(TerminalSetting(entry.value, '${entry.key}$_field$field', fieldValue));
     });
   }

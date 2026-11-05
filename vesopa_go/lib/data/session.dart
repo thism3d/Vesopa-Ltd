@@ -40,6 +40,7 @@ import 'mix_match_types.dart';
 import 'lan/lan_link.dart' show LanMessage;
 import 'lan/lan_service.dart';
 import '../config/constants.dart' show apiBase, goAppVersion;
+import 'terminal_sync.dart';
 import 'screen_set.dart';
 
 export 'go_options.dart';
@@ -532,6 +533,9 @@ class TapSession extends Notifier<TapState> {
       ..office = v.office;
     api.office = v.office;
     state = state.copyWith(phase: Phase.locked, venue: v);
+    // This device's settings from the back office (data/terminal_sync.dart).
+    await restoreTerminalSettings(apiBase: api.base, version: goAppVersion);
+    startTerminalSettingsPush(apiBase: api.base);
     await _loadCache();
     await refresh();
   }

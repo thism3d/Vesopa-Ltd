@@ -13,6 +13,7 @@ import '../../data/recent_venues.dart';
 import '../../data/session.dart';
 import '../../data/vesopa_sso.dart';
 import '../theme.dart';
+import '../access_key_dialog.dart';
 import 'sign_in_flow.dart';
 import 'welcome_slides.dart';
 
@@ -40,6 +41,32 @@ class _WelcomePageState extends ConsumerState<WelcomePage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _signIn(selectAccount: true);
       });
+    }
+  }
+
+  /// License this device with an access key from the back office.
+  Future<void> _useAccessKey() async {
+    final answer = await askForAccessKey(context);
+    if (answer == null || !mounted) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final session = ref.read(tapProvider.notifier);
+      final done = await ref.read(apiProvider).licenseWithKey(
+            venueCode: answer.venueCode,
+            terminalNumber: answer.terminalNumber,
+            accessKey: answer.accessKey,
+            device: session.terminalName,
+            deviceId: session.deviceId,
+            version: goAppVersion,
+          );
+      await session.commissioned(done);
+    } on TapApiError catch (e) {
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -123,6 +150,11 @@ class _WelcomePageState extends ConsumerState<WelcomePage> {
                               label: const Text('Register a new venue'),
                             ),
                           ),
+                        ),
+                        const SizedBox(height: 4),
+                        TextButton(
+                          onPressed: _busy ? null : _useAccessKey,
+                          child: const Text('Use an access key'),
                         ),
                         if (_recent.isNotEmpty) ...[
                           const SizedBox(height: 22),

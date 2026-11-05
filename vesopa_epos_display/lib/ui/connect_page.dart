@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/vesopa_setup.dart';
+import 'access_key_dialog.dart';
 import 'display_page.dart';
 import 'licence_panel.dart';
 import 'dart:async';
@@ -145,6 +146,23 @@ class _ConnectPageState extends ConsumerState<ConnectPage> {
     }
   }
 
+  Future<void> _useAccessKey() async {
+    final answer = await askForAccessKey(context);
+    if (answer == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await licenseWithKey(
+        apiBase: displayApiBase,
+        venueCode: answer.venueCode,
+        terminalNumber: answer.terminalNumber,
+        accessKey: answer.accessKey,
+      );
+      _onward();
+    } catch (e) {
+      _failed(e);
+    }
+  }
+
   Future<void> _connect() async {
     final option = _option;
     if (option == null || !option.enabled || _busy) return;
@@ -262,6 +280,11 @@ class _ConnectPageState extends ConsumerState<ConnectPage> {
                       onPressed: _busy ? null : _signIn,
                       style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
                       child: Text(_busy ? 'Signing in…' : 'Sign in'),
+                    ),
+                    const SizedBox(height: 6),
+                    TextButton(
+                      onPressed: _busy ? null : _useAccessKey,
+                      child: const Text('Use an access key'),
                     ),
                     if (vesopa) ...[
                       const SizedBox(height: 10),

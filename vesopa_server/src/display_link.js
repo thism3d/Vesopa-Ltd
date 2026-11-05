@@ -45,7 +45,7 @@ const jwt = require('jsonwebtoken');
 const { verifyPassword, AccessDeniedError } = require('./auth');
 const licences = require('./licences');
 
-const DISPLAY_TOKEN_TTL = '90d';
+const DISPLAY_TOKEN_TTL = '3650d';
 const MAX_MESSAGE = 256 * 1024;
 
 const clamp = (v, n) => (v == null ? null : String(v).trim().slice(0, n) || null);

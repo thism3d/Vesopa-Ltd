@@ -39,6 +39,7 @@ import 'ui/connect_page.dart';
 import 'ui/display_page.dart';
 import 'ui/settings_page.dart';
 import 'ui/theme.dart';
+import 'data/terminal_sync.dart';
 import 'data/trusted_roots.dart';
 
 /// [args] is the command line, which on Windows is how a deep link arrives:
@@ -105,6 +106,10 @@ Future<void> main(List<String> args) async {
       await windowManager.focus();
     },
   );
+
+  // This display's settings from the back office (data/terminal_sync.dart).
+  await restoreTerminalSettings(apiBase: displayApiBase, version: displayAppVersion);
+  startTerminalSettingsPush(apiBase: displayApiBase);
 
   runApp(ProviderScope(child: VesopaDisplayApp(openSettings: fromLink)));
 }

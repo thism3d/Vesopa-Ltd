@@ -104,6 +104,25 @@ class TapApi {
         'site_choice': true,
       });
 
+  /// License this device with its venue code, number and access key.
+  Future<Map<String, dynamic>> licenseWithKey({
+    required String venueCode,
+    required String terminalNumber,
+    required String accessKey,
+    required String device,
+    required String deviceId,
+    required String version,
+  }) =>
+      _send('POST', '/api/terminal/license', {
+        'device_kind': 'go',
+        'venue_code': venueCode,
+        'terminal_number': terminalNumber,
+        'access_key': accessKey.trim().toUpperCase(),
+        'device_name': device,
+        'device_id': deviceId,
+        'app_version': version,
+      });
+
   /// A login that runs several sites picks one with the five-minute pass.
   Future<Map<String, dynamic>> commissionSite(String pickToken, Object officeId, {required String device, required String deviceId}) =>
       _send('POST', '/api/terminal/vesopa/commission/site', {

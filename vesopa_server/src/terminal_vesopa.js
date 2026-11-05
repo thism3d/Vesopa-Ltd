@@ -586,9 +586,9 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
         via: 'vesopa',
       },
       secret,
-      // Ninety days, matching the typed door. A wall screen signed in every
-      // week is a wall screen somebody props open.
-      { expiresIn: '90d' }
+      // As long as a till's, matching the typed door. A wall screen asked to
+      // sign in again is a wall screen somebody props open.
+      { expiresIn: '3650d' }
     );
   }
 
@@ -721,9 +721,9 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
           via: 'vesopa',
         },
         secret,
-        // Ninety days, like the kitchen screen. A wall display asked to sign in
-        // every week is a wall display somebody props open.
-        seatId ? { expiresIn: '90d', jwtid: seatId } : { expiresIn: '90d' },
+        // As long as a till's. A wall display asked to sign in again is a wall
+        // display somebody props open.
+        seatId ? { expiresIn: '3650d', jwtid: seatId } : { expiresIn: '3650d' },
       );
 
       return res.json({

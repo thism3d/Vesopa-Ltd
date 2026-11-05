@@ -21,6 +21,7 @@ import 'ui/splash_screen.dart';
 import 'ui/theme.dart';
 import 'ui/theme_controller.dart';
 import 'dart:async';
+import 'data/terminal_sync.dart';
 import 'data/trusted_roots.dart';
 import 'data/startup_repair.dart';
 
@@ -79,6 +80,9 @@ Future<void> main() async {
   // An update somebody chose to take "On next start" runs now, before
   // anything else opens (data/app_update.dart). Returns at once otherwise.
   await Updater.applyPending(kitchenAppVersion);
+  // This screen's settings from the back office (data/terminal_sync.dart).
+  await restoreTerminalSettings(apiBase: Api.base, version: kitchenAppVersion);
+  startTerminalSettingsPush(apiBase: Api.base);
   await _lockWindowToKiosk();
   runApp(const ProviderScope(child: VesopaKitchenApp()));
 }

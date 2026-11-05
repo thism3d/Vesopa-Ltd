@@ -131,6 +131,53 @@ class DisplaySetupFailed implements Exception {
 /// screen that has been connected longest rather than refusing this one. It is
 /// handled anyway: a venue whose limit is zero, because the subscription lapsed,
 /// has no oldest screen to bounce.
+/// License this display with its venue code, number and access key.
+Future<DisplayCommission> licenseWithKey({
+  required String apiBase,
+  required String venueCode,
+  required String terminalNumber,
+  required String accessKey,
+}) async {
+  String? fingerprint;
+  try {
+    fingerprint = await HardwareFingerprint.get();
+  } catch (_) {
+    // The device id still identifies this screen.
+  }
+  final http.Response res;
+  try {
+    res = await http
+        .post(
+          Uri.parse('$apiBase/api/terminal/license'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'device_kind': 'display',
+            'venue_code': venueCode,
+            'terminal_number': terminalNumber,
+            'access_key': accessKey.trim().toUpperCase(),
+            'device_id': await displayDeviceId(),
+            'device_name': await displayDeviceName(),
+            'device_fingerprint': ?fingerprint,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+  } catch (_) {
+    throw DisplaySetupFailed('This display could not reach the back office.');
+  }
+  final body = jsonDecode(res.body) as Map<String, dynamic>;
+  final token = body['token'] as String?;
+  final office = body['office'] as String?;
+  if (res.statusCode != 200 || token == null || office == null) {
+    throw DisplaySetupFailed((body['error'] as String?) ?? 'That access key was not accepted.');
+  }
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_keyToken, token);
+  await prefs.setString(_keyOffice, office);
+  final venue = body['venue'] as String?;
+  if (venue != null) await prefs.setString(_keyVenue, venue);
+  return DisplayCommission(token: token, office: office, venue: venue, licensed: true);
+}
+
 Future<DisplayCommission> commission({
   required String apiBase,
   required VesopaOption option,

@@ -60,12 +60,13 @@ const DELIVERY_MODES = ['printer', 'screen', 'both'];
 /**
  * How long a kitchen screen stays signed in.
  *
- * Ninety days, and deliberately long. The alternative is a screen bolted to a
+ * Ten years, the same as a till, and deliberately long: signing out is the back
+ * office's to do, by taking the seat back. The alternative is a screen bolted to a
  * wall above a fryer that signs itself out at seven o'clock on a Friday because
  * a token aged out — a kitchen blinded during the busiest service of the week,
  * by a security measure protecting a list of what has been ordered for dinner.
  */
-const KITCHEN_TOKEN_TTL = '90d';
+const KITCHEN_TOKEN_TTL = '3650d';
 
 /**
  * Express middleware for the routes only a signed-in kitchen screen may call.

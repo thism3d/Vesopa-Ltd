@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/constants.dart';
+import '../data/app_update.dart';
+import '../data/hardware_fingerprint.dart';
+import '../data/kitchen_api.dart';
 import '../data/providers.dart';
+import 'access_key_dialog.dart';
 import 'theme.dart';
 import 'widgets/brand_mark.dart';
 import 'widgets/vesopa_mark.dart';
@@ -123,6 +127,32 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     _Field.username => _username,
     _Field.password => _password,
   };
+
+  /// License this screen with an access key from the back office.
+  Future<void> _useAccessKey() async {
+    final answer = await askForAccessKey(context);
+    if (answer == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      String? fingerprint;
+      try {
+        fingerprint = await HardwareFingerprint.get();
+      } catch (_) {
+        // The device id still identifies this screen.
+      }
+      await ref.read(kitchenSessionProvider.notifier).licenseWithKey(
+            venueCode: answer.venueCode,
+            terminalNumber: answer.terminalNumber,
+            accessKey: answer.accessKey,
+            deviceId: (await Installation.current(kitchenAppVersion)).deviceId,
+            fingerprint: fingerprint,
+          );
+    } on KitchenApiError catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _submit() async {
     // Move to the next empty field rather than failing. Somebody who has filled
@@ -329,6 +359,10 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                             )
                           : const Text('Sign in'),
                     ),
+                  ),
+                  TextButton(
+                    onPressed: _busy ? null : _useAccessKey,
+                    child: const Text('Use an access key'),
                   ),
 
                   const SizedBox(height: 18),

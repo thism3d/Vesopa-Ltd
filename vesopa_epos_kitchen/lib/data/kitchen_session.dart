@@ -296,6 +296,38 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
     );
   }
 
+  /// License this screen with an access key: no person signs in.
+  Future<void> licenseWithKey({
+    required String venueCode,
+    required String terminalNumber,
+    required String accessKey,
+    required String deviceId,
+    String? deviceName,
+    String? fingerprint,
+  }) async {
+    final result = await _api.licenseWithKey(
+      venueCode: venueCode,
+      terminalNumber: terminalNumber,
+      accessKey: accessKey,
+      deviceId: deviceId,
+      deviceName: deviceName,
+      fingerprint: fingerprint,
+    );
+    final profile = await _api.profile();
+    await _persist(
+      KitchenSession(
+        token: result.token,
+        office: profile.office.isEmpty ? result.office : profile.office,
+        officeName: profile.officeName,
+        userName: profile.userName,
+        stationNames: profile.stationNames,
+        screens: profile.screens,
+        branding: profile.branding,
+        screenId: null,
+      ),
+    );
+  }
+
   /// Re-read the venue's screens and station names.
   ///
   /// Called on every reconnect. Silent on failure: this is a refresh of

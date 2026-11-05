@@ -286,6 +286,39 @@ class KitchenApi {
     return (token: issued, office: body['office'] as String? ?? '');
   }
 
+  /// License this screen with its venue code, number and access key.
+  Future<({String token, String office})> licenseWithKey({
+    required String venueCode,
+    required String terminalNumber,
+    required String accessKey,
+    required String deviceId,
+    String? deviceName,
+    String? fingerprint,
+    String? version,
+  }) async {
+    final body = await _send(
+      'POST',
+      '/api/terminal/license',
+      body: {
+        'device_kind': 'kitchen',
+        'venue_code': venueCode,
+        'terminal_number': terminalNumber,
+        'access_key': accessKey.trim().toUpperCase(),
+        'device_id': deviceId,
+        'device_name': ?deviceName,
+        'device_fingerprint': ?fingerprint,
+        'app_version': ?version,
+      },
+      authorised: false,
+    );
+    final issued = body['token'] as String?;
+    if (issued == null) {
+      throw KitchenApiError('The back office did not set this screen up.');
+    }
+    token = issued;
+    return (token: issued, office: body['office'] as String? ?? '');
+  }
+
   /// Re-read the venue's screens and station names without signing in again.
   Future<KitchenProfile> profile() async =>
       KitchenProfile.fromJson(await _send('GET', '/api/kitchen/profile'));
