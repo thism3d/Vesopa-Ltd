@@ -570,7 +570,8 @@ function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
   /** Whether this till takes cards with Barclaycard, and where. */
   router.get('/till/barclaycard/config', requireTerminal(secret), async (req, res, next) => {
     try {
-      const t = await tillFor(pool, req.office);
+      const own = await require('./terminal_licences').deviceProvider(pool, req.office, req.seatId);
+      const t = own && own !== 'barclays' ? null : await tillFor(pool, req.office);
       res.json({ enabled: !!t, environment: t ? t.env : bc.cleanEnv((await settingsFor(pool, req.office)).environment) });
     } catch (e) { fail(res, e, next); }
   });

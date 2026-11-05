@@ -50,6 +50,15 @@ const Map<String, String> terminalSettings = {
   'go_kitchen_autoprint': 'Printers',
   'go_sounds_muted': 'Sounds',
   'vesopa_lan_manual': 'LocalLink',
+  'go_display_touch': 'Display',
+  'go_display_sound': 'Display',
+  'go_display_show_qr': 'Display',
+  'go_display_show_amount': 'Display',
+  'go_display_show_card_marks': 'Display',
+  'go_display_show_card_steps': 'Display',
+  'go_display_show_discount': 'Display',
+  'go_display_thanks_seconds': 'Display',
+  'go_display_text_scale': 'Display',
 };
 
 /// A stored JSON object where only some fields are settings. Everything else in

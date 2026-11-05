@@ -1,6 +1,6 @@
 {
   "_comment": "One place for what testers read on each build: TestFlight's What to Test (tool/testflight.py) and Play's release notes (tool/play_upload.py). Change it with the version in pubspec.yaml; a build whose version is not this one says so in its notes instead of repeating an old release's.",
-  "version": "1.2.43",
-  "what_to_test": "Use an access key: on the first screen choose Use an access key and enter the venue code, terminal number and key from Terminals in the back office.\nStripe Tap to Pay (sandbox) at The Vesopa Kitchen, once it is switched on under Who takes the cards.\nSettings kept in the back office: change a setting, reinstall, and check it comes back.",
+  "version": "1.2.44",
+  "what_to_test": "Use an access key: on the first screen choose Use an access key and enter the venue code, terminal number and key from Terminals in the back office.\nStripe Tap to Pay (sandbox) at The Vesopa Kitchen, once it is switched on under Who takes the cards.\nSettings kept in the back office: change a setting, reinstall, and check it comes back.\nCustomer display: long-press the top corner, enter a manager PIN, open Display options, and try touch, sound and the pay screen.\nSwitching: Settings > Switch to changes what this device runs as, and the back office shows the change.",
   "release_notes": "License a device with an access key, and keep its settings safe in the back office."
 }

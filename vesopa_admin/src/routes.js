@@ -252,8 +252,10 @@ router.post('/venues/:id/cards', signedIn, csrf, allow('licences.sell', 'epos'),
 async function terminalsPage(req, res, { issued = null, error = null } = {}) {
   const venueId = Number(req.params.id);
   let data = { terminals: [], kinds: [] };
+  let go = { modes: [], devices: [] };
   try { data = await epos.terminals(venueId, req.me.email); } catch (e) { error = error || e.message; }
-  page(req, res, 'terminals', { title: 'Terminals', venueId, terminals: data.terminals, kinds: data.kinds, issued, error });
+  try { go = await epos.goModes(venueId, req.me.email); } catch (_) { /* a server without Go: the table stays empty */ }
+  page(req, res, 'terminals', { title: 'Terminals', venueId, terminals: data.terminals, kinds: data.kinds, go, issued, error });
 }
 
 router.get('/venues/:id/terminals', signedIn, allow('licences.view', 'epos'), (req, res, next) => {
@@ -280,6 +282,30 @@ router.post('/venues/:id/terminals/:tid/act', signedIn, csrf, allow('licences.se
     const done = await epos.terminalAct(venueId, req.params.tid, action, req.me.email);
     await audit.record({ actor: req.me.email, action: `terminal.${action}`, venueId, detail: `${done.kind} ${done.number}` });
     await terminalsPage(req, res, { issued: action === 'key' ? done : null });
+  } catch (e) {
+    terminalsPage(req, res, { error: e.message }).catch(next);
+  }
+});
+
+router.post('/venues/:id/terminals/:tid/provider', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res, next) => {
+  const venueId = Number(req.params.id);
+  const provider = String((req.body || {}).provider || '');
+  try {
+    await epos.setTerminalProvider(venueId, req.params.tid, provider, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'terminal.provider', venueId, detail: `${Number(req.params.tid)} to ${provider || 'venue default'}` });
+    res.redirect(303, `/venues/${venueId}/terminals`);
+  } catch (e) {
+    terminalsPage(req, res, { error: e.message }).catch(next);
+  }
+});
+
+router.post('/venues/:id/go-mode', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res, next) => {
+  const venueId = Number(req.params.id);
+  const b = req.body || {};
+  try {
+    await epos.setGoMode(venueId, String(b.device || ''), String(b.mode || ''), req.me.email);
+    await audit.record({ actor: req.me.email, action: 'go.mode', venueId, detail: String(b.mode || '') });
+    res.redirect(303, `/venues/${venueId}/terminals`);
   } catch (e) {
     terminalsPage(req, res, { error: e.message }).catch(next);
   }

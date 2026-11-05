@@ -83,6 +83,22 @@ Future<void> showModeSettings(BuildContext context, WidgetRef ref, {List<Widget>
                     },
             ),
           ),
+          for (final other in DeviceMode.values)
+            if (other != m.mode)
+              Card(
+                child: ListTile(
+                  leading: Icon(other.icon),
+                  title: Text('Switch to ${other.label}'),
+                  subtitle: Text(other.detail),
+                  onTap: () async {
+                    Navigator.pop(c);
+                    final why = await ref.read(deviceModeProvider.notifier).switchTo(other);
+                    if (why != null && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(why)));
+                    }
+                  },
+                ),
+              ),
           Card(
             child: ListTile(
               leading: const Icon(Icons.refresh_rounded),

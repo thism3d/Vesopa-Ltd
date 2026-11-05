@@ -60,6 +60,10 @@ APPS = {
             "go_receipt_printer": "Printers", "go_kitchen_printer": "Printers",
             "go_kitchen_autoprint": "Printers", "go_sounds_muted": "Sounds",
             "vesopa_lan_manual": "LocalLink",
+            **{f"go_display_{k}": "Display" for k in [
+                "touch", "sound", "show_qr", "show_amount", "show_card_marks", "show_card_steps",
+                "show_discount", "thanks_seconds", "text_scale",
+            ]},
         },
         "fields": {},
         "token": "  return const FlutterSecureStorage().read(key: 'vesopa_go_token');",

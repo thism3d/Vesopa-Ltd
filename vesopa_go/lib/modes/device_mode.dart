@@ -114,6 +114,20 @@ class DeviceModeController extends Notifier<DeviceModeState> {
     return true;
   }
 
+  /// A manager's change on the device, after their PIN. Told to the back office
+  /// first, so the two never disagree, and it also holds when the back office
+  /// had set this device: the manager is the one standing at it.
+  Future<String?> switchTo(DeviceMode mode) async {
+    final s = ref.read(tapProvider.notifier);
+    try {
+      await ref.read(apiProvider).changeGoMode(s.deviceId, mode.name);
+    } on TapApiError catch (e) {
+      return e.message;
+    }
+    await load(again: true);
+    return null;
+  }
+
   /// Back to the chooser (Settings › Device mode).
   Future<void> forget() async {
     if (state.fixed) return;

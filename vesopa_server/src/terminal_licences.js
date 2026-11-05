@@ -61,6 +61,9 @@ const SCOPE_KINDS = {
 };
 
 const DEVICE_TOKEN_TTL = '3650d';
+
+/** Who takes this device's cards, where it differs from the venue. '' follows the venue. */
+const CARD_PROVIDERS = ['', 'dojo', 'teya', 'barclays', 'stripe'];
 const MAX_ROWS = 800;
 const MAX_VALUE = 8000;
 
@@ -159,6 +162,7 @@ function terminalView(row) {
     device_name: row.device_name,
     bound: Boolean(row.device_fingerprint || row.device_id),
     version: row.app_version,
+    card_provider: row.card_provider || '',
     licensed_at: row.licensed_at,
     last_ping_at: row.last_ping_at,
     revoked_at: row.revoked_at,
@@ -247,6 +251,15 @@ function terminalStore(pool) {
       'SELECT * FROM bo_terminals WHERE office = ? ORDER BY kind, terminal_no',
       [office]
     );
+    if (rows.length) {
+      const [chosen] = await pool.query(
+        `SELECT terminal_id, value FROM bo_terminal_settings
+          WHERE category = 'Payment' AND name = 'card_provider' AND terminal_id IN (?)`,
+        [rows.map((r) => r.id)]
+      );
+      const by = new Map(chosen.map((c) => [c.terminal_id, parse(c.value)]));
+      for (const r of rows) r.card_provider = by.get(r.id) || '';
+    }
     return rows;
   }
 
@@ -584,6 +597,21 @@ function pageRoutes(store, router, officeOf, { enforce, guard }) {
     });
   }
 
+  router.put('/:id/provider', guard, express.json(), async (req, res, next) => {
+    try {
+      const office = await load(req, res);
+      if (!office) return;
+      const provider = clamp((req.body || {}).provider, 16);
+      if (!CARD_PROVIDERS.includes(provider)) return res.status(400).json({ error: 'That is not a card provider' });
+      const row = await store.get(office, asInt(req.params.id));
+      if (!row) return res.status(404).json({ error: 'No such terminal' });
+      await store.writeSettings(row.id, [{
+        category: 'Payment', name: 'card_provider', value: JSON.stringify(provider),
+      }], who(req));
+      res.json({ ok: true, provider });
+    } catch (e) { next(e); }
+  });
+
   router.get('/:id/settings', guard, async (req, res, next) => {
     try {
       const office = await load(req, res);
@@ -842,8 +870,35 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
   return router;
 }
 
+/**
+ * The provider chosen for one signed-in device, or '' to follow the venue.
+ *
+ * Never throws: every till and phone asks this on its way to taking a card, and
+ * a failed read must leave it doing what the venue does.
+ */
+async function deviceProvider(pool, office, seatId) {
+  if (!seatId) return '';
+  try {
+    const [[row]] = await pool.query(
+      `SELECT s.value FROM bo_till_seats q
+         JOIN bo_terminals t ON t.office = q.office AND t.device_id = q.device_id AND t.revoked_at IS NULL
+         JOIN bo_terminal_settings s ON s.terminal_id = t.id
+        WHERE q.id = ? AND q.office = ? AND s.category = 'Payment' AND s.name = 'card_provider'
+        LIMIT 1`,
+      [seatId, office]
+    );
+    const value = row ? parse(row.value) : '';
+    return CARD_PROVIDERS.includes(value) ? value : '';
+  } catch (e) {
+    if (e.code !== 'ER_NO_SUCH_TABLE') console.warn('[terminal_licences] could not read a device provider:', e.message);
+    return '';
+  }
+}
+
 module.exports = {
   terminalLicenceRoutes,
+  deviceProvider,
+  CARD_PROVIDERS,
   bindDecision,
   mergeValues,
   cleanValues,

@@ -32,6 +32,13 @@ function terminalSettingLabel(name) {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+/** Who may take this kind of device's cards. Go has no Barclaycard, a till no Stripe. */
+function terminalProviderOptions(kind) {
+  if (kind === 'till') return [['', 'Venue default'], ['dojo', 'Dojo'], ['teya', 'Teya'], ['barclays', 'Barclaycard']];
+  if (kind === 'go') return [['', 'Venue default'], ['dojo', 'Dojo'], ['teya', 'Teya'], ['stripe', 'Stripe']];
+  return null;
+}
+
 function terminalValueText(value) {
   if (value === null || value === undefined) return '';
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
@@ -92,7 +99,7 @@ function renderTerminals() {
     </div>
     <div id="terminal-key-shown"></div>
     ${rows.length ? `<div class="table-wrap"><table class="table"><thead><tr>
-        <th>No.</th><th>Name</th><th>Kind</th><th>Site</th><th>Licence</th><th>Version</th>
+        <th>No.</th><th>Name</th><th>Kind</th><th>Site</th><th>Licence</th><th>Cards</th><th>Version</th>
         <th>Last ping</th><th>Pending</th><th></th></tr></thead><tbody>
       ${rows.map((t) => `<tr${t.revoked_at ? ' class="muted"' : ''}>
         <td><b>${esc(t.number)}</b></td>
@@ -101,6 +108,9 @@ function renderTerminals() {
         <td>${esc(siteName(t.site_id))}</td>
         <td class="small">${t.revoked_at ? '<span class="pill">withdrawn</span>'
           : t.key_prefix ? esc(t.key_prefix) + '…' : '<span class="muted">signed in</span>'}</td>
+        <td>${terminalProviderOptions(t.kind) ? `<select data-terminal-provider="${esc(t.id)}" aria-label="Who takes this device's cards">
+          ${terminalProviderOptions(t.kind).map(([v, n]) => `<option value="${v}"${t.card_provider === v ? ' selected' : ''}>${n}</option>`).join('')}
+        </select>` : '<span class="small muted">—</span>'}</td>
         <td class="small muted">${esc(t.version || '—')}</td>
         <td class="small muted">${esc(terminalWhen(t.last_ping_at))}</td>
         <td>${t.pending ? `<span class="pill">${esc(t.pending)} waiting</span>` : '<span class="small muted">none</span>'}</td>
@@ -208,6 +218,18 @@ function bindTerminals() {
     const input = $('terminal-search');
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
+  });
+
+  box.addEventListener('change', async (e) => {
+    const id = e.target.getAttribute && e.target.getAttribute('data-terminal-provider');
+    if (!id) return;
+    try {
+      await api(`/terminals/${id}/provider`, { method: 'PUT', body: JSON.stringify({ provider: e.target.value }) });
+      toast('Saved. This device follows it on its next payment.');
+    } catch (err) {
+      toast(err.message, 'error');
+      loadTerminals();
+    }
   });
 
   box.addEventListener('click', async (e) => {

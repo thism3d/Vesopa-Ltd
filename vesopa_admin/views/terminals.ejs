@@ -28,7 +28,7 @@
 
 <div class="card table-wrap">
   <table>
-    <thead><tr><th>No.</th><th>Name</th><th>Kind</th><th>Licence</th><th>Version</th><th>Last ping</th><th>Pending</th><th></th></tr></thead>
+    <thead><tr><th>No.</th><th>Name</th><th>Kind</th><th>Licence</th><th>Cards</th><th>Version</th><th>Last ping</th><th>Pending</th><th></th></tr></thead>
     <tbody>
     <% for (const t of terminals) { %>
       <tr>
@@ -36,6 +36,18 @@
         <td><a href="/venues/<%= venueId %>/terminals/<%= t.id %>"><%= t.name || t.device_name || 'Terminal ' + t.number %></a></td>
         <td><%= kindName[t.kind] || t.kind %></td>
         <td><% if (t.revoked_at) { %><span class="pill">withdrawn</span><% } else if (t.key_prefix) { %><%= t.key_prefix %>…<% } else { %><span class="muted">signed in</span><% } %></td>
+        <td>
+          <% const options = t.kind === 'till' ? [['', 'Venue default'], ['dojo', 'Dojo'], ['teya', 'Teya'], ['barclays', 'Barclaycard']]
+               : t.kind === 'go' ? [['', 'Venue default'], ['dojo', 'Dojo'], ['teya', 'Teya'], ['stripe', 'Stripe']] : null; %>
+          <% if (options && can('licences.sell', 'epos')) { %>
+          <form method="post" action="/venues/<%= venueId %>/terminals/<%= t.id %>/provider" class="inline">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <select name="provider" aria-label="Who takes this device's cards" onchange="this.form.submit()">
+              <% for (const [value, name] of options) { %><option value="<%= value %>"<%= t.card_provider === value ? ' selected' : '' %>><%= name %></option><% } %>
+            </select>
+          </form>
+          <% } else { %><span class="muted">—</span><% } %>
+        </td>
         <td class="muted"><%= t.version || '—' %></td>
         <td class="muted"><%= t.last_ping_at ? ago(t.last_ping_at) : '—' %></td>
         <td><%= t.pending ? t.pending + ' waiting' : 'none' %></td>
@@ -51,8 +63,34 @@
         </td>
       </tr>
     <% } %>
-    <% if (!terminals.length) { %><tr><td colspan="8" class="muted">No terminals yet.</td></tr><% } %>
+    <% if (!terminals.length) { %><tr><td colspan="9" class="muted">No terminals yet.</td></tr><% } %>
     </tbody>
   </table>
 </div>
+<% if (go.devices.length) { %>
+<div class="card table-wrap">
+  <h3>Vesopa Go devices</h3>
+  <table>
+    <thead><tr><th>Device</th><th>Runs as</th><th>Showing now</th></tr></thead>
+    <tbody>
+    <% const modeName = (id) => (go.modes.find((m) => m.id === id) || {}).label || id; %>
+    <% for (const d of go.devices) { %>
+      <tr>
+        <td><b><%= d.name %></b></td>
+        <td>
+          <form method="post" action="/venues/<%= venueId %>/go-mode" class="inline">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <input type="hidden" name="device" value="<%= d.device_id %>">
+            <select name="mode" aria-label="What <%= d.name %> runs as" onchange="this.form.submit()">
+              <% for (const m of go.modes) { %><option value="<%= m.id %>"<%= m.id === d.mode ? ' selected' : '' %>><%= m.label %></option><% } %>
+            </select>
+          </form>
+        </td>
+        <td class="muted"><%= d.running ? modeName(d.running) : '—' %></td>
+      </tr>
+    <% } %>
+    </tbody>
+  </table>
+</div>
+<% } %>
 <%- include('_bottom') %>

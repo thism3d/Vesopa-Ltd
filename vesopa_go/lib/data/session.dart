@@ -395,13 +395,13 @@ final apiProvider = Provider<TapApi>((ref) => TapApi());
 final paymentsProvider = Provider<PaymentService>((ref) {
   final demo = ref.watch(tapProvider.select((s) => s.demo));
   if (demo) return DemoPayments();
-  // A Teya venue (back office, Card Payments) pays on its Teya machines.
-  final teya = ref.watch(tapProvider.select((s) => s.config.teya));
-  if (teya.enabled) return TeyaCardMachine(ref.watch(apiProvider), teya, tillName: ref.read(tapProvider.notifier).terminalName);
-  // Stripe only where the back office chose it (Who takes the cards).
+  // Stripe where the venue or this device chose it (Who takes the cards, Terminals).
   if (ref.watch(tapProvider.select((s) => s.config.tapProvider)) == 'stripe') {
     return StripeTapToPay(ref.watch(apiProvider));
   }
+  // A Teya venue (back office, Card Payments) pays on its Teya machines.
+  final teya = ref.watch(tapProvider.select((s) => s.config.teya));
+  if (teya.enabled) return TeyaCardMachine(ref.watch(apiProvider), teya, tillName: ref.read(tapProvider.notifier).terminalName);
   return DojoTapToPay(ref.watch(apiProvider));
 });
 

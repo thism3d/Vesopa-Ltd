@@ -41,9 +41,11 @@ import '../../data/session.dart';
 import '../../modes/mode_settings.dart';
 import '../../data/lan/lan_service.dart';
 import '../../ui/pages/connection_page.dart';
+import '../../ui/sounds.dart';
 import '../../ui/theme.dart';
 import '../data/basket_feed.dart';
 import '../data/control.dart';
+import '../data/display_options.dart';
 import '../data/till_link.dart';
 
 const _ease = Cubic(0.2, 0, 0, 1);
@@ -64,6 +66,8 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
   String? _paidTo;
   Basket _basket = Basket.unknown;
   TillControl? _control;
+  DisplayOptions _options = const DisplayOptions();
+  String? _lastResult;
   DateTime _lastChange = DateTime.now();
   List<_Advert> _adverts = const [];
   Timer? _tick;
@@ -73,6 +77,9 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
   void initState() {
     super.initState();
     WakelockPlus.enable().catchError((Object _) {});
+    DisplayOptions.load().then((o) {
+      if (mounted) setState(() => _options = o);
+    });
     // The display, not the till, is on the venue's link now.
     TapSession.lanHeldByDisplay = true;
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -219,7 +226,7 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
     final c = _control;
     if (_basket.card != null) return false;
     if (_basket.state == 'paid') {
-      return DateTime.now().difference(_lastChange) > Duration(seconds: c?.thankYouSeconds ?? 20);
+      return DateTime.now().difference(_lastChange) > Duration(seconds: _options.thanksSeconds > 0 ? _options.thanksSeconds : c?.thankYouSeconds ?? 20);
     }
     if (_basket.hasSale) return false;
     return DateTime.now().difference(_lastChange) > Duration(seconds: min(c?.idleSeconds ?? 45, 10));
@@ -232,6 +239,18 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
           leading: const Icon(Icons.link_rounded),
           title: Text(_paidTo == null ? 'Not connected to a till' : 'Following $_paidTo'),
           subtitle: Text('Code $_code · ${switch (_link?.route) { 'lan' => 'over the venue\'s network', 'cloud' => 'through the back office', _ => 'waiting' }}'),
+        ),
+      ),
+      Card(
+        child: ListTile(
+          leading: const Icon(Icons.tune_rounded),
+          title: const Text('Display options'),
+          subtitle: const Text('Touch, sound and the pay screen. Saved to the back office.'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () {
+            Navigator.pop(context);
+            _displayOptions();
+          },
         ),
       ),
       Card(
@@ -268,6 +287,80 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
         ),
       ),
     ]);
+  }
+
+  Future<void> _setOptions(DisplayOptions o) async {
+    setState(() => _options = o);
+    await o.save();
+  }
+
+  /// What a manager can change here, after their PIN.
+  Future<void> _displayOptions() => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (c) => StatefulBuilder(builder: (c, redraw) {
+      void set(DisplayOptions o) {
+        _setOptions(o);
+        redraw(() {});
+      }
+      final o = _options;
+      Widget flag(String title, String detail, bool value, DisplayOptions Function(bool) change) => SwitchListTile(
+        title: Text(title),
+        subtitle: Text(detail),
+        value: value,
+        onChanged: (v) => set(change(v)),
+      );
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          flag('Touch', 'Off: customers cannot touch anything on this screen.', o.touch, (v) => o.copyWith(touch: v)),
+          flag('Sound', 'A chime when a payment is approved or declined.', o.sound, (v) => o.copyWith(sound: v)),
+          flag('Pay from a phone', 'Show the QR code when the till offers it.', o.showQr, (v) => o.copyWith(showQr: v)),
+          flag('Amount to pay', 'The amount in big figures on the pay screen.', o.showAmount, (v) => o.copyWith(showAmount: v)),
+          flag('Card steps', 'What the card is doing, as the till words it.', o.showCardSteps, (v) => o.copyWith(showCardSteps: v)),
+          flag('Cards we take', 'Card and wallet names under the pay screen.', o.showCardMarks, (v) => o.copyWith(showCardMarks: v)),
+          flag('Discounts', 'Discounts and savings on the bill.', o.showDiscount, (v) => o.copyWith(showDiscount: v)),
+          ListTile(
+            title: const Text('Thank-you stays up for'),
+            subtitle: Text(o.thanksSeconds == 0 ? 'What the till says' : '${o.thanksSeconds} seconds'),
+          ),
+          Slider(
+            value: o.thanksSeconds.toDouble(),
+            max: 60,
+            divisions: 12,
+            label: '${o.thanksSeconds}',
+            onChanged: (v) => set(o.copyWith(thanksSeconds: v.round())),
+          ),
+          const ListTile(title: Text('Size of the words')),
+          Slider(
+            value: o.textScale,
+            min: 0.8,
+            max: 1.6,
+            divisions: 8,
+            label: o.textScale.toStringAsFixed(1),
+            onChanged: (v) => set(o.copyWith(textScale: v)),
+          ),
+        ]),
+      );
+    }),
+  );
+
+  /// A chime once per payment result, when the display is set to make one.
+  void _noticeResult() {
+    final card = _basket.card;
+    if (card == null || !card.isResult) {
+      _lastResult = null;
+      return;
+    }
+    final key = '${card.approved}|${card.amountMinor}|${card.title}';
+    if (key == _lastResult) return;
+    _lastResult = key;
+    if (_options.sound) {
+      final go = ref.read(tapProvider.select((s) => s.config.go));
+      unawaited(GoSounds.play(go, card.approved ? GoSound.approved : GoSound.declined));
+    }
   }
 
   /// The display's own rows on Network and hardware (2026-11-04): which till
@@ -310,6 +403,9 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
   Widget build(BuildContext context) {
     final venue = ref.watch(tapProvider.select((s) => s.venue?.name)) ?? '';
     final reduce = MediaQuery.of(context).disableAnimations;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _noticeResult();
+    });
     Widget screen;
     if (_problem != null) {
       screen = _Centre(
@@ -321,13 +417,13 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
     } else if (_paidTo == null && !(_link?.cloudUp == true && _basket.updatedAt.year > 2000)) {
       screen = _PairCode(code: _code, venue: venue, linked: _link?.cloudUp == true || _link?.lanUp == true);
     } else if (_basket.card != null) {
-      screen = _CardScreen(card: _basket.card!, basket: _basket);
+      screen = _CardScreen(card: _basket.card!, basket: _basket, options: _options);
     } else if (_idle) {
       screen = _Idle(adverts: _adverts, venue: venue, control: _control);
     } else if (_basket.state == 'paid') {
       screen = _ThankYou(basket: _basket, words: _control?.thankYou ?? 'Thank you');
     } else {
-      screen = _Bill(basket: _basket, control: _control, adverts: _adverts, venue: venue);
+      screen = _Bill(basket: _basket, control: _control, adverts: _adverts, venue: venue, showDiscount: _options.showDiscount);
     }
     return Scaffold(
       backgroundColor: const Color(0xFF0B0E0A),
@@ -343,7 +439,17 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
                 opacity: a,
                 child: ScaleTransition(scale: Tween(begin: 0.98, end: 1.0).animate(a), child: child),
               ),
-              child: KeyedSubtree(key: ValueKey(screen.runtimeType), child: screen),
+              child: KeyedSubtree(
+                key: ValueKey(screen.runtimeType),
+                // The corner below stays live, so staff are never locked out.
+                child: AbsorbPointer(
+                  absorbing: !_options.touch,
+                  child: MediaQuery(
+                    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(_options.textScale)),
+                    child: screen,
+                  ),
+                ),
+              ),
             ),
           ),
           // Staff only: a long press in the top corner, then a manager's PIN.
@@ -425,7 +531,8 @@ class _PairCode extends StatelessWidget {
 
 /// The bill as it is rung up; adverts beside it on a wide screen.
 class _Bill extends StatelessWidget {
-  const _Bill({required this.basket, required this.control, required this.adverts, required this.venue});
+  const _Bill({required this.basket, required this.control, required this.adverts, required this.venue, this.showDiscount = true});
+  final bool showDiscount;
   final Basket basket;
   final TillControl? control;
   final List<_Advert> adverts;
@@ -485,7 +592,7 @@ class _Bill extends StatelessWidget {
             ),
           ),
           const Divider(height: 28),
-          if (basket.discountMinor > 0) _TotalRow(label: 'Discount', minor: -basket.discountMinor),
+          if (showDiscount && basket.discountMinor > 0) _TotalRow(label: 'Discount', minor: -basket.discountMinor),
           if (basket.paidMinor > 0) _TotalRow(label: 'Paid', minor: basket.paidMinor),
           Row(children: [
             Expanded(child: Text(basket.paidMinor > 0 ? 'Left to pay' : 'Total', style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w700))),
@@ -531,9 +638,10 @@ class _TotalRow extends StatelessWidget {
 /// The card payment, as the customer should see it, and the QR to pay with
 /// their own phone when the till offers one.
 class _CardScreen extends StatelessWidget {
-  const _CardScreen({required this.card, required this.basket});
+  const _CardScreen({required this.card, required this.basket, required this.options});
   final CardStatus card;
   final Basket basket;
+  final DisplayOptions options;
 
   @override
   Widget build(BuildContext context) {
@@ -546,9 +654,9 @@ class _CardScreen extends StatelessWidget {
           padding: const EdgeInsets.all(32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             if (card.heading != null) Text(card.heading!.toUpperCase(), style: t.labelLarge?.copyWith(letterSpacing: 1.4, color: Colors.white60)),
-            Text(money(amount), style: t.displayLarge?.copyWith(fontWeight: FontWeight.w900, fontFeatures: Tp.tabular)),
+            if (options.showAmount) Text(money(amount), style: t.displayLarge?.copyWith(fontWeight: FontWeight.w900, fontFeatures: Tp.tabular)),
             const SizedBox(height: 24),
-            if (card.qr != null)
+            if (card.qr != null && options.showQr)
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
@@ -562,12 +670,17 @@ class _CardScreen extends StatelessWidget {
               ),
             const SizedBox(height: 24),
             Text(card.title, textAlign: TextAlign.center, style: t.headlineMedium?.copyWith(fontWeight: FontWeight.w800, color: colour)),
-            if (card.detail != null)
+            if (card.detail != null && options.showCardSteps)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(card.detail!, textAlign: TextAlign.center, style: t.titleMedium?.copyWith(color: Colors.white70)),
               ),
-            if (card.qr != null)
+            if (options.showCardMarks && !card.isResult)
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Text('Visa · Mastercard · Maestro · Amex · Apple Pay · Google Pay', textAlign: TextAlign.center, style: t.bodyMedium),
+              ),
+            if (card.qr != null && options.showQr)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text('Scan with your phone\'s camera to pay, tip and get a receipt.', textAlign: TextAlign.center, style: t.bodyLarge?.copyWith(color: Colors.white60)),

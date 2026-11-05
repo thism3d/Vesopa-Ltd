@@ -170,9 +170,8 @@ function goModeRoutes({ pool, secret, auth }) {
   // The back office's own rule for who may change a venue's devices.
   const manager = [attachAccess({ pool }), requirePermission('programming.devices')];
 
-  router.get('/api/go/device-modes', auth, async (req, res, next) => {
-    try {
-      const office = await officeOf(req);
+  /** Every Go device of a venue and what it runs as. */
+  async function modesFor(office) {
       await ensure();
       let seats = [];
       try {
@@ -197,22 +196,75 @@ function goModeRoutes({ pool, secret, auth }) {
           last_seen_at: s.last_seen_at || s.signed_in_at || null,
         };
       });
-      res.json({ modes: MODES.map((m) => ({ id: m, label: label(m) })), devices });
+      return { modes: MODES.map((m) => ({ id: m, label: label(m) })), devices };
+  }
+
+  async function setMode(office, deviceId, mode, by) {
+    await ensure();
+    await pool.query(
+      `INSERT INTO bo_go_device_modes (office, device_id, mode, updated_by)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE mode = VALUES(mode), updated_by = VALUES(updated_by)`,
+      [office, deviceId, mode, clamp(by, 191)]);
+  }
+
+  router.get('/api/go/device-modes', auth, async (req, res, next) => {
+    try {
+      res.json(await modesFor(await officeOf(req)));
     } catch (e) { next(e); }
   });
 
   router.put('/api/go/device-modes/:id', auth, ...manager, express.json(), async (req, res, next) => {
     try {
-      const office = await officeOf(req);
       const deviceId = clamp(req.params.id, 64);
       const mode = clamp((req.body || {}).mode, 12);
-      if (!deviceId || !MODES.includes(mode)) return res.status(400).json({ error: 'That is not a mode a device can run as.' });
-      await ensure();
-      await pool.query(
-        `INSERT INTO bo_go_device_modes (office, device_id, mode, updated_by)
-         VALUES (?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE mode = VALUES(mode), updated_by = VALUES(updated_by)`,
-        [office, deviceId, mode, clamp(req.user.email, 191)]);
+      if (!deviceId || !MODES.includes(mode)) return res.status(400).json({ error: 'That is not a mode a device can run in.' });
+      await setMode(await officeOf(req), deviceId, mode, req.user.email);
+      res.json({ device_id: deviceId, mode });
+    } catch (e) { next(e); }
+  });
+
+  /**
+   * The same two doors for admin.vesopa.com, for any venue.
+   */
+  const adminOnly = (req, res, next) => (req.user && req.user.role === 'admin'
+    ? next()
+    : res.status(403).json({ error: 'Administrator access only' }));
+  const officeById = async (id) => {
+    const [[row]] = await pool.query('SELECT contact_email FROM offices WHERE id = ?', [id]);
+    return row ? row.contact_email : null;
+  };
+
+  router.get('/api/admin/offices/:id/go-modes', auth, adminOnly, async (req, res, next) => {
+    try {
+      const office = await officeById(req.params.id);
+      if (!office) return res.status(404).json({ error: 'No such venue' });
+      res.json(await modesFor(office));
+    } catch (e) { next(e); }
+  });
+
+  router.put('/api/admin/offices/:id/go-modes/:device', auth, adminOnly, express.json(), async (req, res, next) => {
+    try {
+      const office = await officeById(req.params.id);
+      if (!office) return res.status(404).json({ error: 'No such venue' });
+      const deviceId = clamp(req.params.device, 64);
+      const mode = clamp((req.body || {}).mode, 12);
+      if (!deviceId || !MODES.includes(mode)) return res.status(400).json({ error: 'That is not a mode a device can run in.' });
+      await setMode(office, deviceId, mode, req.user.email);
+      res.json({ device_id: deviceId, mode });
+    } catch (e) { next(e); }
+  });
+
+  /**
+   * A manager changing it on the device, after their PIN there. Written to the
+   * same row, so the back office and admin show what the device now does.
+   */
+  router.post('/api/go/mode/change', terminal, express.json(), async (req, res, next) => {
+    try {
+      const deviceId = clamp((req.body || {}).device_id, 64);
+      const mode = clamp((req.body || {}).mode, 12);
+      if (!deviceId || !MODES.includes(mode)) return res.status(400).json({ error: 'That is not a mode a device can run in.' });
+      await setMode(req.office, deviceId, mode, 'on the device');
       res.json({ device_id: deviceId, mode });
     } catch (e) { next(e); }
   });

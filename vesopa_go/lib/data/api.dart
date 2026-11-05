@@ -501,6 +501,10 @@ class TapApi {
   /// go_modes.js): `ask`, `epos`, `kitchen` or `display`, and whether fixed.
   Future<Map<String, dynamic>> goMode() => _send('GET', '/api/go/mode');
 
+  /// A manager changing what this device runs as, after their PIN on it.
+  Future<Map<String, dynamic>> changeGoMode(String deviceId, String mode) =>
+      _send('POST', '/api/go/mode/change', {'device_id': deviceId, 'mode': mode});
+
   /// A kitchen or display credential for this device's venue.
   Future<Map<String, dynamic>> goModeToken(String mode, {String? deviceName}) =>
       _send('POST', '/api/go/mode-token', {'mode': mode, 'device_name': ?deviceName});

@@ -719,7 +719,10 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     }
   });
 
-  async function tapProviderFor(office) {
+  async function tapProviderFor(office, seatId) {
+    // This device's own choice first (Devices, Terminals).
+    const own = await require('./terminal_licences').deviceProvider(pool, office, seatId);
+    if (own === 'stripe' || own === 'dojo') return own;
     try {
       const [[row]] = await pool.query(
         'SELECT enabled, use_tap FROM epos_stripe_settings WHERE office = ?', [office]);
@@ -744,7 +747,7 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
         ...phoneSettings(await settingsFor(req.office)),
         // Who takes Tap to Pay here: Stripe where the venue switched it on
         // (src/barclaycard.js, payment-providers), Dojo everywhere else.
-        tap_provider: await tapProviderFor(req.office),
+        tap_provider: await tapProviderFor(req.office, req.seatId),
         // Vesopa Go's own options (go_options.js), and whether the venue has
         // Go at all: it is licensed per venue, none unless offered (licences.js).
         go: await goOptionsFor(pool, req.office),

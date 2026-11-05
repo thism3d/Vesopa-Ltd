@@ -32,6 +32,9 @@ module.exports = {
   // Each venue's terminals: access keys and per-terminal settings (src/terminal_licences.js there).
   providers: (id, as) => get(`/offices/${Number(id)}/payment-providers`, as),
   setProviders: (id, body, as) => put(`/offices/${Number(id)}/payment-providers`, body, as),
+  setTerminalProvider: (id, tid, provider, as) => put(`/offices/${Number(id)}/terminals/${Number(tid)}/provider`, { provider }, as),
+  goModes: (id, as) => get(`/offices/${Number(id)}/go-modes`, as),
+  setGoMode: (id, device, mode, as) => put(`/offices/${Number(id)}/go-modes/${encodeURIComponent(device)}`, { mode }, as),
   terminals: (id, as) => get(`/offices/${Number(id)}/terminals`, as),
   addTerminal: (id, body, as) => post(`/offices/${Number(id)}/terminals`, body, as),
   terminalSettings: (id, tid, as) => get(`/offices/${Number(id)}/terminals/${Number(tid)}/settings`, as),

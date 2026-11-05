@@ -930,7 +930,10 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
       const s = await settingsFor(pool, req.office);
       const env = teya.cleanEnv(s.environment);
       const conn = await connectionFor(pool, req.office, env);
-      const on = !!Number(s.enabled) && s.card_provider === 'teya' && !!(conn && conn.m2m_client_id);
+      // A till can be given its own provider (Devices, Terminals), which beats the venue's.
+      const own = await require('./terminal_licences').deviceProvider(pool, req.office, req.seatId);
+      const wanted = own ? own === 'teya' : !!Number(s.enabled) && s.card_provider === 'teya';
+      const on = wanted && !!(conn && conn.m2m_client_id);
       // The machine the back office gave this till wins; the venue default
       // otherwise. Sent as default_terminal_id too, which is what tills before
       // 1.16.20 read.
