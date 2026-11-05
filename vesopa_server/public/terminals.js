@@ -28,7 +28,7 @@ function terminalWhen(value) {
 }
 
 function terminalSettingLabel(name) {
-  const spaced = String(name).replace(/[_.-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+  const spaced = String(name).replace(/[_.#-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 

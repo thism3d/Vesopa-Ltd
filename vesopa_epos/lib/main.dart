@@ -44,6 +44,7 @@ import 'data/training_mode.dart';
 import 'data/sync_service.dart';
 import 'data/terminal_identity.dart';
 import 'data/terminal_service.dart';
+import 'data/terminal_sync.dart';
 import 'data/table_repository.dart';
 import 'data/till_settings.dart';
 import 'payments/connect_pac.dart';
@@ -1122,6 +1123,10 @@ Future<void> main() async {
   // Every card sale, refund and check, approved or not, to the back office's
   // Card payments page. See payments/card_log.dart.
   CardLog.instance.apiBase = Api.base;
+
+  // This terminal's settings from the back office, before any provider reads
+  // them, so a reinstall starts with its printers (data/terminal_sync.dart).
+  await restoreTerminalSettings(apiBase: Api.base, version: VesopaBrand.appVersion);
 
   await _lockWindowToKiosk();
   runApp(

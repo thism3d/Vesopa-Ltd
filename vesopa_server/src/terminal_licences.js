@@ -693,6 +693,8 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
       if (!row || Number(row.office_id) !== venue || row.terminal_no !== number) return refuse();
       if (row.revoked_at) return refuse();
       if (!LICENSED_KINDS.includes(row.kind)) return refuse();
+      // A till's key is not a kitchen screen's, or one key would run two apps.
+      if (clamp(body.device_kind, 24) !== row.kind) return refuse();
 
       const fingerprint = clamp(body.device_fingerprint, 64);
       const deviceId = clamp(body.device_id, 64);
@@ -735,15 +737,25 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
       );
       limiter.passed(ip);
 
+      const token = deviceToken({
+        kind: row.kind,
+        office: row.office,
+        officeId: row.office_id,
+        terminal: row,
+        seatId,
+        secret,
+      });
       res.json({
-        terminalToken: deviceToken({
-          kind: row.kind,
-          office: row.office,
-          officeId: row.office_id,
-          terminal: row,
-          seatId,
-          secret,
-        }),
+        // The device token in both places, and no person's session. The till
+        // treats it as it does a session that has run out: the back office
+        // refuses it, and everything a till does runs on its terminal token.
+        token,
+        terminalToken: token,
+        user: {
+          name: row.name || `Terminal ${row.terminal_no}`,
+          officeEmail: row.office,
+          officeName: row.office_name,
+        },
         office: row.office,
         office_id: row.office_id,
         venue: row.office_name,

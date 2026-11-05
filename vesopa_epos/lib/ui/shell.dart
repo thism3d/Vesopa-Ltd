@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/constants.dart';
 import '../data/display_link.dart';
 import '../data/hardware.dart';
+import '../data/terminal_sync.dart';
 import '../data/lan/lan_service.dart';
 import '../data/lan/offline_money.dart';
 import '../data/app_update.dart';
@@ -481,6 +482,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     // The hardware report for the back office and admin.vesopa.com, every ten
     // minutes, under the same machine id as the device list.
     final machineId = await terminalDeviceId();
+    startTerminalSettingsPush(apiBase: registry.apiBase);
     HardwareReporter.start(
       apiBase: registry.apiBase,
       token: registry.terminalToken ?? '',

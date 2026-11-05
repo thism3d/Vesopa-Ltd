@@ -33,6 +33,12 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   final _licence = TextEditingController();
   bool _showLicence = false;
 
+  /// License with an access key instead: no person signs in at all.
+  final _venueCode = TextEditingController();
+  final _terminalNumber = TextEditingController();
+  final _accessKey = TextEditingController();
+  bool _useAccessKey = false;
+
   /// The eye beside the password: shown in plain text while pressed on.
   bool _revealPassword = false;
   bool _busy = false;
@@ -92,6 +98,36 @@ class _SignInPageState extends ConsumerState<SignInPage> {
           _error = e.message;
           _busy = false;
           _opened = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _licenseWithKey() async {
+    if (_venueCode.text.trim().isEmpty ||
+        _terminalNumber.text.trim().isEmpty ||
+        _accessKey.text.trim().isEmpty) {
+      setState(() => _error = 'Enter the venue code, terminal number and access key.');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+
+    try {
+      await ref.read(sessionControllerProvider.notifier).licenseWithKey(
+            apiBase: ref.read(apiBaseProvider),
+            venueCode: _venueCode.text,
+            terminalNumber: _terminalNumber.text,
+            accessKey: _accessKey.text,
+          );
+    } on SignInFailed catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _busy = false;
         });
       }
     }
@@ -176,6 +212,9 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     _email.dispose();
     _password.dispose();
     _licence.dispose();
+    _venueCode.dispose();
+    _terminalNumber.dispose();
+    _accessKey.dispose();
     super.dispose();
   }
 
@@ -235,7 +274,64 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     // Vesopa is the only way in, so rolling back is a flag and
                     // a restart rather than a Store release. See
                     // VesopaOption.only.
-                    if (!_vesopaOnly) ...[
+                    if (_useAccessKey) ...[
+                      TextField(
+                        controller: _venueCode,
+                        enabled: !_busy,
+                        autofocus: true,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Venue code',
+                          prefixIcon: Icon(Icons.store_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _terminalNumber,
+                        enabled: !_busy,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Terminal number',
+                          prefixIcon: Icon(Icons.point_of_sale_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _accessKey,
+                        enabled: !_busy,
+                        textCapitalization: TextCapitalization.characters,
+                        onSubmitted: (_) => _busy ? null : _licenseWithKey(),
+                        decoration: const InputDecoration(
+                          labelText: 'Access key',
+                          hintText: 'VES-TILL-0000-0000-0000-0000',
+                          helperText: 'From Terminals in the back office. Typed once on this machine.',
+                          helperMaxLines: 2,
+                          prefixIcon: Icon(Icons.vpn_key_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      FilledButton(
+                        onPressed: _busy ? null : _licenseWithKey,
+                        child: const Text('License this till'),
+                      ),
+                    ],
+                    Align(
+                      alignment: Alignment.center,
+                      child: TextButton(
+                        onPressed: _busy
+                            ? null
+                            : () => setState(() {
+                                  _useAccessKey = !_useAccessKey;
+                                  _error = null;
+                                }),
+                        child: Text(_useAccessKey ? 'Sign in instead' : 'Use an access key'),
+                      ),
+                    ),
+
+                    if (!_vesopaOnly && !_useAccessKey) ...[
                     TextField(
                       controller: _email,
                       enabled: !_busy,

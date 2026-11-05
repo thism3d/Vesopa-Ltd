@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/constants.dart';
 import 'hardware_fingerprint.dart';
 import 'licence_key.dart';
 import 'terminal_identity.dart';
@@ -251,6 +252,31 @@ class SessionController extends AsyncNotifier<Session> {
     await _adopt(body);
   }
 
+  /// License this till with its venue code, number and access key.
+  ///
+  /// No person signs in, so nobody is asked to again: the answer is a device
+  /// token that lasts until the back office withdraws it, and the key is kept
+  /// so a reinstall on this machine only has to be typed once more. It opens
+  /// this till and no part of the back office (src/terminal_licences.js).
+  Future<void> licenseWithKey({
+    required String apiBase,
+    required String venueCode,
+    required String terminalNumber,
+    required String accessKey,
+  }) async {
+    final key = accessKey.trim().toUpperCase();
+    final body = await _commission(apiBase, '/api/terminal/license', {
+      ...await _thisTill(canChoose: false),
+      'device_kind': 'till',
+      'venue_code': venueCode.trim(),
+      'terminal_number': terminalNumber.trim(),
+      'access_key': key,
+      'app_version': VesopaBrand.appVersion,
+    });
+    await writeLicenceKey(key);
+    await _adopt(body);
+  }
+
   /// Ask the back office whether a till may be commissioned with a Vesopa
   /// account here.
   ///
@@ -336,7 +362,7 @@ class SessionController extends AsyncNotifier<Session> {
           .timeout(const Duration(seconds: 20));
     } catch (e) {
       throw SignInFailed(
-        'Signed in with Vesopa, but the till could not reach $apiBase to finish.\n'
+        'The till could not reach $apiBase to finish.\n'
         'Check the network and try again.',
       );
     }

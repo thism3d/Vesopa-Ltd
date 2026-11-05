@@ -1,6 +1,6 @@
 <%- include('_top') %>
 <% if (error) { %><div class="flash bad"><%= error %></div><% } %>
-<% const label = (s) => String(s).replace(/[_.-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+<% const label = (s) => String(s).replace(/[_.#-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
    const text = (v) => (v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)); %>
 <div class="bar">
   <span class="muted"><a href="/venues/<%= venueId %>/terminals">Terminals</a> › <%= terminal.name || 'Terminal ' + terminal.number %></span>
