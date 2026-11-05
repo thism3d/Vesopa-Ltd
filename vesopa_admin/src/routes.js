@@ -222,6 +222,72 @@ router.get('/venues/:id', signedIn, allow('licences.view', 'epos'), async (req, 
   } catch (e) { next(e); }
 });
 
+// Every terminal of a venue, its access key and its settings. The whole key is
+// only ever on the page that issued it: it is not in a URL or the audit trail.
+async function terminalsPage(req, res, { issued = null, error = null } = {}) {
+  const venueId = Number(req.params.id);
+  let data = { terminals: [], kinds: [] };
+  try { data = await epos.terminals(venueId, req.me.email); } catch (e) { error = error || e.message; }
+  page(req, res, 'terminals', { title: 'Terminals', venueId, terminals: data.terminals, kinds: data.kinds, issued, error });
+}
+
+router.get('/venues/:id/terminals', signedIn, allow('licences.view', 'epos'), (req, res, next) => {
+  terminalsPage(req, res).catch(next);
+});
+
+router.post('/venues/:id/terminals', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res, next) => {
+  const venueId = Number(req.params.id);
+  const b = req.body || {};
+  try {
+    const made = await epos.addTerminal(venueId, { kind: b.kind, name: b.name }, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'terminal.add', venueId, detail: `${made.kind} ${made.number}` });
+    await terminalsPage(req, res, { issued: made });
+  } catch (e) {
+    terminalsPage(req, res, { error: e.message }).catch(next);
+  }
+});
+
+router.post('/venues/:id/terminals/:tid/act', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res, next) => {
+  const venueId = Number(req.params.id);
+  const action = String((req.body || {}).action || '');
+  try {
+    if (!['key', 'unbind', 'revoke'].includes(action)) throw new Error('Unknown action');
+    const done = await epos.terminalAct(venueId, req.params.tid, action, req.me.email);
+    await audit.record({ actor: req.me.email, action: `terminal.${action}`, venueId, detail: `${done.kind} ${done.number}` });
+    await terminalsPage(req, res, { issued: action === 'key' ? done : null });
+  } catch (e) {
+    terminalsPage(req, res, { error: e.message }).catch(next);
+  }
+});
+
+router.get('/venues/:id/terminals/:tid', signedIn, allow('licences.view', 'epos'), async (req, res, next) => {
+  const venueId = Number(req.params.id);
+  try {
+    const [data, all] = await Promise.all([
+      epos.terminalSettings(venueId, req.params.tid, req.me.email),
+      epos.terminals(venueId, req.me.email),
+    ]);
+    const others = all.terminals.filter((t) => t.kind === data.terminal.kind && t.id !== data.terminal.id && !t.revoked_at);
+    page(req, res, 'terminal_settings', { title: 'Terminals', venueId, terminal: data.terminal, settings: data.settings, others, error: null });
+  } catch (e) {
+    if (e.status === 404) return next();
+    next(e);
+  }
+});
+
+router.post('/venues/:id/terminals/:tid/copy', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res) => {
+  const venueId = Number(req.params.id);
+  const b = req.body || {};
+  const back = `/venues/${venueId}/terminals/${Number(req.params.tid)}`;
+  try {
+    await epos.copyTerminal(venueId, req.params.tid, { to: [Number(b.to)], category: b.category, name: b.name }, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'terminal.copy', venueId, detail: `to ${Number(b.to)}` });
+  } catch (e) {
+    return res.redirect(303, `${back}?error=${encodeURIComponent(e.message)}`);
+  }
+  res.redirect(303, back);
+});
+
 router.post('/venues/:id/items/:item', signedIn, csrf, async (req, res) => {
   const back = `/venues/${Number(req.params.id)}`;
   const b = req.body || {};

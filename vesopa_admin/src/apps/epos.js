@@ -29,6 +29,12 @@ module.exports = {
   setAppUpdates: (enabled, as) => put('/app-versions-settings', { enabled: !!enabled }, as),
   // Every device of every venue: versions, hardware health and error counts,
   // and their error logs (src/device_health.js there, 2026-11-03).
+  // Each venue's terminals: access keys and per-terminal settings (src/terminal_licences.js there).
+  terminals: (id, as) => get(`/offices/${Number(id)}/terminals`, as),
+  addTerminal: (id, body, as) => post(`/offices/${Number(id)}/terminals`, body, as),
+  terminalSettings: (id, tid, as) => get(`/offices/${Number(id)}/terminals/${Number(tid)}/settings`, as),
+  terminalAct: (id, tid, act, as) => post(`/offices/${Number(id)}/terminals/${Number(tid)}/${act}`, {}, as),
+  copyTerminal: (id, tid, body, as) => post(`/offices/${Number(id)}/terminals/${Number(tid)}/settings/copy`, body, as),
   fleet: (officeId, as) => get(`/fleet${officeId ? `?office_id=${Number(officeId)}` : ''}`, as),
   fleetLogs: (q, as) => get(`/fleet/logs?${new URLSearchParams(q).toString()}`, as),
   setVenueSelfUpdates: (ids, on, as) => put('/venue-self-updates', { office_ids: ids, on: !!on }, as),

@@ -1,0 +1,48 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad"><%= error %></div><% } %>
+<% const label = (s) => String(s).replace(/[_.-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+   const text = (v) => (v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)); %>
+<div class="bar">
+  <span class="muted"><a href="/venues/<%= venueId %>/terminals">Terminals</a> › <%= terminal.name || 'Terminal ' + terminal.number %></span>
+</div>
+
+<% if (others.length && settings.length && can('licences.sell', 'epos')) { %>
+<form method="post" action="/venues/<%= venueId %>/terminals/<%= terminal.id %>/copy" class="card batch">
+  <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+  <b>Copy everything to</b>
+  <select name="to" aria-label="Copy to terminal">
+    <% for (const o of others) { %><option value="<%= o.id %>"><%= o.number %> <%= o.name || '' %></option><% } %>
+  </select>
+  <button class="btn">Copy</button>
+</form>
+<% } %>
+
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Category</th><th>Setting</th><th>Value</th><th></th></tr></thead>
+    <tbody>
+    <% for (const s of settings) { %>
+      <tr>
+        <td class="muted"><%= label(s.category) %></td>
+        <td><%= label(s.name) %><% if (s.pending) { %> <span class="pill">waiting</span><% } %></td>
+        <td><%= text(s.value) %></td>
+        <td>
+          <% if (others.length && can('licences.sell', 'epos')) { %>
+          <form method="post" action="/venues/<%= venueId %>/terminals/<%= terminal.id %>/copy" class="inline">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <input type="hidden" name="category" value="<%= s.category %>">
+            <input type="hidden" name="name" value="<%= s.name %>">
+            <select name="to" aria-label="Copy to terminal">
+              <% for (const o of others) { %><option value="<%= o.id %>"><%= o.number %> <%= o.name || '' %></option><% } %>
+            </select>
+            <button class="btn">Copy to terminal</button>
+          </form>
+          <% } %>
+        </td>
+      </tr>
+    <% } %>
+    <% if (!settings.length) { %><tr><td colspan="4" class="muted">Nothing yet. Settings appear once this terminal has reported them.</td></tr><% } %>
+    </tbody>
+  </table>
+</div>
+<%- include('_bottom') %>

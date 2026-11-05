@@ -1,0 +1,58 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad"><%= error %></div><% } %>
+<% const kindName = { till: 'Till', go: 'Vesopa Go', kitchen: 'Kitchen screen', display: 'Customer display', express: 'Express kiosk' }; %>
+<div class="bar">
+  <span class="muted"><a href="/venues/<%= venueId %>">Venue <%= venueId %></a> › Terminals · venue code <b><%= venueId %></b></span>
+</div>
+
+<% if (issued) { %>
+<div class="card">
+  <h3>Access key for <%= kindName[issued.kind] || issued.kind %> <%= issued.number %></h3>
+  <p class="muted">Write this down now. It will not be shown again.</p>
+  <p>Venue code <b><%= venueId %></b> · Terminal number <b><%= issued.number %></b></p>
+  <p><code><%= issued.key %></code></p>
+</div>
+<% } %>
+
+<% if (can('licences.sell', 'epos')) { %>
+<form method="post" action="/venues/<%= venueId %>/terminals" class="card batch">
+  <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+  <b>Add a terminal</b>
+  <select name="kind" aria-label="Kind of terminal">
+    <% for (const k of kinds) { %><option value="<%= k %>"><%= kindName[k] || k %></option><% } %>
+  </select>
+  <input name="name" maxlength="80" placeholder="Name, such as Bar" aria-label="Terminal name">
+  <button class="btn primary">Add terminal</button>
+</form>
+<% } %>
+
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>No.</th><th>Name</th><th>Kind</th><th>Licence</th><th>Version</th><th>Last ping</th><th>Pending</th><th></th></tr></thead>
+    <tbody>
+    <% for (const t of terminals) { %>
+      <tr>
+        <td><b><%= t.number %></b></td>
+        <td><a href="/venues/<%= venueId %>/terminals/<%= t.id %>"><%= t.name || t.device_name || 'Terminal ' + t.number %></a></td>
+        <td><%= kindName[t.kind] || t.kind %></td>
+        <td><% if (t.revoked_at) { %><span class="pill">withdrawn</span><% } else if (t.key_prefix) { %><%= t.key_prefix %>…<% } else { %><span class="muted">signed in</span><% } %></td>
+        <td class="muted"><%= t.version || '—' %></td>
+        <td class="muted"><%= t.last_ping_at ? ago(t.last_ping_at) : '—' %></td>
+        <td><%= t.pending ? t.pending + ' waiting' : 'none' %></td>
+        <td>
+          <% if (can('licences.sell', 'epos')) { %>
+          <form method="post" action="/venues/<%= venueId %>/terminals/<%= t.id %>/act" class="inline">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <button class="btn" name="action" value="key">New key</button>
+            <% if (t.bound) { %><button class="btn" name="action" value="unbind">Move</button><% } %>
+            <% if (!t.revoked_at) { %><button class="btn" name="action" value="revoke">Withdraw</button><% } %>
+          </form>
+          <% } %>
+        </td>
+      </tr>
+    <% } %>
+    <% if (!terminals.length) { %><tr><td colspan="8" class="muted">No terminals yet.</td></tr><% } %>
+    </tbody>
+  </table>
+</div>
+<%- include('_bottom') %>
