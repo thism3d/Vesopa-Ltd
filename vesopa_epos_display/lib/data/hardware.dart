@@ -23,8 +23,36 @@ class Hardware {
 
   static bool get supported => Platform.isWindows;
 
-  Future<HardwareSnapshot> snapshot() async {
-    final raw = await _channel.invokeMethod<Map<Object?, Object?>>('snapshot');
+  /// A scan still running in Windows. Only ever one at a time: a query Windows
+  /// never answers must cost one stuck thread, not a new one every ten minutes
+  /// on a till that runs all day.
+  Future<Map<Object?, Object?>?>? _scan;
+
+  /// Whether a scan is still waiting on Windows.
+  bool get scanning => _scan != null;
+
+  /// What Windows reports about this PC.
+  ///
+  /// [light] is the background report: adapters and Wi-Fi only. It leaves out
+  /// the radios, the hotspot, every device on the PC and PowerShell, which are
+  /// for a person looking at the page and are too heavy to run all day on the
+  /// PC that is taking the money (Pontardawe's lounge till, 2026-11-05).
+  ///
+  /// Throws [TimeoutException] when Windows does not answer, or is still
+  /// working on the last scan.
+  Future<HardwareSnapshot> snapshot({bool light = false}) async {
+    if (_scan != null) throw TimeoutException('Still waiting on the last scan');
+    final scan = _channel.invokeMethod<Map<Object?, Object?>>('snapshot', {'light': light});
+    _scan = scan;
+    unawaited(scan.then<void>((_) {}, onError: (_) {}).whenComplete(() => _scan = null));
+    final raw = await scan.timeout(const Duration(seconds: 20));
+    if (light) {
+      return HardwareSnapshot.fromMap(
+        raw ?? const {},
+        const SharingState(files: null, discovery: null, profiles: {}),
+        null,
+      );
+    }
     final sharing = await _sharing();
     final helper = await helperState();
     return HardwareSnapshot.fromMap(raw ?? const {}, sharing, helper);
@@ -99,15 +127,23 @@ class Hardware {
   /// resource ones, the same in every Windows language).
   Future<SharingState> _sharing() async {
     try {
-      final r = await Process.run('powershell', [
+      final shell = await Process.start('powershell', [
         '-NoProfile',
         '-Command',
         r"$f = @(Get-NetFirewallRule -Group '@FirewallAPI.dll,-28502' -Direction Inbound -ErrorAction SilentlyContinue | ? { $_.Profile -match 'Private|Any' -and $_.Enabled -eq 'True' }).Count; "
             r"$d = @(Get-NetFirewallRule -Group '@FirewallAPI.dll,-32752' -Direction Inbound -ErrorAction SilentlyContinue | ? { $_.Profile -match 'Private|Any' -and $_.Enabled -eq 'True' }).Count; "
             r"$p = @(Get-NetConnectionProfile | % { @{ index = $_.InterfaceIndex; name = $_.Name; category = [string]$_.NetworkCategory } }); "
             r"@{ files = $f -gt 0; discovery = $d -gt 0; profiles = $p } | ConvertTo-Json -Depth 4 -Compress",
-      ]).timeout(const Duration(seconds: 20));
-      final m = jsonDecode('${r.stdout}'.trim()) as Map<String, dynamic>;
+      ]);
+      final output = shell.stdout.transform(utf8.decoder).join();
+      unawaited(shell.stderr.drain<void>());
+      // Killed, not just abandoned: left running, one that hangs stays on the
+      // PC for good, and there would be another one the next time round.
+      await shell.exitCode.timeout(const Duration(seconds: 20), onTimeout: () {
+        shell.kill(ProcessSignal.sigkill);
+        throw TimeoutException('Windows did not answer about sharing');
+      });
+      final m = jsonDecode((await output).trim()) as Map<String, dynamic>;
       final profiles = <int, NetworkProfile>{};
       final list = m['profiles'];
       for (final p in list is List ? list : [list]) {
@@ -324,13 +360,7 @@ class HardwareSnapshot {
               if (a.kind == 'wifi' && wifiSignal != null) 'signal': wifiSignal,
             },
         ],
-        'hotspot': {
-          'supported': hotspot.supported,
-          'on': hotspot.on,
-          'ssid': hotspot.on ? hotspot.ssid : null,
-          'clients': hotspot.clients.length,
-        },
-        'bluetooth': radio('bluetooth') == null ? 'none' : radio('bluetooth')!.on ? 'on' : 'off',
+        if (radios.isNotEmpty) 'bluetooth': radio('bluetooth') == null ? 'none' : radio('bluetooth')!.on ? 'on' : 'off',
         'devices': [
           for (final d in devices)
             {'name': d.name, 'kind': d.kind, 'status': d.working ? 'ok' : 'fault', if (d.problem != 0 && d.problem != 45) 'problem': d.problemText},
@@ -360,9 +390,13 @@ class HardwareReporter {
   }) {
     if (!Hardware.supported || token.isEmpty) return;
     _timer?.cancel();
+    var sending = false;
     Future<void> send() async {
+      // The last report is still going: this one is skipped, not stacked.
+      if (sending) return;
+      sending = true;
       try {
-        final s = await Hardware.instance.snapshot();
+        final s = await Hardware.instance.snapshot(light: true);
         final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
         try {
           final req = await client.postUrl(Uri.parse('$apiBase/till/health'));
@@ -380,7 +414,10 @@ class HardwareReporter {
         } finally {
           client.close();
         }
-      } catch (_) {}
+      } catch (_) {
+      } finally {
+        sending = false;
+      }
     }
 
     Timer(const Duration(seconds: 45), send);

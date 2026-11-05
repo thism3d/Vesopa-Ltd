@@ -75,7 +75,9 @@ class _HardwarePageState extends State<HardwarePage> {
   }
 
   Future<void> _load() async {
-    if (!Hardware.supported) return;
+    // Every five seconds while this page is open, and a scan can take longer
+    // than that: wait for it rather than start another on top.
+    if (!Hardware.supported || _hw.scanning) return;
     try {
       final s = await _hw.snapshot();
       if (mounted) {
