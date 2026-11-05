@@ -411,20 +411,39 @@ function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
       : Number(t.enabled) && t.card_provider === 'teya' ? 'teya' : 'dojo';
     const online = Number(b.enabled) && bcReady ? 'barclays'
       : Number(t.enabled) && t.online_provider === 'teya' ? 'teya' : 'dojo';
+    // Tap to Pay on the Stripe side of things is the venue's own Stripe switch.
+    // A venue with no Stripe row (every venue but the test one) is on Dojo.
+    const s = await stripeRow(office);
+    const stripeReady = Boolean(s && s.account_id && s.location_id
+      && s.card_payments === 'active' && s.payouts === 'active');
     return {
       tills,
       online,
+      tap: s && Number(s.enabled) && Number(s.use_tap) ? 'stripe' : 'dojo',
       environments: { teya: tEnv, barclays: bc.cleanEnv(b.environment) },
       available: {
         tills: { dojo: true, teya: !!(conn && conn.m2m_client_id), barclays: bcReady },
         online: { dojo: true, teya: !!(conn && conn.online_client_id), barclays: bcReady },
+        tap: { dojo: true, stripe: stripeReady },
       },
       why: {
         teya_tills: conn && conn.m2m_client_id ? null : 'Connect Teya and choose its store first (Teya tab).',
         teya_online: conn && conn.online_client_id ? null : 'Connect Teya online payments first (Teya tab).',
         barclays: bcReady ? null : 'Save the Barclaycard keys first (Barclaycard tab).',
+        stripe: stripeReady ? null : 'Finish the venue\'s Stripe account first (Stripe tab).',
       },
     };
+  }
+
+  /** The venue's Stripe row, or null on a server where nobody has opened it yet. */
+  async function stripeRow(office) {
+    try {
+      const [[row]] = await pool.query('SELECT * FROM epos_stripe_settings WHERE office = ?', [office]);
+      return row || null;
+    } catch (e) {
+      if (e.code === 'ER_NO_SUCH_TABLE') return null;
+      throw e;
+    }
   }
 
   router.get('/payment-providers', guard('commerce.tender'), async (req, res, next) => {
@@ -438,18 +457,59 @@ function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
    */
   router.put('/payment-providers', guard('commerce.edit'), async (req, res, next) => {
     try {
-      const office = await tenantEmail(req);
-      const b = req.body || {};
+      res.json(await setProviders(await tenantEmail(req), req.body || {}, req.user.email || null));
+    } catch (e) {
+      if (e.refused) return res.status(e.refused).json({ error: e.message });
+      fail(res, e, next);
+    }
+  });
+
+  /** The same two doors for admin.vesopa.com, for any venue. */
+  const adminOnly = [auth, (req, res, next) => (req.user && req.user.role === 'admin'
+    ? next()
+    : res.status(403).json({ error: 'Administrator access only' }))];
+  const officeById = async (id) => {
+    const [[row]] = await pool.query('SELECT contact_email FROM offices WHERE id = ?', [id]);
+    return row ? row.contact_email : null;
+  };
+  router.get('/admin/offices/:id/payment-providers', adminOnly, async (req, res, next) => {
+    try {
+      const office = await officeById(req.params.id);
+      if (!office) return res.status(404).json({ error: 'No such venue' });
+      res.json(await providersView(office));
+    } catch (e) { fail(res, e, next); }
+  });
+  router.put('/admin/offices/:id/payment-providers', adminOnly, async (req, res, next) => {
+    try {
+      const office = await officeById(req.params.id);
+      if (!office) return res.status(404).json({ error: 'No such venue' });
+      res.json(await setProviders(office, req.body || {}, req.user.email || null));
+    } catch (e) {
+      if (e.refused) return res.status(e.refused).json({ error: e.message });
+      fail(res, e, next);
+    }
+  });
+
+  async function setProviders(office, b, who) {
+    const refuse = (status, message) => Object.assign(new Error(message), { refused: status });
       const ok = new Set(['dojo', 'teya', 'barclays']);
       const view = await providersView(office);
       for (const k of ['tills', 'online']) {
         if (b[k] === undefined) continue;
-        if (!ok.has(b[k])) return res.status(400).json({ error: 'Choose Dojo, Teya or Barclaycard.' });
+        if (!ok.has(b[k])) throw refuse(400, 'Choose Dojo, Teya or Barclaycard.');
         if (!view.available[k][b[k]]) {
-          return res.status(409).json({ error: b[k] === 'barclays' ? view.why.barclays : k === 'tills' ? view.why.teya_tills : view.why.teya_online });
+          throw refuse(409, b[k] === 'barclays' ? view.why.barclays : k === 'tills' ? view.why.teya_tills : view.why.teya_online);
         }
       }
-      const who = req.user.email || null;
+      if (b.tap !== undefined) {
+        if (b.tap !== 'dojo' && b.tap !== 'stripe') throw refuse(400, 'Choose Dojo or Stripe.');
+        if (!view.available.tap[b.tap]) throw refuse(409, view.why.stripe);
+        // Never makes a Stripe row for a venue that has none: Dojo is what no row means.
+        if (await stripeRow(office)) {
+          await pool.execute('UPDATE epos_stripe_settings SET use_tap = ? WHERE office = ?',
+            [b.tap === 'stripe' ? 1 : 0, office]);
+        }
+      }
       const bset = async (col, v) => pool.execute(
         `INSERT INTO epos_barclaycard_settings (office, ${col}, updated_by) VALUES (?, ?, ?)
          ON DUPLICATE KEY UPDATE ${col} = VALUES(${col}), updated_by = VALUES(updated_by)`, [office, v, who]);
@@ -468,9 +528,8 @@ function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
       broadcast({ type: 'teya-settings' }, { office });
       broadcast({ type: 'dojo-settings' }, { office });
       broadcast({ type: 'barclaycard-settings' }, { office });
-      res.json(await providersView(office));
-    } catch (e) { fail(res, e, next); }
-  });
+      return providersView(office);
+  }
 
   // ---- The tills: pay on the customer's phone ------------------------------------
 

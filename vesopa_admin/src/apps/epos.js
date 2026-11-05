@@ -30,6 +30,8 @@ module.exports = {
   // Every device of every venue: versions, hardware health and error counts,
   // and their error logs (src/device_health.js there, 2026-11-03).
   // Each venue's terminals: access keys and per-terminal settings (src/terminal_licences.js there).
+  providers: (id, as) => get(`/offices/${Number(id)}/payment-providers`, as),
+  setProviders: (id, body, as) => put(`/offices/${Number(id)}/payment-providers`, body, as),
   terminals: (id, as) => get(`/offices/${Number(id)}/terminals`, as),
   addTerminal: (id, body, as) => post(`/offices/${Number(id)}/terminals`, body, as),
   terminalSettings: (id, tid, as) => get(`/offices/${Number(id)}/terminals/${Number(tid)}/settings`, as),

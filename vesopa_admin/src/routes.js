@@ -223,6 +223,30 @@ router.get('/venues/:id', signedIn, allow('licences.view', 'epos'), async (req, 
   } catch (e) { next(e); }
 });
 
+// Who takes each kind of card payment at a venue. The same switch as the back
+// office's Card Payments page, through the same route.
+router.get('/venues/:id/cards', signedIn, allow('licences.view', 'epos'), async (req, res) => {
+  const venueId = Number(req.params.id);
+  let providers = null;
+  let error = req.query.error ? String(req.query.error).slice(0, 200) : null;
+  try { providers = await epos.providers(venueId, req.me.email); } catch (e) { error = e.message; }
+  page(req, res, 'venue_cards', { title: 'Card payments', venueId, providers, error });
+});
+
+router.post('/venues/:id/cards', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res) => {
+  const venueId = Number(req.params.id);
+  const b = req.body || {};
+  const back = `/venues/${venueId}/cards`;
+  try {
+    if (!['tills', 'online', 'tap'].includes(b.what)) throw new Error('Unknown payment type');
+    await epos.setProviders(venueId, { [b.what]: b.provider }, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'cards.provider', venueId, detail: `${b.what} to ${b.provider}` });
+  } catch (e) {
+    return res.redirect(303, `${back}?error=${encodeURIComponent(e.message)}`);
+  }
+  res.redirect(303, back);
+});
+
 // Every terminal of a venue, its access key and its settings. The whole key is
 // only ever on the page that issued it: it is not in a URL or the audit trail.
 async function terminalsPage(req, res, { issued = null, error = null } = {}) {

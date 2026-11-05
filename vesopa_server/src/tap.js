@@ -719,6 +719,17 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     }
   });
 
+  async function tapProviderFor(office) {
+    try {
+      const [[row]] = await pool.query(
+        'SELECT enabled, use_tap FROM epos_stripe_settings WHERE office = ?', [office]);
+      return row && Number(row.enabled) && Number(row.use_tap) ? 'stripe' : 'dojo';
+    } catch (e) {
+      if (e.code === 'ER_NO_SUCH_TABLE') return 'dojo';
+      throw e;
+    }
+  }
+
   /** What this phone needs to know before it offers Tap to Pay. */
   router.get('/api/tap/config', terminal, async (req, res, next) => {
     try {
@@ -729,6 +740,9 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
         android: Boolean(secretPath('android')),
         cards: ['visa', 'mastercard', 'maestro', 'amex'],
         ...phoneSettings(await settingsFor(req.office)),
+        // Who takes Tap to Pay here: Stripe where the venue switched it on
+        // (src/barclaycard.js, payment-providers), Dojo everywhere else.
+        tap_provider: await tapProviderFor(req.office),
         // Vesopa Go's own options (go_options.js), and whether the venue has
         // Go at all: it is licensed per venue, none unless offered (licences.js).
         go: await goOptionsFor(pool, req.office),

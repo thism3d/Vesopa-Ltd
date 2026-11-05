@@ -1,0 +1,37 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad"><%= error %></div><% } %>
+<% const rows = [['tills', 'Tills', { dojo: 'Dojo', teya: 'Teya', barclays: 'Barclaycard' }],
+                 ['online', 'Online menu', { dojo: 'Dojo', teya: 'Teya', barclays: 'Barclaycard' }],
+                 ['tap', 'Tap to Pay', { dojo: 'Dojo', stripe: 'Stripe' }]]; %>
+<div class="bar">
+  <span class="muted"><a href="/venues/<%= venueId %>">Venue <%= venueId %></a> › Card payments</span>
+</div>
+<% if (providers) { %>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Payment type</th><th>Taken by</th><th></th></tr></thead>
+    <tbody>
+    <% for (const [what, label, names] of rows) { %>
+      <tr>
+        <td><b><%= label %></b></td>
+        <td><%= names[providers[what]] || providers[what] %></td>
+        <td>
+          <% if (can('licences.sell', 'epos')) { %>
+          <form method="post" action="/venues/<%= venueId %>/cards" class="inline">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <input type="hidden" name="what" value="<%= what %>">
+            <% for (const [key, name] of Object.entries(names)) { %>
+              <button class="btn<%= providers[what] === key ? ' primary' : '' %>" name="provider" value="<%= key %>"
+                <%= providers[what] === key || !providers.available[what][key] ? 'disabled' : '' %>><%= name %></button>
+            <% } %>
+          </form>
+          <% } %>
+        </td>
+      </tr>
+    <% } %>
+    </tbody>
+  </table>
+</div>
+<p class="muted small">A greyed-out provider is not set up for this venue yet. Memberships, events and QR Pay use the venue's Dojo online key.</p>
+<% } %>
+<%- include('_bottom') %>

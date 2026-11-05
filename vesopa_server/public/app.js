@@ -15756,7 +15756,7 @@ async function loadTeya() {
 /** "Who takes the cards": one tap switches the tills or the menu (2026-10-21). */
 async function loadProviders() {
   const say = (t, ok) => { const el = $('pp-msg'); el.textContent = t || ''; el.style.color = ok ? '#06784f' : '#b42318'; el.style.fontWeight = '600'; };
-  const names = { dojo: 'Dojo', teya: 'Teya', barclays: 'Barclaycard' };
+  const names = { dojo: 'Dojo', teya: 'Teya', barclays: 'Barclaycard', stripe: 'Stripe' };
   const render = (v) => {
     document.querySelectorAll('[data-pp]').forEach((seg) => {
       const k = seg.getAttribute('data-pp');
@@ -15765,14 +15765,14 @@ async function loadProviders() {
         b.setAttribute('role', 'radio');
         b.setAttribute('aria-checked', String(v[k] === val));
         b.disabled = !v.available[k][val];
-        b.title = b.disabled ? (val === 'barclays' ? v.why.barclays : k === 'tills' ? v.why.teya_tills : v.why.teya_online) || '' : '';
+        b.title = b.disabled ? (val === 'stripe' ? v.why.stripe : val === 'barclays' ? v.why.barclays : k === 'tills' ? v.why.teya_tills : v.why.teya_online) || '' : '';
         b.onclick = async () => {
           if (v[k] === val) return;
           say('Switching…', true);
           try {
             const next = await api('/payment-providers', { method: 'PUT', body: JSON.stringify({ [k]: val }) });
             render(next);
-            say(`${k === 'tills' ? 'Tills' : 'Online menu'} now use ${names[val]}.`, true);
+            say(`${{ tills: 'Tills', online: 'Online menu', tap: 'Tap to Pay' }[k]} now use${k === 'tap' ? 's' : ''} ${names[val]}.`, true);
           } catch (e) { say(e.message, false); }
         };
       });
