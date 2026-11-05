@@ -429,9 +429,13 @@ void Work(HWND window, Answer* answer, std::string method, EncodableMap args) {
       EncodableMap m;
       m[EncodableValue("adapters")] = EncodableValue(Adapters());
       m[EncodableValue("wifi")] = Wifi();
-      m[EncodableValue("radios")] = EncodableValue(Radios());
-      m[EncodableValue("hotspot")] = Hotspot();
-      m[EncodableValue("devices")] = EncodableValue(Devices());
+      // Light is the report that runs all day: nothing here touches the radios
+      // or walks every device on the PC. Those are for a person on the page.
+      if (!Flag(args, "light")) {
+        m[EncodableValue("radios")] = EncodableValue(Radios());
+        m[EncodableValue("hotspot")] = Hotspot();
+        m[EncodableValue("devices")] = EncodableValue(Devices());
+      }
       answer->value = EncodableValue(m);
     } else if (method == "hotspot") {
       answer->value = EncodableValue(SetHotspot(args));
