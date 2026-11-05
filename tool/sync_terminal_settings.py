@@ -62,7 +62,7 @@ APPS = {
             "vesopa_lan_manual": "LocalLink",
             **{f"go_display_{k}": "Display" for k in [
                 "touch", "sound", "show_qr", "show_amount", "show_card_marks", "show_card_steps",
-                "show_discount", "thanks_seconds", "text_scale",
+                "show_discount", "member_buttons", "idle_dim", "thanks_seconds", "text_scale",
             ]},
         },
         "fields": {},

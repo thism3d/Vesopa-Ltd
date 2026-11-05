@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/constants.dart';
 import '../data/display_link.dart';
+import '../data/swipe_cards.dart';
 import '../data/hardware.dart';
 import '../data/terminal_sync.dart';
 import '../data/lan/lan_service.dart';
@@ -89,6 +90,7 @@ class _PosShellState extends ConsumerState<PosShell> {
   /// restart on every one of those. The feed itself is shared (see
   /// `customerDisplayProvider`), because the payment screen writes to it too.
   StreamSubscription<void>? _displayFeed;
+  StreamSubscription<String>? _displayMembers;
 
   /// Says "this till is running" for any customer display on this machine.
   ///
@@ -156,6 +158,10 @@ class _PosShellState extends ConsumerState<PosShell> {
     // Carry on with the bill that was open when the till last closed (an
     // update restart, or a crash), else a new one.
     unawaited(_resumeOrNew());
+    // A customer's card at the display counts as one swiped here.
+    _displayMembers ??= DisplayLinkHub.instance.memberScans.listen((code) {
+      if (mounted) handleSwipedCard(context, ref, SwipedCard(raw: code, number: code), orderId: _orderId);
+    });
     _seatWatch = Timer.periodic(
       const Duration(minutes: 2),
       (_) => unawaited(_checkSeat()),

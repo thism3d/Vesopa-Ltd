@@ -40,7 +40,9 @@ import '../../data/models.dart' show money;
 import '../../data/session.dart';
 import '../../modes/mode_settings.dart';
 import '../../data/lan/lan_service.dart';
+import '../../nfc/staff_card.dart';
 import '../../ui/pages/connection_page.dart';
+import '../../ui/pages/scan_sheet.dart';
 import '../../ui/sounds.dart';
 import '../../ui/theme.dart';
 import '../data/basket_feed.dart';
@@ -157,17 +159,45 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
     unawaited(_loadAdverts());
   }
 
-  void _sendStatus() {
+  /// A customer's member card or pass, passed to the till this screen follows.
+  /// The till treats it as a card swiped there, so points work as they always do.
+  void _passToTill(String code) {
+    if (!mounted || code.trim().isEmpty) return;
+    _sendStatus(memberScan: code.trim());
+    final words = _paidTo == null ? 'This screen is not connected to a till yet.' : 'Thank you. Sent to the till.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(words)));
+  }
+
+  Future<void> _tapMemberCard() async {
+    final code = await StaffCardReader.readOnce();
+    if (code != null) _passToTill(code);
+  }
+
+  Future<void> _scanPass() async {
+    final code = await scanCode(context, title: 'Scan your member pass');
+    if (code != null) _passToTill(code);
+  }
+
+  void _sendStatus({String? memberScan}) {
     final size = MediaQuery.maybeSizeOf(context);
-    _link?.sendStatus(DisplayStatusReport(
+    final report = DisplayStatusReport(
       appVersion: 'Vesopa Go',
       following: _paidTo ?? '',
       advertCount: _adverts.length,
       width: size?.width.round() ?? 0,
       height: size?.height.round() ?? 0,
       link: _link?.route ?? 'cloud',
-    ).toJson());
+      childLock: _locked,
+    ).toJson();
+    _link?.sendStatus({
+      ...report,
+      if (memberScan != null) 'member_scan': {'code': memberScan, 'at': DateTime.now().millisecondsSinceEpoch},
+    });
   }
+
+  /// Off on this screen, or locked from the till. The till's lock wins: a lock
+  /// the locked screen could undo would not be one.
+  bool get _locked => !_options.touch || (_control?.childLock ?? false) || !(_control?.touch ?? true);
 
   void _onBasket(Object? raw) {
     if (raw is! Map) return;
@@ -322,6 +352,18 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
           flag('Card steps', 'What the card is doing, as the till words it.', o.showCardSteps, (v) => o.copyWith(showCardSteps: v)),
           flag('Cards we take', 'Card and wallet names under the pay screen.', o.showCardMarks, (v) => o.copyWith(showCardMarks: v)),
           flag('Discounts', 'Discounts and savings on the bill.', o.showDiscount, (v) => o.copyWith(showDiscount: v)),
+          flag('Member buttons', 'Tap a member card or scan a pass on the waiting screen.', o.memberButtons, (v) => o.copyWith(memberButtons: v)),
+          ListTile(
+            title: const Text('Dim adverts while waiting'),
+            subtitle: Text(o.idleDim == 0 ? 'Off' : '${o.idleDim} per cent darker'),
+          ),
+          Slider(
+            value: o.idleDim.toDouble(),
+            max: 80,
+            divisions: 8,
+            label: '${o.idleDim}',
+            onChanged: (v) => set(o.copyWith(idleDim: v.round())),
+          ),
           ListTile(
             title: const Text('Thank-you stays up for'),
             subtitle: Text(o.thanksSeconds == 0 ? 'What the till says' : '${o.thanksSeconds} seconds'),
@@ -419,7 +461,14 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
     } else if (_basket.card != null) {
       screen = _CardScreen(card: _basket.card!, basket: _basket, options: _options);
     } else if (_idle) {
-      screen = _Idle(adverts: _adverts, venue: venue, control: _control);
+      screen = _Idle(
+        adverts: _adverts,
+        venue: venue,
+        control: _control,
+        dim: _options.idleDim,
+        onMemberCard: _options.memberButtons ? _tapMemberCard : null,
+        onScanPass: _options.memberButtons ? _scanPass : null,
+      );
     } else if (_basket.state == 'paid') {
       screen = _ThankYou(basket: _basket, words: _control?.thankYou ?? 'Thank you');
     } else {
@@ -443,7 +492,7 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
                 key: ValueKey(screen.runtimeType),
                 // The corner below stays live, so staff are never locked out.
                 child: AbsorbPointer(
-                  absorbing: !_options.touch,
+                  absorbing: _locked,
                   child: MediaQuery(
                     data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(_options.textScale)),
                     child: screen,
@@ -726,10 +775,20 @@ class _ThankYou extends StatelessWidget {
 /// Nothing going on: the adverts, and the venue's name, the time and its
 /// standing message and QR along the bottom.
 class _Idle extends StatelessWidget {
-  const _Idle({required this.adverts, required this.venue, required this.control});
+  const _Idle({
+    required this.adverts,
+    required this.venue,
+    required this.control,
+    this.dim = 0,
+    this.onMemberCard,
+    this.onScanPass,
+  });
   final List<_Advert> adverts;
   final String venue;
   final TillControl? control;
+  final int dim;
+  final VoidCallback? onMemberCard;
+  final VoidCallback? onScanPass;
 
   @override
   Widget build(BuildContext context) {
@@ -782,7 +841,23 @@ class _Idle extends StatelessWidget {
               )
             : _Slides(adverts: adverts),
       ),
-      Positioned(left: 0, right: 0, bottom: 0, child: band),
+      if (dim > 0) Positioned.fill(child: IgnorePointer(child: ColoredBox(color: Colors.black.withValues(alpha: dim / 100)))),
+      Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          if (onMemberCard != null)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Wrap(spacing: 12, runSpacing: 8, alignment: WrapAlignment.center, children: [
+                FilledButton.icon(onPressed: onMemberCard, icon: const Icon(Icons.nfc_rounded), label: const Text('Tap member card')),
+                OutlinedButton.icon(onPressed: onScanPass, icon: const Icon(Icons.qr_code_scanner_rounded), label: const Text('Scan your pass')),
+              ]),
+            ),
+          band,
+        ]),
+      ),
     ]);
   }
 }
@@ -855,6 +930,14 @@ class _SlidesState extends State<_Slides> {
     if (mounted) setState(() {});
   }
 
+  void _previous() {
+    if (!mounted) return;
+    _timer?.cancel();
+    final count = max(1, widget.adverts.length);
+    setState(() => _i = (_i - 1 + count) % count);
+    _show();
+  }
+
   void _next() {
     if (!mounted) return;
     _timer?.cancel();
@@ -872,10 +955,19 @@ class _SlidesState extends State<_Slides> {
             ? FittedBox(fit: BoxFit.cover, child: SizedBox(width: v.value.size.width, height: v.value.size.height, child: VideoPlayer(v)))
             : const ColoredBox(color: Colors.black))
         : Image.network(a.url, fit: BoxFit.cover, errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black));
-    return ClipRect(
+    // A customer can swipe through them, either way.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragEnd: (e) {
+        final speed = e.primaryVelocity ?? 0;
+        if (speed < -100) _next();
+        if (speed > 100) _previous();
+      },
+      child: ClipRect(
       child: AnimatedSwitcher(
         duration: MediaQuery.of(context).disableAnimations ? Duration.zero : const Duration(milliseconds: 900),
         child: SizedBox.expand(key: ValueKey('$_i-${a.url}-${v != null}'), child: child),
+      ),
       ),
     );
   }

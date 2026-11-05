@@ -54,6 +54,12 @@ class DisplayLinkHub {
   /// One per till process: the basket feed and the settings page share it.
   static final instance = DisplayLinkHub._();
 
+  final _memberScans = StreamController<String>.broadcast();
+  Object? _lastScanAt;
+
+  /// A member card or pass a customer gave a display following this till.
+  Stream<String> get memberScans => _memberScans.stream;
+
   // ---- what the settings page watches -----------------------------------
 
   final _changes = StreamController<void>.broadcast();
@@ -157,6 +163,11 @@ class DisplayLinkHub {
         return;
       }
       if (msg['type'] != 'display.status') return;
+      final scan = (msg['data'] as Map?)?['member_scan'];
+      if (scan is Map && scan['at'] != _lastScanAt) {
+        _lastScanAt = scan['at'];
+        if ('${scan['code'] ?? ''}'.isNotEmpty) _memberScans.add('${scan['code']}');
+      }
       final status = DisplayStatus.fromJson(msg['data']);
       if (status == null) return;
       statuses[device] = status;

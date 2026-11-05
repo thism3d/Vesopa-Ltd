@@ -13,6 +13,8 @@ class DisplayOptions {
     this.showCardMarks = true,
     this.showCardSteps = true,
     this.showDiscount = true,
+    this.memberButtons = true,
+    this.idleDim = 0,
     this.thanksSeconds = 0,
     this.textScale = 1.0,
   });
@@ -38,6 +40,12 @@ class DisplayOptions {
   /// Discounts and saved amounts on the bill.
   final bool showDiscount;
 
+  /// The buttons on the waiting screen: tap a member card, scan a pass.
+  final bool memberButtons;
+
+  /// How far the adverts dim while nobody is at the screen, 0 to 80 per cent.
+  final int idleDim;
+
   /// Seconds the thank-you stays up; 0 follows the till.
   final int thanksSeconds;
 
@@ -58,6 +66,8 @@ class DisplayOptions {
         showCardMarks: flag('show_card_marks', true),
         showCardSteps: flag('show_card_steps', true),
         showDiscount: flag('show_discount', true),
+        memberButtons: flag('member_buttons', true),
+        idleDim: (p.getInt('${_prefix}idle_dim') ?? 0).clamp(0, 80),
         thanksSeconds: p.getInt('${_prefix}thanks_seconds') ?? 0,
         textScale: (p.getDouble('${_prefix}text_scale') ?? 1.0).clamp(0.8, 1.6),
       );
@@ -75,6 +85,8 @@ class DisplayOptions {
     await p.setBool('${_prefix}show_card_marks', showCardMarks);
     await p.setBool('${_prefix}show_card_steps', showCardSteps);
     await p.setBool('${_prefix}show_discount', showDiscount);
+    await p.setBool('${_prefix}member_buttons', memberButtons);
+    await p.setInt('${_prefix}idle_dim', idleDim);
     await p.setInt('${_prefix}thanks_seconds', thanksSeconds);
     await p.setDouble('${_prefix}text_scale', textScale);
   }
@@ -87,6 +99,8 @@ class DisplayOptions {
     bool? showCardMarks,
     bool? showCardSteps,
     bool? showDiscount,
+    bool? memberButtons,
+    int? idleDim,
     int? thanksSeconds,
     double? textScale,
   }) => DisplayOptions(
@@ -97,6 +111,8 @@ class DisplayOptions {
     showCardMarks: showCardMarks ?? this.showCardMarks,
     showCardSteps: showCardSteps ?? this.showCardSteps,
     showDiscount: showDiscount ?? this.showDiscount,
+    memberButtons: memberButtons ?? this.memberButtons,
+    idleDim: idleDim ?? this.idleDim,
     thanksSeconds: thanksSeconds ?? this.thanksSeconds,
     textScale: textScale ?? this.textScale,
   );

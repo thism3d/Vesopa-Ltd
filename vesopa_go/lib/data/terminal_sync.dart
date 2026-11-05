@@ -57,6 +57,8 @@ const Map<String, String> terminalSettings = {
   'go_display_show_card_marks': 'Display',
   'go_display_show_card_steps': 'Display',
   'go_display_show_discount': 'Display',
+  'go_display_member_buttons': 'Display',
+  'go_display_idle_dim': 'Display',
   'go_display_thanks_seconds': 'Display',
   'go_display_text_scale': 'Display',
 };

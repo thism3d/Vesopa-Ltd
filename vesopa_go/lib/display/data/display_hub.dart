@@ -132,6 +132,12 @@ class GoDisplayHub {
             if (_lastBasket != null) _send({'type': 'display.basket', 'data': _lastBasket});
           }
           _changed();
+        case 'display.status':
+          final scan = (msg['data'] as Map?)?['member_scan'];
+          if (scan is Map && scan['at'] != _lastScanAt) {
+            _lastScanAt = scan['at'];
+            if ('${scan['code'] ?? ''}'.isNotEmpty) _memberScans.add('${scan['code']}');
+          }
         case 'display.refused':
           _close();
           _token = null;
@@ -156,6 +162,17 @@ class GoDisplayHub {
     _toLan('basket', msg);
     if (paired.isNotEmpty) _send(msg);
   }
+
+  final _memberScans = StreamController<String>.broadcast();
+  Object? _lastScanAt;
+
+  /// A member card or pass a customer gave a display following this device.
+  Stream<String> get memberScans => _memberScans.stream;
+
+  /// Whether customers can touch the displays, from this device.
+  bool get touchLocked => _lastControl?['child_lock'] == true;
+
+  void setTouchLocked(bool locked) => sendControl({...?_lastControl, 'child_lock': locked});
 
   /// The display's settings, as the till sends them.
   void sendControl(Map<String, Object?> control) {

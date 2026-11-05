@@ -274,6 +274,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             builder: (context, _) {
               final hub = GoDisplayHub.instance;
               return Column(children: [
+                if (hub.paired.isNotEmpty)
+                  SwitchListTile(
+                    secondary: const Icon(Icons.lock_rounded),
+                    title: const Text('Lock customer touch'),
+                    subtitle: const Text('Customers cannot touch the display.'),
+                    value: hub.touchLocked,
+                    onChanged: (v) {
+                      hub.setTouchLocked(v);
+                      setState(() {});
+                    },
+                  ),
                 for (final d in hub.paired)
                   ListTile(
                     leading: Icon(Icons.connected_tv_rounded, color: d.online ? Tp.lime : null),

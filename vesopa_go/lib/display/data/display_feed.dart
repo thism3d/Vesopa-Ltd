@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../config/constants.dart';
 import '../../counter/data/lite_state.dart';
+import '../../data/api.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
 import 'display_hub.dart';
@@ -75,6 +76,7 @@ class _GoDisplayFeedState extends ConsumerState<GoDisplayFeed> {
   bool _queued = false;
   String? _paidId;
   Timer? _thanks;
+  StreamSubscription<String>? _scans;
 
   @override
   void initState() {
@@ -85,12 +87,26 @@ class _GoDisplayFeedState extends ConsumerState<GoDisplayFeed> {
   @override
   void dispose() {
     _thanks?.cancel();
+    _scans?.cancel();
     // The hub stays connected while the PIN pad is up between clerks, so a
     // display does not drop to its pairing screen every time the till locks.
     super.dispose();
   }
 
+  /// A customer's card from the display: on the bill in front of the clerk.
+  Future<void> _memberFromDisplay(String code) async {
+    final id = ref.read(currentSaleProvider);
+    if (id == null) return;
+    try {
+      final member = await ref.read(apiProvider).member(code);
+      if (mounted) ref.read(tapProvider.notifier).setMember(id, member);
+    } on TapApiError {
+      // Not a member's card: the clerk sees no member and can ask.
+    }
+  }
+
   void _configure() {
+    _scans ??= GoDisplayHub.instance.memberScans.listen(_memberFromDisplay);
     final session = ref.read(tapProvider.notifier);
     if (ref.read(tapProvider).demo || session.deviceId.isEmpty) return;
     GoDisplayHub.instance.configure(
