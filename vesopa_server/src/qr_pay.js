@@ -616,17 +616,18 @@ h1{font-size:22px;margin:0 0 4px}.amount{font-size:46px;font-weight:800;margin:1
       let png = cards.get(key);
       if (!png) {
         const logo = await logoFile(row.office, await brandingFor(row.office));
-        const args = cardArgs({
+        const card = {
           venue: await venueName(row.office),
           customer: row.customer_name,
           billName: row.bill_name,
           amountMinor: row.amount_minor,
           status: row.status,
           test: row.environment === 'sandbox',
-          logo: logo && logo.file,
-        });
+        };
         try {
-          png = await toPng(args);
+          // A logo ImageMagick cannot read must not cost the link its picture.
+          png = await toPng(cardArgs({ ...card, logo: logo && logo.file }))
+            .catch(() => toPng(cardArgs(card)));
         } finally {
           if (logo && logo.temporary) fs.unlink(logo.file, () => {});
         }
