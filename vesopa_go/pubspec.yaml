@@ -4,7 +4,7 @@ publish_to: 'none'
 
 # The store version and build. The workflows give each upload the next build
 # number the store has not seen; this is the floor.
-version: 1.2.42+1
+version: 1.2.43+1
 
 environment:
   sdk: ^3.13.4
@@ -42,6 +42,8 @@ dependencies:
   share_plus: ^13.3.1
   flutter_svg: ^2.3.2
   video_player: ^2.14.1
+  mek_stripe_terminal: ^5.7.3
+  permission_handler: ^13.0.2
 
 dev_dependencies:
   flutter_test:

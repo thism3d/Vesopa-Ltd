@@ -205,6 +205,14 @@ class TapApi {
 
   // ---- Card payments on this phone (vesopa_server/src/tap.js) ----------------------
 
+  // ---- Stripe Tap to Pay (vesopa_server/src/stripe.js) --------------------
+
+  Future<Map<String, dynamic>> stripeConfig() => _send('GET', '/till/stripe/config');
+  Future<Map<String, dynamic>> stripeConnectionToken() => _send('POST', '/till/stripe/connection-token', const {});
+  Future<Map<String, dynamic>> stripePayment(int amountMinor, {String? reference}) =>
+      _send('POST', '/till/stripe/payments', {'amount_minor': amountMinor, 'reference': ?reference});
+  Future<Map<String, dynamic>> stripePaymentState(String id) => _send('GET', '/till/stripe/payments/$id');
+
   Future<Map<String, dynamic>> tapConfig() => _send('GET', '/api/tap/config');
 
   // ---- QR Pay (server qr_pay.js) ---------------------------------------------

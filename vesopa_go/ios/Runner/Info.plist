@@ -74,6 +74,12 @@
 	<string>A manager can choose a photo for a product on the menu.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Vesopa Go prints receipts on your venue's receipt printer over the local network.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Vesopa Go needs your location to take card payments with Tap to Pay on iPhone.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Vesopa Go uses Bluetooth to connect to card readers.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Vesopa Go uses Bluetooth to connect to card readers.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Vesopa Go scans QR codes and barcodes (tables, products, member cards, tickets), and a manager can photograph a product for the menu.</string>
 </dict>

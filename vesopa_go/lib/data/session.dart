@@ -40,6 +40,7 @@ import 'mix_match_types.dart';
 import 'lan/lan_link.dart' show LanMessage;
 import 'lan/lan_service.dart';
 import '../config/constants.dart' show apiBase, goAppVersion;
+import '../payments/stripe_tap.dart';
 import 'terminal_sync.dart';
 import 'screen_set.dart';
 
@@ -109,6 +110,7 @@ class TapConfig {
     this.productPhotos = const {},
     this.sectionPhotos = const {},
     this.teya = const TeyaSettings(),
+    this.tapProvider = 'dojo',
     this.modules,
     this.cashNotes = const [],
     this.fontSlug = '',
@@ -169,6 +171,9 @@ class TapConfig {
   /// PLU to photo, and section name (lower case) to photo (photo_menu.dart).
   final Map<String, String> productPhotos;
   final Map<String, String> sectionPhotos;
+
+  /// Who takes Tap to Pay here: 'dojo', or 'stripe' where the venue chose it.
+  final String tapProvider;
 
   /// The venue's Teya card machines, when it takes cards with Teya
   /// (teya_machine.dart); off, it takes them with Dojo.
@@ -241,6 +246,7 @@ class TapConfig {
       productPhotos: {for (final e in ((j['menu_photos'] as Map?)?['products'] as Map? ?? const {}).entries) '${e.key}': '${e.value}'},
       sectionPhotos: {for (final e in ((j['menu_photos'] as Map?)?['sections'] as Map? ?? const {}).entries) '${e.key}': '${e.value}'},
       teya: TeyaSettings.fromJson(j['teya']),
+      tapProvider: '${j['tap_provider'] ?? 'dojo'}',
       modules: j['modules'] is List ? {for (final m in j['modules'] as List) '$m'} : null,
       cashNotes: j['notes'] is List ? j['notes'] as List : const [],
       fontSlug: '${till['font_family'] ?? ''}'.trim(),
@@ -392,6 +398,10 @@ final paymentsProvider = Provider<PaymentService>((ref) {
   // A Teya venue (back office, Card Payments) pays on its Teya machines.
   final teya = ref.watch(tapProvider.select((s) => s.config.teya));
   if (teya.enabled) return TeyaCardMachine(ref.watch(apiProvider), teya, tillName: ref.read(tapProvider.notifier).terminalName);
+  // Stripe only where the back office chose it (Who takes the cards).
+  if (ref.watch(tapProvider.select((s) => s.config.tapProvider)) == 'stripe') {
+    return StripeTapToPay(ref.watch(apiProvider));
+  }
   return DojoTapToPay(ref.watch(apiProvider));
 });
 
