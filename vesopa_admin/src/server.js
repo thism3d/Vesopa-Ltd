@@ -33,6 +33,7 @@ function build() {
     });
     next();
   });
+  require('./server_stats').start();
   app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1h' }));
   app.use(express.urlencoded({ extended: true, limit: '100kb' }));
   app.use(cookieParser());

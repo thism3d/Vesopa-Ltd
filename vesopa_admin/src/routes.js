@@ -18,6 +18,7 @@ const roles = require('./roles');
 const audit = require('./audit');
 const catalogue = require('./catalogue');
 const licences = require('./licences');
+const serverStats = require('./server_stats');
 const releases = require('./releases');
 const epos = require('./apps/epos');
 const hosting = require('./apps/hosting');
@@ -760,6 +761,34 @@ async function releaseLists() {
   for (const a of VERSION_APPS.filter((x) => x.key !== 'loyalty')) lists[a.key] = await releases.list({ app: a.key });
   return lists;
 }
+
+// The server itself: address, resources and what runs on it (src/server_stats.js).
+const serverWindow = (req) => {
+  const minutes = Number(req.query.minutes);
+  return [15, 60, 360, 1440].includes(minutes) ? minutes : 60;
+};
+
+router.get('/server', signedIn, allow('versions.manage', 'epos'), async (req, res, next) => {
+  try {
+    const minutes = serverWindow(req);
+    page(req, res, 'server', { title: 'Server', s: await serverStats.snapshot(minutes), minutes });
+  } catch (e) { next(e); }
+});
+
+router.get('/server/live', signedIn, allow('versions.manage', 'epos'), async (req, res, next) => {
+  try {
+    const s = await serverStats.snapshot(serverWindow(req));
+    res.json({ latest: s.latest, points: s.points, alerts: s.alerts });
+  } catch (e) { next(e); }
+});
+
+router.post('/server/alerts', signedIn, csrf, allow('versions.manage', 'epos'), async (req, res, next) => {
+  try {
+    const levels = await serverStats.setAlertLevels(req.body || {});
+    await audit.record({ actor: req.me.email, action: 'server.alerts', detail: JSON.stringify(levels) });
+    res.redirect(303, '/server');
+  } catch (e) { next(e); }
+});
 
 router.get('/fleet', signedIn, allow('versions.manage', 'epos'), async (req, res, next) => {
   try {

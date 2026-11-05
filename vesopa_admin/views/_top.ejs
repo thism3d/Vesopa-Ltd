@@ -5,7 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title><%= locals.title ? title + ' · ' : '' %>Vesopa Admin</title>
+<meta name="description" content="One place to run every Vesopa app, venue and licence.">
+<meta name="theme-color" content="#000000">
+<meta property="og:site_name" content="Vesopa Admin">
+<meta property="og:title" content="<%= locals.title ? title + ' · ' : '' %>Vesopa Admin">
+<meta property="og:description" content="One place to run every Vesopa app, venue and licence.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://admin.vesopa.com/">
+<meta property="og:image" content="https://admin.vesopa.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://admin.vesopa.com/og.png">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/admin.css">
 <script src="/admin.js" defer></script>
 </head>
@@ -23,6 +37,7 @@
         ['/subscriptions', 'Subscriptions', 'licences.view', null],
         ['/downloads', 'Downloads', 'releases.download', null],
         ['/fleet', 'Fleet', 'versions.manage', 'epos'],
+        ['/server', 'Server', 'versions.manage', 'epos'],
         ['/versions', 'Versions', 'versions.manage', 'epos'],
         ['/audit', 'Audit log', 'audit.view', null],
         ['/admins', 'Admins', 'admins.manage', null],

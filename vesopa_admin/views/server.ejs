@@ -1,0 +1,69 @@
+<%- include('_top') %>
+<% const gb = (n) => (n / 1073741824).toFixed(1) + ' GB';
+   const windows = [[15, '15 min'], [60, '1 hour'], [360, '6 hours'], [1440, '24 hours']]; %>
+<div class="bar">
+  <span class="muted"><b><%= s.host %></b> · <%= s.platform %> · up <%= Math.floor(s.uptime / 86400) %> days</span>
+  <span>
+    <% for (const [m, label] of windows) { %>
+      <a class="btn<%= m === minutes ? ' primary' : '' %>" href="/server?minutes=<%= m %>"><%= label %></a>
+    <% } %>
+  </span>
+</div>
+
+<div id="server-alerts">
+  <% for (const a of s.alerts) { %><div class="flash bad"><%= a %></div><% } %>
+</div>
+
+<div class="server-tiles" id="server-tiles" data-minutes="<%= minutes %>">
+  <div class="card tile"><span>CPU</span><b data-live="cpu"><%= s.latest ? s.latest.cpu + '%' : '—' %></b><small><%= s.cores %> cores</small><svg data-chart="cpu" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+  <div class="card tile"><span>Memory</span><b data-live="memory"><%= s.latest ? s.latest.memory + '%' : '—' %></b><small><%= gb(s.memory.total - s.memory.free) %> of <%= gb(s.memory.total) %></small><svg data-chart="memory" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+  <div class="card tile"><span>Disk</span><b data-live="disk"><%= s.disk ? s.disk.percent + '%' : '—' %></b><small><%= s.disk ? gb(s.disk.free) + ' free of ' + gb(s.disk.total) : 'not read here' %></small><svg data-chart="disk" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+  <div class="card tile"><span>Network</span><b data-live="net"><%= s.latest ? ((s.latest.rx + s.latest.tx) / 1048576).toFixed(2) + ' MB/s' : '—' %></b><small>in and out</small><svg data-chart="net" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+</div>
+
+<div class="server-columns">
+  <div class="card">
+    <h3>Addresses</h3>
+    <table>
+      <tbody>
+        <tr><td>Public</td><td><b><%= s.externalIp || 'not known' %></b></td></tr>
+        <% for (const a of s.addresses) { %><tr><td class="muted"><%= a.name %></td><td><%= a.address %></td></tr><% } %>
+        <tr><td class="muted">Processor</td><td><%= s.cpuModel %></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <form method="post" action="/server/alerts" class="card">
+    <h3>Alert levels</h3>
+    <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+    <label>CPU % <input type="number" name="cpu" min="1" max="100" value="<%= s.levels.cpu %>"></label>
+    <label>Memory % <input type="number" name="memory" min="1" max="100" value="<%= s.levels.memory %>"></label>
+    <label>Disk % <input type="number" name="disk" min="1" max="100" value="<%= s.levels.disk %>"></label>
+    <button class="btn">Save</button>
+  </form>
+</div>
+
+<div class="card table-wrap">
+  <div class="bar" style="border:0;padding:0">
+    <h3 style="margin:0">Running on this server</h3>
+    <input id="server-filter" placeholder="Filter" aria-label="Filter processes">
+  </div>
+  <table>
+    <thead><tr><th>Process</th><th>Status</th><th>CPU</th><th>Memory</th><th>Restarts</th><th>Running since</th></tr></thead>
+    <tbody id="server-processes">
+    <% for (const p of s.processes) { %>
+      <tr data-name="<%= p.name %>">
+        <td><b><%= p.name %></b></td>
+        <td><span class="pill<%= p.status === 'online' ? ' green' : '' %>"><%= p.status %></span></td>
+        <td><%= p.cpu %>%</td>
+        <td><%= (p.memory / 1048576).toFixed(0) %> MB</td>
+        <td><%= p.restarts %></td>
+        <td class="muted"><%= p.since ? ago(p.since) : '—' %></td>
+      </tr>
+    <% } %>
+    <% if (!s.processes.length) { %><tr><td colspan="6" class="muted">pm2 did not answer here.</td></tr><% } %>
+    </tbody>
+  </table>
+</div>
+<p class="muted small">Till, kitchen and display hardware is under <a href="/fleet">Fleet</a>. History starts when this admin last restarted.</p>
+<script src="/server.js" defer></script>
+<%- include('_bottom') %>

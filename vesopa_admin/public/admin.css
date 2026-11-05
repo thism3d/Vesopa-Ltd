@@ -196,3 +196,12 @@ code { background: var(--panel-2); border: 1px solid var(--line); border-radius:
 .log td.detail { max-width: 520px; word-break: break-word; color: var(--muted); }
 details.dev > summary { cursor: pointer; list-style: none; }
 details.dev > summary::-webkit-details-marker { display: none; }
+
+/* The server page */
+.server-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.server-tiles .tile { display: flex; flex-direction: column; gap: 2px; }
+.server-tiles .tile b { font-size: 1.8em; }
+.server-tiles svg { width: 100%; height: 48px; margin-top: 6px; }
+.server-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.server-columns label { display: block; margin-bottom: 8px; }
+.server-columns input[type=number] { width: 80px; margin-left: 6px; }
