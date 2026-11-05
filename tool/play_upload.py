@@ -152,9 +152,11 @@ def listing(play, edit, store: pathlib.Path, p):
     lang = p["language"]
     play.call("PUT", f"{API}/{play.package}/edits/{edit}/details",
               {"defaultLanguage": lang, "contactEmail": p["contact_email"], "contactWebsite": p["contact_website"]})
-    play.call("PUT", f"{API}/{play.package}/edits/{edit}/listings/{lang}",
-              {"language": lang, "title": p["title"], "shortDescription": p["short_description"],
-               "fullDescription": p["full_description"]})
+    words = {"language": lang, "title": p["title"], "shortDescription": p["short_description"],
+             "fullDescription": p["full_description"]}
+    if p.get("video"):  # the YouTube promo shown above the screenshots
+        words["video"] = p["video"]
+    play.call("PUT", f"{API}/{play.package}/edits/{edit}/listings/{lang}", words)
     print("   name, short and full description, contact details: done")
     for kind, sources in p["images"].items():
         files = []
