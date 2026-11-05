@@ -725,8 +725,10 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
         'SELECT enabled, use_tap FROM epos_stripe_settings WHERE office = ?', [office]);
       return row && Number(row.enabled) && Number(row.use_tap) ? 'stripe' : 'dojo';
     } catch (e) {
-      if (e.code === 'ER_NO_SUCH_TABLE') return 'dojo';
-      throw e;
+      // Stripe's table not made yet, or a failed read: a phone still needs its
+      // configuration, and Dojo is what every venue was on before.
+      if (e.code !== 'ER_NO_SUCH_TABLE') console.warn('[tap] could not read the Tap to Pay provider:', e.message);
+      return 'dojo';
     }
   }
 
