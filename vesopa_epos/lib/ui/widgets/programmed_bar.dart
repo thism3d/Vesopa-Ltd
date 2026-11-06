@@ -36,6 +36,7 @@ class BarLive {
     this.screenId,
     this.section,
     this.allowEmptyPay = false,
+    this.closeAtZero = false,
   });
 
   final String currentOrderId;
@@ -58,6 +59,10 @@ class BarLive {
 
   /// The venue lets Pay open the payment screen on an empty check.
   final bool allowEmptyPay;
+
+  /// Pay closes this bill at £0.00: it has items worth nothing, or it is
+  /// sitting on a table with nothing left on it.
+  final bool closeAtZero;
 }
 
 /// The nav section each `go_*` key opens, by the section's label in the
@@ -721,7 +726,7 @@ class _BarKey extends ConsumerWidget {
         // the one thing the built-in bar does that a plain label cannot, and
         // the reason a venue would otherwise have to keep the built-in bar.
         final payable =
-            key != 'pay' || live.totalMinor != 0 || live.allowEmptyPay;
+            key != 'pay' || live.totalMinor != 0 || live.allowEmptyPay || live.closeAtZero;
         // Off the sale screen there is no bill in front of the clerk, so a key
         // that acts on one is drawn and dimmed rather than fired. See
         // [ProgrammedBar.onSaleScreen].

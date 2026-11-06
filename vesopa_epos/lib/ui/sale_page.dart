@@ -761,6 +761,7 @@ class SalePage extends ConsumerWidget {
                         onSwitchOrder: onSwitchOrder,
                         allowEmptyPay:
                             ref.watch(tenderSettingsProvider).allowEmptyPay,
+                        closeAtZero: lines.isNotEmpty || order?.tableNumber != null,
                       ),
                       onProduct: ring,
                       onPage: (target) =>
@@ -993,6 +994,7 @@ class SalePage extends ConsumerWidget {
                         onSwitchOrder: onSwitchOrder,
                         allowEmptyPay:
                             ref.watch(tenderSettingsProvider).allowEmptyPay,
+                        closeAtZero: lines.isNotEmpty || order?.tableNumber != null,
                       ),
                       onProduct: ring,
                       onPage: (target) =>
@@ -1020,16 +1022,25 @@ class SalePage extends ConsumerWidget {
                     // (Settings › Tender): an amount keyed on the payment
                     // screen is then rung up as a Quick sale.
                     onPrimary: total == 0 &&
+                            lines.isEmpty &&
+                            order?.tableNumber == null &&
                             !ref.watch(tenderSettingsProvider).allowEmptyPay
                         ? null
-                        : () => Navigator.of(context).push(
+                        : () async {
+                            if (order != null &&
+                                await _closeAtZero(context, ref, order, lines)) {
+                              return;
+                            }
+                            if (!context.mounted) return;
+                            await Navigator.of(context).push(
                             MaterialPageRoute<void>(
                               builder: (_) => PaymentPage(
                                 orderId: orderId,
                                 onSettled: onNewOrder,
                               ),
                             ),
-                          ),
+                          );
+                          },
                     actions: [
                       // Void takes off the picked lines, not the sale. It and
                       // Cancel both stay on the bar even on a phone: they are the
@@ -1256,6 +1267,47 @@ class SalePage extends ConsumerWidget {
     );
   }
 
+  /// Pay on a bill worth nothing: close it at £0.00 rather than do nothing.
+  ///
+  /// Nicki, Pontardawe RFC, 2026-11-06: void everything off a table and it
+  /// could not be cashed off as zero, so the table stayed open and the next
+  /// customer went on it. True when the bill is dealt with and no payment
+  /// screen is needed.
+  Future<bool> _closeAtZero(
+    BuildContext context,
+    WidgetRef ref,
+    Order order,
+    List<OrderLine> lines,
+  ) async {
+    if (order.totalMinor != 0) return false;
+    final repo = ref.read(orderRepositoryProvider);
+    if (await repo.amountPaid(orderId) > 0) return false;
+    if (lines.isEmpty) {
+      if (order.tableNumber == null) return false;
+      await repo.voidOrder(orderId, reason: 'Empty');
+    } else {
+      final session = await ref.read(sessionRepositoryProvider).current();
+      await repo.closeIfPaid(
+        orderId,
+        sessionId: session.id,
+        staffId: ref.read(servedByIdProvider),
+        staffName: ref.read(servedByProvider),
+      );
+      unawaited(ref.read(syncServiceProvider).flush());
+    }
+    ref.read(selectedLinesProvider.notifier).clear();
+    onNewOrder();
+    if (context.mounted) {
+      PosMessenger.success(
+        context,
+        order.tableNumber == null
+            ? 'Closed at £0.00.'
+            : 'Table ${order.tableNumber} closed at £0.00.',
+      );
+    }
+    return true;
+  }
+
   /// Run a till function placed on a programmed screen.
   ///
   /// Every key here maps to something the action bar already does, and that is
@@ -1289,10 +1341,12 @@ class SalePage extends ConsumerWidget {
       // an office cannot behave differently from the one beside it.
       case 'pay':
         if (order == null) return;
+        if (await _closeAtZero(context, ref, order, lines)) return;
         if (order.totalMinor == 0 &&
             !ref.read(tenderSettingsProvider).allowEmptyPay) {
           return;
         }
+        if (!context.mounted) return;
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => PaymentPage(orderId: orderId, onSettled: onNewOrder),
@@ -1750,6 +1804,14 @@ class SalePage extends ConsumerWidget {
     final going = lines.where((l) => selected.contains(l.id)).toList();
     if (going.isEmpty) return;
 
+    final repo = ref.read(orderRepositoryProvider);
+    final paid = await repo.paidBeyond(orderId, selected);
+    if (paid > 0) {
+      if (context.mounted) PosMessenger.error(context, paidBillMessage(money(paid)));
+      return;
+    }
+    if (!context.mounted) return;
+
     final reason = await showVoidDialog(
       context,
       ref,
@@ -1758,14 +1820,17 @@ class SalePage extends ConsumerWidget {
     );
     if (reason == null) return;
 
-    final removed = await ref
-        .read(orderRepositoryProvider)
-        .voidLines(orderId, lineIds: selected, reason: reason);
+    final removed = await repo.voidLines(orderId, lineIds: selected, reason: reason);
 
     ref.read(selectedLinesProvider.notifier).clear();
     // The void queues an audit record — push it now rather than waiting for the
     // periodic flush, so the back office sees the reversal in real time.
     unawaited(ref.read(syncServiceProvider).flush());
+
+    // The last item gone: the bill goes too, and its table is free. Left open
+    // it held the table with nothing to pay, and the next customer's items went
+    // onto it (Nicki, Pontardawe RFC, 2026-11-06).
+    if (await repo.clearIfEmpty(orderId)) onNewOrder();
 
     if (!context.mounted) return;
     PosMessenger.success(
@@ -1783,6 +1848,13 @@ class SalePage extends ConsumerWidget {
     required List<OrderLine> lines,
   }) async {
     final repo = ref.read(orderRepositoryProvider);
+
+    // Money taken stays on the bill: cancelling would lose it with no refund.
+    final paid = await repo.amountPaid(orderId);
+    if (paid > 0) {
+      if (context.mounted) PosMessenger.error(context, paidBillMessage(money(paid)));
+      return;
+    }
 
     // A bill saved to a table is not cancelled in one go (Pontardawe RFC,
     // 2026-10-14): the table is open, items may have gone to the kitchen, and

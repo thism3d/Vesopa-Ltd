@@ -24,6 +24,7 @@ import '../data/customer_display_control.dart' show clearCustomerCode;
 import '../data/device_registry.dart';
 import '../data/display_pairing.dart';
 import '../data/session_controller.dart';
+import '../data/staff_bills.dart';
 import '../data/staff_repository.dart' show defaultScreenFor;
 import '../data/staff_session.dart';
 import '../data/sync_service.dart';
@@ -724,51 +725,56 @@ class _PosShellState extends ConsumerState<PosShell> {
   /// have someone else's sale in the check view." This used to leave the bill
   /// on screen for whoever came next.
   ///
-  /// So a bill with something on it, and on no table, is held for the person
-  /// who rang it; whoever signs on gets the bill they held, or a new one. A
-  /// table's bill is already on the table plan and simply stays there. Who
-  /// holds what is kept on the till, so it survives a restart.
+  /// So a bill with something on it is held for the person who rang it, and
+  /// whoever signs on gets the bill they held, or a new one. Who holds what is
+  /// kept on the till, so it survives a restart.
+  ///
+  /// A table's bill counts too (2026-11-06, Carys on Steffi's Table 35: "my
+  /// order goes straight to Steffi's"). It used to stay on screen, and the next
+  /// person's items went onto a table that was not theirs. It goes back on the
+  /// table plan, where anyone can still open it on purpose.
+  ///
+  /// They run one at a time, see [_staffQueue]: signing off and straight back on
+  /// is two of these, and they share the held list.
   Future<void> _staffChanged(int? previous, int? next) async {
     final orders = ref.read(orderRepositoryProvider);
     final held = await _heldBills();
     final onScreen = _orderId;
 
-    if (previous != null && onScreen != null) {
-      final order = await orders.orderOnce(onScreen);
-      final lines = await orders.linesOnce(onScreen);
-      if (order != null && order.status == 'open' && lines.isNotEmpty && order.tableNumber == null) {
-        held['$previous'] = onScreen;
-      }
-    }
-
-    String? target;
-    if (next != null) {
-      final mine = held.remove('$next');
-      if (mine != null && mine != onScreen) {
-        final order = await orders.orderOnce(mine);
-        final lines = await orders.linesOnce(mine);
-        if (order != null && order.status == 'open' && lines.isNotEmpty) target = mine;
-      } else if (mine != null && mine == onScreen) {
-        target = mine;
-      }
-    }
+    final move = await handOverBill(
+      orders: orders,
+      tables: ref.read(tableRepositoryProvider),
+      held: held,
+      onScreen: onScreen,
+      previous: previous,
+      next: next,
+    );
     await _saveHeldBills(held);
     if (!mounted) return;
 
     // Only move off the bill on screen when it belongs to somebody else.
-    final onScreenHeldByOther = onScreen != null && held.values.contains(onScreen);
+    final target = move.target;
     if (target != null && target != onScreen) {
       await _switchToOrder(target);
-    } else if (onScreenHeldByOther) {
+    } else if (move.leave) {
       await _newOrder();
     }
 
-    // The screen this person starts on, from the back office.
+    // The screen this person starts on, from the back office, else the
+    // venue's home screen. Without that second part they stayed on whatever
+    // page the last person left up (Pontardawe RFC, 2026-11-06: "I need all
+    // staff to default to the draughts page", and 19 of 22 had none of their
+    // own).
     if (next != null && mounted) {
       final screen = await defaultScreenFor(next);
-      if (screen != null && mounted) ref.read(openScreenProvider.notifier).open(screen);
+      if (!mounted) return;
+      final open = ref.read(openScreenProvider.notifier);
+      screen != null ? open.open(screen) : open.home();
     }
   }
+
+  /// [_staffChanged] calls, one after another.
+  Future<void> _staffQueue = Future<void>.value();
 
   static const _heldKey = 'staff_held_bills';
 
@@ -957,7 +963,9 @@ class _PosShellState extends ConsumerState<PosShell> {
     // never the last person's (Nicki, Pontardawe RFC). See [_staffChanged].
     ref.listen<int?>(staffSessionProvider.select((s) => s.staff?.id), (previous, next) {
       if (previous == next) return;
-      unawaited(_staffChanged(previous, next));
+      _staffQueue = _staffQueue
+          .then((_) => _staffChanged(previous, next))
+          .catchError((Object _) {});
     });
 
     // A trainee signing on or off. The bill on screen must be the kind the

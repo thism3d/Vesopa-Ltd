@@ -1151,6 +1151,45 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       context,
       '${_money(earlier.fold<int>(0, (s, t) => s + t.amountMinor))} has already been paid on this bill.',
     );
+    await _offerToClosePaidBill(earlier.fold<int>(0, (s, t) => s + t.amountMinor));
+  }
+
+  /// A bill whose earlier payments already cover it has nothing to take and no
+  /// way to finish: the screen showed £0.00 left and "change" nobody was owed.
+  /// New bills can no longer get here (see OrderRepository.paidBeyond); this
+  /// lets the ones already on a till be closed.
+  Future<void> _offerToClosePaidBill(int paid) async {
+    final repo = ref.read(orderRepositoryProvider);
+    final order = await repo.orderOnce(widget.orderId);
+    if (order == null || order.totalMinor <= 0 || paid < order.totalMinor || !mounted) return;
+    final close = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('This bill is already paid'),
+        content: Text(
+          '${_money(paid)} was taken earlier and the bill is ${_money(order.totalMinor)}. '
+          'No change is due from the till.\n\n'
+          'If these items are a new customer\'s and have not been paid for, go back '
+          'and ring them on a new bill.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Back')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Close bill')),
+        ],
+      ),
+    );
+    if (close != true || !mounted) return;
+    final session = await ref.read(sessionRepositoryProvider).current();
+    await repo.closeIfPaid(
+      widget.orderId,
+      sessionId: session.id,
+      staffId: ref.read(servedByIdProvider),
+      staffName: ref.read(servedByProvider),
+    );
+    unawaited(ref.read(syncServiceProvider).flush());
+    if (!mounted) return;
+    widget.onSettled();
+    Navigator.of(context).pop();
   }
 
   /// The repository gift cards were held through. Kept here, not re-read from
@@ -2274,9 +2313,18 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     );
     if (reason == null) return;
 
-    final removed = await ref
-        .read(orderRepositoryProvider)
-        .voidLines(widget.orderId, lineIds: selected, reason: reason);
+    final repo = ref.read(orderRepositoryProvider);
+    final removed = await repo.voidLines(widget.orderId, lineIds: selected, reason: reason);
+
+    // The last item gone: the bill goes too, and its table is free.
+    if (await repo.clearIfEmpty(widget.orderId)) {
+      unawaited(ref.read(syncServiceProvider).flush());
+      if (!mounted) return;
+      widget.onSettled();
+      Navigator.of(context).pop();
+      PosMessenger.success(context, 'Voided. The bill is clear.');
+      return;
+    }
 
     if (!mounted) return;
     setState(() {

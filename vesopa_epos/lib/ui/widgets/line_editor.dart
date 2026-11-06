@@ -10,6 +10,7 @@ import '../void_dialog.dart';
 import 'on_screen_keyboard.dart';
 import 'pos_text_field.dart';
 import 'basket_panel.dart' show money;
+import 'pos_message.dart';
 
 /// Tap a basket line to open this: change the quantity, discount it, note it,
 /// or remove it. One place for everything you can do to a single line, rather
@@ -184,6 +185,12 @@ class _LineEditorState extends ConsumerState<_LineEditor> {
   /// nothing recorded, while the identical action one screen away demanded
   /// both. One bill cannot have two rules about removing from it.
   Future<void> _removeLine() async {
+    final paid = await _repo.paidBeyond(widget.orderId, {widget.line.id});
+    if (paid > 0) {
+      if (mounted) PosMessenger.error(context, paidBillMessage(money(paid)));
+      return;
+    }
+    if (!mounted) return;
     final reason = await showVoidDialog(
       context,
       ref,

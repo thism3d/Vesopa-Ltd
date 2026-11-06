@@ -1008,6 +1008,22 @@ class OrderRepository {
     String lineId,
     double quantity,
   ) async {
+    // The same rule as Void: a part-paid bill cannot come down below what has
+    // been paid. See [paidBeyond].
+    final paid = await amountPaid(orderId);
+    if (paid > 0) {
+      final order = await orderOnce(orderId);
+      final family = await _withModifiers(orderId, {lineId});
+      final lines = await (_db.select(_db.orderLines)
+            ..where((l) => l.orderId.equals(orderId) & l.id.isIn(family)))
+          .get();
+      var drop = 0.0;
+      for (final line in lines) {
+        final down = line.quantity - (quantity < 0 ? 0 : quantity);
+        if (down > 0) drop += line.unitPriceMinor * down;
+      }
+      if (order != null && order.totalMinor - drop.round() < paid) return;
+    }
     await _db.transaction(() async {
       if (quantity <= 0) {
         final doomed = await _withModifiers(orderId, {lineId});
@@ -1204,6 +1220,66 @@ class OrderRepository {
           ..where((p) => p.orderId.equals(orderId)))
         .get();
     return rows.fold<int>(0, (sum, p) => sum + p.amountMinor);
+  }
+
+  /// What has been paid on this bill, when taking [lineIds] off it would leave
+  /// the bill worth less than that. 0 when they can come off.
+  ///
+  /// A part-paid bill stays open, and voiding its items used to leave the
+  /// payments behind on a bill with nothing to show for them. The next
+  /// customer's items went onto that bill, which then said it was already paid:
+  /// Pontardawe RFC, 2026-11-06, £15.00 of breakfast against £25.79 of somebody
+  /// else's card payments, "change" £10.79.
+  Future<int> paidBeyond(String orderId, Set<String> lineIds) async {
+    final paid = await amountPaid(orderId);
+    if (paid == 0) return 0;
+    final order = await orderOnce(orderId);
+    if (order == null) return 0;
+    final doomed = await _withModifiers(orderId, lineIds);
+    final lines = await (_db.select(_db.orderLines)
+          ..where((l) => l.orderId.equals(orderId) & l.id.isIn(doomed)))
+        .get();
+    var going = 0;
+    for (final line in lines) {
+      going += (line.unitPriceMinor * line.quantity).round() - line.lineDiscountMinor;
+    }
+    return order.totalMinor - going < paid ? paid : 0;
+  }
+
+  /// Clear a bill with nothing left on it and no money against it, so the
+  /// table it was on is free again. True when it went.
+  Future<bool> clearIfEmpty(String orderId) async {
+    if ((await linesOnce(orderId)).isNotEmpty) return false;
+    if (await amountPaid(orderId) > 0) return false;
+    await voidOrder(orderId, reason: 'Empty');
+    return true;
+  }
+
+  /// Close a bill that owes nothing, with no new payment: a bill worth £0.00,
+  /// or one whose payments already cover it. True when it closed.
+  Future<bool> closeIfPaid(
+    String orderId, {
+    String? sessionId,
+    int? staffId,
+    String? staffName,
+  }) async {
+    return _db.transaction(() async {
+      final order = await orderOnce(orderId);
+      if (order == null || !const ['open', 'parked'].contains(order.status)) return false;
+      if (await amountPaid(orderId) < order.totalMinor) return false;
+      await (_db.update(_db.orders)..where((o) => o.id.equals(orderId))).write(
+        OrdersCompanion(
+          status: const Value('closed'),
+          closedAt: Value(DateTime.now()),
+          sessionId: Value(sessionId),
+          staffId: Value(staffId),
+          staffName: Value(staffName),
+        ),
+      );
+      if (order.training && !_inDemo()) return true;
+      await _enqueue(orderId);
+      return true;
+    });
   }
 
   /// The tenders taken against an order — for printing the receipt.

@@ -183,6 +183,12 @@ class TableRepository {
             ..where((l) => l.orderId.equals(fromOrderId)))
           .write(OrderLinesCompanion(orderId: Value(intoOrderId)));
 
+      // Money already taken goes with the items. Left behind, it sat on a
+      // voided bill and the merged bill asked for it a second time.
+      await (_db.update(_db.payments)
+            ..where((p) => p.orderId.equals(fromOrderId)))
+          .write(PaymentsCompanion(orderId: Value(intoOrderId)));
+
       if (from != null && into != null) {
         await (_db.update(_db.orders)..where((o) => o.id.equals(intoOrderId)))
             .write(

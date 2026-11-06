@@ -245,6 +245,11 @@ bool cancelRefused({required int? tableNumber, required int lineCount}) =>
 const cancelTableMessage =
     'This table has been saved. Use Void to remove items from it.';
 
+/// Said when a void would take a bill below what has already been paid on it.
+String paidBillMessage(String paid) =>
+    '$paid has already been paid on this bill, so it cannot go below that. '
+    'Refund the payment first.';
+
 Future<String?> showVoidDialog(
   BuildContext context,
   WidgetRef ref, {
