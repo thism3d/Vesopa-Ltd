@@ -103,7 +103,7 @@ const check = (name, ok, extra) => {
     const config = await call('GET', '/api/tap/config', undefined, token);
     check('Tap to Pay follows the device', config.body && config.body.tap_provider === 'stripe', config);
     await call('PUT', `${pages}/${one.body.id}/provider`, { provider: 'dojo' });
-    const teya = await call('GET', '/till/teya/config', undefined, token);
+    const teya = await call('GET', '/api/till/teya/config', undefined, token);
     check('the device leaves the venue\'s Teya when set to Dojo', teya.status === 200 && teya.body.enabled === false, teya);
     await call('PUT', `${pages}/${one.body.id}/provider`, { provider: '' });
 
