@@ -10,6 +10,7 @@ const { sniffType, safeName, mayMove, printersOf } = require('../src/print_drive
 assert.strictEqual(sniffType(Buffer.from('%PDF-1.7 rest')), 'application/pdf');
 assert.strictEqual(sniffType(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0])), 'image/png');
 assert.strictEqual(sniffType(Buffer.from([0xff, 0xd8, 0xff, 0xe0])), 'image/jpeg');
+assert.strictEqual(sniffType(Buffer.from('UNIRAST\0....')), 'image/urf');
 assert.strictEqual(sniffType(Buffer.from('<html>not a pdf')), null);
 assert.strictEqual(sniffType(Buffer.alloc(0)), null);
 

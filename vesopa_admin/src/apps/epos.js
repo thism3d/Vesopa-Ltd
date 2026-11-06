@@ -38,6 +38,7 @@ module.exports = {
   printDrives: (id, as) => get(`/offices/${Number(id)}/print-drives`, as),
   addPrintDrive: (id, body, as) => post(`/offices/${Number(id)}/print-drives`, body, as),
   printDriveJobs: (id, drive, as) => get(`/offices/${Number(id)}/print-drives/${Number(drive)}/jobs`, as),
+  setPrintDrivePhones: (id, drive, phones, as) => put(`/offices/${Number(id)}/print-drives/${Number(drive)}`, { phones }, as),
   printDriveTest: (id, drive, as) => post(`/offices/${Number(id)}/print-drives/${Number(drive)}/test`, {}, as),
   terminals: (id, as) => get(`/offices/${Number(id)}/terminals`, as),
   addTerminal: (id, body, as) => post(`/offices/${Number(id)}/terminals`, body, as),

@@ -252,6 +252,18 @@ router.post('/venues/:id/print-drives', signedIn, csrf, allow('licences.sell', '
   }
 });
 
+router.post('/venues/:id/print-drives/:drive/phones', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res, next) => {
+  const venueId = Number(req.params.id);
+  const on = String((req.body || {}).phones) === '1';
+  try {
+    await epos.setPrintDrivePhones(venueId, req.params.drive, on, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'print-drive.phones', venueId, detail: `${Number(req.params.drive)} ${on ? 'on' : 'off'}` });
+    res.redirect(303, `/venues/${venueId}/print-drives`);
+  } catch (e) {
+    printDrivesPage(req, res, e.message).catch(next);
+  }
+});
+
 router.post('/venues/:id/print-drives/:drive/test', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res, next) => {
   const venueId = Number(req.params.id);
   try {

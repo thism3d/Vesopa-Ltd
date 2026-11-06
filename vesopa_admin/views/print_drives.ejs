@@ -21,13 +21,19 @@
 
 <div class="card table-wrap">
   <table>
-    <thead><tr><th>Drive</th><th>Till</th><th>Printer</th><th>Waiting</th><th></th></tr></thead>
+    <thead><tr><th>Drive</th><th>Till</th><th>Printer</th><th>Phones</th><th>Waiting</th><th></th></tr></thead>
     <tbody>
     <% for (const d of drives) { %>
       <tr>
         <td><b><%= d.name %></b></td>
         <td><%= d.terminal || '—' %> <span class="pill<%= d.online ? ' green' : '' %>"><%= d.online ? 'on now' : 'off' %></span></td>
         <td class="muted"><%= d.printer_name || d.printer_id %></td>
+        <td>
+          <form method="post" action="/venues/<%= venueId %>/print-drives/<%= d.id %>/phones" class="inline">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <button class="btn<%= d.phones ? ' primary' : '' %>" name="phones" value="<%= d.phones ? '0' : '1' %>"><%= d.phones ? 'On' : 'Off' %></button>
+          </form>
+        </td>
         <td><%= d.waiting %></td>
         <td>
           <a class="btn" href="https://backoffice.vesopaepos.com<%= d.link %>" target="_blank" rel="noopener">Send a file</a>
@@ -41,11 +47,11 @@
         <tr class="muted">
           <td colspan="2"><%= j.filename %></td>
           <td><%= j.status %><%= j.error ? ': ' + j.error : '' %></td>
-          <td colspan="2"><%= ago(j.created_at) %></td>
+          <td colspan="3"><%= ago(j.created_at) %></td>
         </tr>
       <% } %>
     <% } %>
-    <% if (!drives.length) { %><tr><td colspan="5" class="muted">No printer drives yet.</td></tr><% } %>
+    <% if (!drives.length) { %><tr><td colspan="6" class="muted">No printer drives yet.</td></tr><% } %>
     </tbody>
   </table>
 </div>

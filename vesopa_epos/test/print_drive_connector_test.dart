@@ -13,6 +13,7 @@ const _printer = PrinterConfig(id: 'p1', name: 'Office', kind: PrinterKind.windo
 MockClient _server(List<Map<String, dynamic>> told, {int fileStatus = 200, List<String>? asked}) =>
     MockClient((req) async {
       asked?.add(req.url.path);
+      if (req.url.path == '/api/device/print-drives') return http.Response('{"drives":[]}', 200);
       if (req.url.path == '/api/device/print-jobs') {
         return http.Response(jsonEncode({'jobs': [{'id': 'j1', 'mime': 'application/pdf', 'printer_id': 'p1'}]}), 200);
       }
@@ -38,6 +39,17 @@ void main() {
     await _connector(_server(told), print: (_, pdf) async => printed = pdf).round();
     expect(printed, isNotNull);
     expect(told.single['printed'], isTrue);
+  });
+
+  test('a failure finding phone printers does not stop documents printing', () async {
+    final told = <Map<String, dynamic>>[];
+    final client = MockClient((req) async {
+      if (req.url.path == '/api/device/print-drives') throw http.ClientException('no');
+      return _server(told).send(http.Request(req.method, req.url)..bodyBytes = req.bodyBytes).then(http.Response.fromStream);
+    });
+    var printed = false;
+    await _connector(client, print: (_, _) async => printed = true).round();
+    expect(printed, isTrue);
   });
 
   test('a failed print is reported with the reason', () async {

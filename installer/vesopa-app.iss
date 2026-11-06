@@ -106,6 +106,8 @@ Filename: "{app}\{#ExeName}"; Flags: nowait; Check: Relaunch
 ; asks for the administrator once, and a silent self-update never does. A till
 ; installed without it shows an Allow button in Settings > Local network.
 Filename: "{cmd}"; Parameters: "/c netsh advfirewall firewall delete rule name=""Vesopa local link"" >nul 2>&1 & netsh advfirewall firewall add rule name=""Vesopa local link"" dir=in action=allow protocol=TCP localport=47821 profile=any & netsh advfirewall firewall add rule name=""Vesopa local link"" dir=in action=allow protocol=UDP localport=47820 profile=any"; Verb: runas; Flags: shellexec runhidden waituntilterminated skipifsilent; StatusMsg: "Letting the venue's other devices reach this till..."; Check: NeedsLanRule
+; Phones printing to this till (printing/ipp_server.dart): TCP 8631, and UDP 5353 for finding it.
+Filename: "{cmd}"; Parameters: "/c netsh advfirewall firewall delete rule name=""Vesopa printing"" >nul 2>&1 & netsh advfirewall firewall add rule name=""Vesopa printing"" dir=in action=allow protocol=TCP localport=8631 profile=private,domain & netsh advfirewall firewall add rule name=""Vesopa printing"" dir=in action=allow protocol=UDP localport=5353 profile=private,domain"; Flags: runhidden runascurrentuser; Check: NeedsPrintRule
 #endif
 
 [UninstallDelete]
@@ -123,6 +125,19 @@ var
   Code: Integer;
 begin
   if not Exec(ExpandConstant('{sys}\netsh.exe'), 'advfirewall firewall show rule name="Vesopa local link"', '', SW_HIDE, ewWaitUntilTerminated, Code) then
+    Result := True
+  else
+    Result := Code <> 0;
+end;
+
+// Whether the phones' firewall rule is missing (see [Run]).
+function NeedsPrintRule: Boolean;
+var
+  Code: Integer;
+begin
+  if WizardSilent then
+    Result := False
+  else if not Exec(ExpandConstant('{sys}\netsh.exe'), 'advfirewall firewall show rule name="Vesopa printing"', '', SW_HIDE, ewWaitUntilTerminated, Code) then
     Result := True
   else
     Result := Code <> 0;

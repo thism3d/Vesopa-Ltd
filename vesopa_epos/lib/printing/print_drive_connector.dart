@@ -8,6 +8,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import 'ipp_server.dart';
+import 'mdns_responder.dart';
 import 'printer_transport.dart';
 
 /// This till is the way out for its printers' online drives
@@ -77,6 +79,9 @@ class PrintDriveConnector {
   final http.Client _http;
   Timer? _timer;
   bool _busy = false;
+  int _round = 0;
+  final _ipp = IppServer();
+  final _mdns = MdnsResponder();
 
   Map<String, String> get _auth => {'Authorization': 'Bearer $token'};
 
@@ -89,6 +94,90 @@ class PrintDriveConnector {
   void stop() {
     _timer?.cancel();
     _timer = null;
+    unawaited(_ipp.stop());
+    unawaited(_mdns.stop());
+  }
+
+  /// Offer the drives a manager has opened to phones, and stop offering the rest.
+  Future<void> _offerToPhones() async {
+    final uri = Uri.parse('$apiBase/api/device/print-drives')
+        .replace(queryParameters: {'device_id': deviceId, 'kind': 'till'});
+    final res = await _http.get(uri, headers: _auth).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) return;
+    final drives = (jsonDecode(res.body) as Map<String, dynamic>)['drives'] as List<dynamic>? ?? const [];
+    final ipp = <int, IppPrinter>{};
+    final announced = <AnnouncedPrinter>[];
+    for (final raw in drives) {
+      final d = raw as Map<String, dynamic>;
+      final id = (d['id'] as num).toInt();
+      final printerId = d['printer_id'] as String;
+      final name = 'Vesopa ${d['name']}';
+      final path = 'ipp/print/$id';
+      // Stable across restarts, so a phone does not see a new printer each time.
+      final uuid = 'f0e0d0c0-0000-4000-8000-${id.toRadixString(16).padLeft(12, '0')}';
+      ipp[id] = _ipp.printers[id] ??
+          IppPrinter(
+            id: id,
+            name: name,
+            uuid: uuid,
+            print: (job, format, bytes) => _fromPhone(id, printerId, job, format, bytes),
+          );
+      announced.add(AnnouncedPrinter(
+        name: name,
+        port: ippPort,
+        path: path,
+        txt: airPrintTxt(name: name, path: path, id: uuid),
+      ));
+    }
+    await _ipp.update(ipp);
+    final host = 'vesopa-${deviceId.replaceAll(RegExp(r'[^A-Za-z0-9]'), '')}';
+    await _mdns.update(announced, host.substring(0, host.length.clamp(0, 30)));
+  }
+
+  /// A document straight from a phone: printed now, and noted in the history.
+  Future<void> _fromPhone(int driveId, String printerId, String job, String format, Uint8List bytes) async {
+    String? error;
+    try {
+      final printer = (await printers()).where((p) => p.id == printerId).firstOrNull;
+      if (printer == null) throw StateError('This till no longer has that printer.');
+      await (printPage ?? _print)(printer, await _phoneDocument(bytes, format));
+    } catch (e) {
+      error = '$e';
+      rethrow;
+    } finally {
+      unawaited(_http
+          .post(
+            Uri.parse('$apiBase/api/device/print-jobs/local'),
+            headers: {..._auth, 'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'device_id': deviceId,
+              'drive_id': driveId,
+              'filename': job,
+              'printed': error == null,
+              'error': ?error,
+            }),
+          )
+          .then<void>((_) {}, onError: (_) {}));
+    }
+  }
+
+  /// What a phone sends, as a PDF. An iPhone may send Apple's raster format, and
+  /// some apps send a bare octet stream that is really a PDF.
+  Future<Uint8List> _phoneDocument(Uint8List bytes, String format) async {
+    if (format == 'image/urf') {
+      final doc = pw.Document();
+      for (final png in urfToPngs(bytes)) {
+        final image = pw.MemoryImage(png);
+        doc.addPage(pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: pw.EdgeInsets.zero,
+          build: (_) => pw.Center(child: pw.Image(image)),
+        ));
+      }
+      return doc.save();
+    }
+    final isPdf = bytes.length > 4 && String.fromCharCodes(bytes.sublist(0, 4)) == '%PDF';
+    return _asPdf(bytes, isPdf ? 'application/pdf' : format);
   }
 
   /// Everything waiting, one at a time. Never throws, and never overlaps.
@@ -96,6 +185,14 @@ class PrintDriveConnector {
     if (_busy) return;
     _busy = true;
     try {
+      // Once a minute: which printers phones may see changes rarely.
+      if (_round++ % 6 == 0) {
+        try {
+          await _offerToPhones();
+        } catch (_) {
+          // Documents already in the drive still print.
+        }
+      }
       final uri = Uri.parse('$apiBase/api/device/print-jobs')
           .replace(queryParameters: {'device_id': deviceId, 'kind': 'till'});
       final res = await _http.get(uri, headers: _auth).timeout(const Duration(seconds: 10));
@@ -124,7 +221,7 @@ class PrintDriveConnector {
       final wanted = job['printer_id'] as String?;
       final printer = mine.where((p) => p.id == wanted).firstOrNull;
       if (printer == null) throw StateError('This till no longer has that printer.');
-      final pdf = await _asPdf(res.bodyBytes, job['mime'] as String?);
+      final pdf = await _phoneDocument(res.bodyBytes, job['mime'] as String? ?? 'application/pdf');
       await (printPage ?? _print)(printer, pdf);
     } catch (e) {
       error = '$e';

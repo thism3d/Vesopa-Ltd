@@ -114,6 +114,22 @@ const check = (name, ok, extra) => {
     check('another device sees nothing', other.body.jobs.length === 0, other);
     check('the back office needs a sign-in', (await fetch(`${base}/api/print-drives`)).status === 401);
     check('a device token cannot open it', (await call('GET', '/api/print-drives', undefined, token)).status === 401);
+    const ipp = await fetch(`${base}/ipp/print/${link.split('/').pop()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/ipp' },
+      body: Buffer.concat([
+        Buffer.from([2, 0, 0, 2, 0, 0, 0, 1, 1, 0x47, 0, 18]), Buffer.from('attributes-charset'),
+        Buffer.from([0, 5]), Buffer.from('utf-8'), Buffer.from([3]), Buffer.from('%PDF-1.4 from a phone'),
+      ]),
+    });
+    const answer = Buffer.from(await ipp.arrayBuffer());
+    check('a phone can print over the internet', ipp.status === 200 && answer.readUInt16BE(2) === 0, [ipp.status, answer.subarray(0, 8)]);
+    jobs = (await call('GET', `/api/device/print-jobs?device_id=${device}&kind=till`, undefined, token)).body.jobs;
+    check('and it lands in the drive for the till', jobs.length === 2, jobs);
+    const profile = await fetch(`${base}${link}/airprint.mobileconfig`);
+    check('the iPhone profile downloads', profile.status === 200 && (await profile.text()).includes('com.apple.airprint'));
+    const manifest = await fetch(`${base}${link}/manifest.webmanifest`);
+    check('Android gets its Share menu entry', manifest.status === 200 && !!(await manifest.json()).share_target);
     const swapped = await call('POST', `${drives}/${drive}/link`);
     check('a new link can be made', swapped.status === 200, swapped);
     check('the old link stops', (await fetch(base + link)).status === 404);

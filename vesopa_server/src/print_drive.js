@@ -8,6 +8,12 @@
  * That terminal is the connector: it asks what is waiting, prints it through the
  * same road its receipts take, and says how it went.
  *
+ * FROM ANYWHERE. Each drive is also a printer on the internet (src/ipp.js): an
+ * iPhone given its address prints to it from any connection, and the document
+ * lands here like any other. Android has no way to add a printer by a full web
+ * address, so there the drive's page installs and appears in the Share menu.
+ * The long code in the address is what stands between a stranger and the paper.
+ *
  * DOCUMENTS WAIT. A till that is off or offline finds them when it comes back.
  *
  * NEVER PRINTED TWICE ON ITS OWN. A job a terminal took and never answered for
@@ -27,6 +33,7 @@ const express = require('express');
 const multer = require('multer');
 const PDFDocument = require('pdfkit');
 
+const ipp = require('./ipp');
 const { attachAccess, requirePermission } = require('./permissions');
 const { requireDevice } = require('./terminal_licences');
 
@@ -47,6 +54,7 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => `&#${c.
 function sniffType(bytes) {
   if (!bytes || bytes.length < 4) return null;
   if (bytes.subarray(0, 4).toString('latin1') === '%PDF') return 'application/pdf';
+  if (bytes.subarray(0, 7).toString('latin1') === 'UNIRAST') return 'image/urf';
   if (bytes[0] === 0x89 && bytes.subarray(1, 4).toString('latin1') === 'PNG') return 'image/png';
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
   return null;
@@ -123,6 +131,9 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
         finished_at DATETIME NULL,
         KEY ix_job_drive (drive_id, status, created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`);
+      // Whether phones on the venue's network can find this printer. Off until a
+      // manager says, because anybody on that Wi-Fi could then print to it.
+      await pool.query('ALTER TABLE bo_print_drives ADD COLUMN IF NOT EXISTS phones TINYINT(1) NOT NULL DEFAULT 0');
     })().catch((e) => {
       ready = null;
       throw e;
@@ -170,6 +181,7 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
       printer_id: d.printer_id,
       printer_name: d.printer_name,
       enabled: Boolean(Number(d.enabled)),
+      phones: Boolean(Number(d.phones)),
       waiting: Number(d.waiting),
       link: `/print/${d.code}`,
     }));
@@ -268,6 +280,17 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
       } catch (e) { next(e); }
     });
 
+    sub.put('/:id', guard, express.json(), async (req, res, next) => {
+      try {
+        const o = await office(req, res);
+        if (!o) return;
+        const d = await driveOf(o, asInt(req.params.id));
+        if (!d) return res.status(404).json({ error: 'No such drive' });
+        await pool.execute('UPDATE bo_print_drives SET phones = ? WHERE id = ?', [(req.body || {}).phones ? 1 : 0, d.id]);
+        res.json({ ok: true });
+      } catch (e) { next(e); }
+    });
+
     sub.delete('/:id', guard, async (req, res, next) => {
       try {
         const o = await office(req, res);
@@ -342,6 +365,7 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
         const job = await jobOf(o, clamp(req.params.job, 32));
         if (!job) return res.status(404).json({ error: 'No such job' });
         const to = { cancel: 'cancelled', again: 'waiting' }[req.params.action];
+        if (job.mime === 'local') return res.status(409).json({ error: 'That was printed from a phone, so there is no copy here.' });
         if (!to || !(await move(job, to))) return res.status(409).json({ error: 'That job cannot do that now.' });
         res.json({ ok: true });
       } catch (e) { next(e); }
@@ -387,6 +411,42 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
         [id]
       );
       res.json({ jobs });
+    } catch (e) { next(e); }
+  });
+
+  /** The drives this device holds, so it can offer the ones phones may use. */
+  router.get('/api/device/print-drives', device, async (req, res, next) => {
+    try {
+      await ensure();
+      const id = await terminalIdOf(req.office, clamp(req.query.device_id, 64), req.deviceKind);
+      if (!id) return res.json({ drives: [] });
+      const [drives] = await pool.query(
+        `SELECT id, name, printer_id FROM bo_print_drives
+          WHERE terminal_id = ? AND enabled = 1 AND phones = 1 AND deleted_at IS NULL`, [id]);
+      res.json({ drives });
+    } catch (e) { next(e); }
+  });
+
+  /**
+   * A document a phone printed straight to this till. For the history only: it
+   * has no file here, so it cannot be sent again from the back office.
+   */
+  router.post('/api/device/print-jobs/local', express.json(), device, async (req, res, next) => {
+    try {
+      await ensure();
+      const b = req.body || {};
+      const id = await terminalIdOf(req.office, clamp(b.device_id, 64), req.deviceKind);
+      const [[d]] = await pool.query(
+        'SELECT id, office FROM bo_print_drives WHERE id = ? AND terminal_id = ? AND deleted_at IS NULL', [asInt(b.drive_id), id]);
+      if (!d) return res.status(404).json({ error: 'No such drive' });
+      await pool.execute(
+        `INSERT INTO bo_print_jobs (id, drive_id, office, filename, mime, size, status, error, sent_by, finished_at)
+         VALUES (?, ?, ?, ?, 'local', 0, ?, ?, 'Phone on the network', NOW())`,
+        [crypto.randomBytes(16).toString('hex'), d.id, d.office, safeName(b.filename),
+          b.printed === true ? 'printed' : 'failed', b.printed === true ? null : clamp(b.error, 240) || null]
+      );
+      say(d.office);
+      res.status(201).json({ ok: true });
     } catch (e) { next(e); }
   });
 
@@ -446,10 +506,84 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
       if (!d) return res.status(404).type('html').send(page('Not found', '<h1>This printer link is not known</h1><p>Ask the venue for a new one.</p>'));
       res.type('html').send(page(`Print to ${d.name}`, `<h1>Print to ${esc(d.name)}</h1>
 <p>Choose a PDF or a picture and it prints there.</p>
+<link rel="manifest" href="/print/${esc(d.code)}/manifest.webmanifest">
 <form method="post" enctype="multipart/form-data" action="/print/${esc(d.code)}">
 <label class="drop">Choose files<input type="file" name="files" multiple required accept="application/pdf,image/png,image/jpeg"></label>
 <input type="text" name="sender" maxlength="120" placeholder="Your name (optional)">
-<button>Print</button></form>`));
+<button>Print</button></form>
+<h2 style="font-size:17px;margin:28px 0 6px">Keep this printer on your phone</h2>
+<p><a style="color:#a5c715" href="/print/${esc(d.code)}/airprint.mobileconfig">iPhone or iPad: add it to the Print menu</a>. Open Settings when it says so, and install the profile.</p>
+<p>Android: use your browser's menu and choose Install app or Add to Home screen. Then choose Share on any document and pick this printer.</p>`));
+    } catch (e) { next(e); }
+  });
+
+  /** So Android offers the drive in its Share menu. */
+  router.get('/print/:code/manifest.webmanifest', async (req, res, next) => {
+    try {
+      const d = await driveByCode(String(req.params.code));
+      if (!d) return res.status(404).end();
+      res.set('Cache-Control', 'no-store');
+      res.type('application/manifest+json').send(JSON.stringify({
+        name: `Print to ${d.name}`,
+        short_name: d.name,
+        start_url: `/print/${d.code}`,
+        scope: `/print/${d.code}`,
+        display: 'standalone',
+        background_color: '#0b0e0a',
+        theme_color: '#0b0e0a',
+        icons: [
+          { src: '/print-icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/print-icon-512.png', sizes: '512x512', type: 'image/png' },
+        ],
+        share_target: {
+          action: `/print/${d.code}`,
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: { files: [{ name: 'files', accept: ['application/pdf', 'image/png', 'image/jpeg'] }] },
+        },
+      }));
+    } catch (e) { next(e); }
+  });
+
+  /** The profile that puts this printer in an iPhone's Print menu, anywhere. */
+  router.get('/print/:code/airprint.mobileconfig', async (req, res, next) => {
+    try {
+      const d = await driveByCode(String(req.params.code));
+      if (!d) return res.status(404).end();
+      res.set('Cache-Control', 'no-store');
+      res.set('Content-Disposition', 'attachment; filename="vesopa-printer.mobileconfig"');
+      res.type('application/x-apple-aspen-config').send(ipp.airPrintProfile({
+        name: `Vesopa ${d.name}`,
+        host: req.hostname,
+        path: `ipp/print/${d.code}`,
+        seed: d.code,
+      }));
+    } catch (e) { next(e); }
+  });
+
+  // What phones have sent, by drive, for the few moments a phone asks after it.
+  const phoneJobs = new Map();
+
+  /** The drive as a printer on the internet. */
+  router.post('/ipp/print/:code', express.raw({ type: () => true, limit: MAX_BYTES + 1024 * 1024 }), async (req, res, next) => {
+    try {
+      const code = String(req.params.code);
+      const d = await driveByCode(code);
+      if (!d) return res.status(404).end();
+      if (!phoneJobs.has(code)) {
+        if (phoneJobs.size > 500) phoneJobs.clear();
+        phoneJobs.set(code, {});
+      }
+      const answer = await ipp.respond(req.body, {
+        name: `Vesopa ${d.name}`,
+        uri: `ipps://${req.hostname}/ipp/print/${code}`,
+        uuid: ipp.uuidFor(code),
+        secure: true,
+      }, phoneJobs.get(code), async (bytes, name) => {
+        if (tooMany(code)) throw Object.assign(new Error('Too many documents'), { status: 415 });
+        await addJob(d, { bytes, filename: name, sentBy: 'Phone, over the internet' });
+      });
+      res.type('application/ipp').send(answer);
     } catch (e) { next(e); }
   });
 

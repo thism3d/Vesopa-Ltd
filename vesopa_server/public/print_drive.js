@@ -45,11 +45,12 @@ function renderPrintDrives() {
       <button class="btn primary" data-pd-add>Add drive</button>
     </div>` : '<p class="muted small">A till needs a printer set up, and to have reported to the back office, before it can hold a drive.</p>'}
     ${printDrives.drives.length ? `<div class="table-wrap"><table class="table"><thead><tr>
-      <th>Drive</th><th>Till</th><th>Printer</th><th>Waiting</th><th></th></tr></thead><tbody>
+      <th>Drive</th><th>Till</th><th>Printer</th><th>Phones</th><th>Waiting</th><th></th></tr></thead><tbody>
       ${printDrives.drives.map((d) => `<tr>
         <td><b>${esc(d.name)}</b></td>
         <td>${esc(d.terminal || '—')} ${d.online ? '<span class="pill on">on now</span>' : '<span class="pill">off</span>'}</td>
         <td class="small">${esc(d.printer_name || d.printer_id)}</td>
+        <td><label class="small"><input type="checkbox" data-pd-phones="${esc(d.id)}"${d.phones ? ' checked' : ''}> On the venue's Wi-Fi</label></td>
         <td>${esc(d.waiting)}</td>
         <td class="right" style="white-space:nowrap">
           <label class="btn small">Add files<input type="file" hidden multiple accept="application/pdf,image/png,image/jpeg" data-pd-upload="${esc(d.id)}"></label>
@@ -83,7 +84,7 @@ async function showPrintJobs(id) {
       <td>${esc(j.status)}${j.error ? `<div class="small muted">${esc(j.error)}</div>` : ''}</td>
       <td class="small muted">${esc(new Date(j.created_at).toLocaleString('en-GB'))}</td>
       <td class="right">${j.status === 'waiting' ? `<button class="btn small" data-pd-cancel="${esc(j.id)}">Cancel</button>` : ''}
-        ${again(j) ? `<button class="btn small" data-pd-again="${esc(j.id)}">Print again</button>` : ''}</td>
+        ${again(j) && j.sent_by !== 'Phone on the network' ? `<button class="btn small" data-pd-again="${esc(j.id)}">Print again</button>` : ''}</td>
     </tr>`).join('')}</tbody></table></div>` : '<p class="muted small">Nothing has been sent to this drive yet.</p>';
 }
 
@@ -93,6 +94,18 @@ function bindPrintDrives() {
   box.dataset.bound = '1';
 
   box.addEventListener('change', async (e) => {
+    const phones = e.target.getAttribute && e.target.getAttribute('data-pd-phones');
+    if (phones) {
+      try {
+        await api(`/print-drives/${phones}`, { method: 'PUT', body: JSON.stringify({ phones: e.target.checked }) });
+        toast(e.target.checked
+          ? 'Phones on this venue\'s Wi-Fi can now find this printer. Anybody on that Wi-Fi can print to it.'
+          : 'Phones can no longer find this printer.');
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+      return;
+    }
     const id = e.target.getAttribute && e.target.getAttribute('data-pd-upload');
     if (!id) return;
     try {
