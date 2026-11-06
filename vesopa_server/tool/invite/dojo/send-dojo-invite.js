@@ -9,6 +9,7 @@
  *   node tool/invite/dojo/send-dojo-invite.js --send --only info@vesopa.com   # one copy only
  *   ... --final       # 11 Oct: accreditation fixes done, final testing Mon 12 Oct 10:30 (new invite)
  *   ... --confirm     # 12 Oct morning: please confirm today's final testing at 10:30
+ *   ... --android-tap   # 6 Nov: Android Tap to Pay on Pocket (Fintan, Alex, Francis, cc Meirion)
  *   ... --live-access   # 4 Nov: live API access for support@/muzahid@, Tap to Pay for Pontardawe (Alex, cc Meirion)
  *   ... --vesopa-followup   # 26 Oct: follow-up, please verify and issue our live key (reply in the thread)
  *   ... --epos-live   # 24 Oct: certification + live API for Vesopa EPOS subscriptions (Alex, partnertech; cc Meirion)
@@ -42,7 +43,8 @@ const RECIPIENTS = [
 ];
 
 async function main() {
-  const eml = path.join(__dirname, process.argv.includes('--live-access') ? 'Vesopa-Dojo-live-access.eml'
+  const eml = path.join(__dirname, process.argv.includes('--android-tap') ? 'Vesopa-Dojo-android-tap.eml'
+    : process.argv.includes('--live-access') ? 'Vesopa-Dojo-live-access.eml'
     : process.argv.includes('--vesopa-followup') ? 'Vesopa-Dojo-vesopa-verify-followup.eml'
     : process.argv.includes('--vesopa-verify') ? 'Vesopa-Dojo-vesopa-verify.eml'
     : process.argv.includes('--epos-live') ? 'Vesopa-Dojo-epos-live.eml'
@@ -71,7 +73,9 @@ async function main() {
   const only = onlyAt > -1 ? process.argv[onlyAt + 1] : null;
   if (onlyAt > -1 && !/^[^@\s]+@[^@\s]+$/.test(only || '')) throw new Error('--only needs an address');
   // The 12 Oct review email goes to Alex and Finn only (cc Meirion), not Oliver.
-  const list = process.argv.includes('--live-access')
+  const list = process.argv.includes('--android-tap')
+    ? ['fintan.bridger@paymentsense.com', 'alex.radzio@dojo.tech', 'francis.lawrence@paymentsense.com', 'info@vesopasoftware.com', 'info@vesopa.com']
+    : process.argv.includes('--live-access')
     ? ['alex.radzio@dojo.tech', 'info@vesopasoftware.com', 'info@vesopa.com']
     : process.argv.includes('--epos-live') || process.argv.includes('--vesopa-verify') || process.argv.includes('--vesopa-followup')
     ? ['alex.radzio@dojo.tech', 'partnertech@dojo.tech', 'info@vesopasoftware.com', 'info@vesopa.com']

@@ -1,0 +1,87 @@
+From: Vesopa Developer <muzahid@vesopa.com>
+To: Fintan Bridger <fintan.bridger@paymentsense.com>,
+ Alex Radzio <alex.radzio@dojo.tech>,
+ Francis Lawrence <francis.lawrence@paymentsense.com>
+Cc: Meirion Davies <info@vesopasoftware.com>, Meirion Davies <info@vesopa.com>
+Reply-To: Vesopa Developer <muzahid@vesopa.com>
+Subject: Re: Vesopa Software Ltd: live API access, and Tap to Pay on iPhone
+ for Pontardawe RFC
+Date: Fri, 06 Nov 2026 09:00:00 +0000
+Message-ID: <179392854107.24840.294125586649387198@vesopa.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="===============7174847919964497934=="
+
+--===============7174847919964497934==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Hi Fintan, Alex and Francis,
+
+Thanks for your reply, Finn. That's clear on iPhone, and yes please: we would=
+ like to go ahead with the Android Tap to Pay integration on Pocket for our V=
+esopa Go app (com.vesopa.go).
+
+1. Please enable it
+
+Could you please enable Android Tap to Pay for Vesopa Software Ltd, so that w=
+e can start testing?
+
+2. Which device do we test on?
+
+Do we need to use a Dojo Pocket for the Android Tap to Pay tests, or can we u=
+se any Android phone with NFC? If it has to be a Dojo device, could you let u=
+s know how we can get one for testing?
+
+3. Guidelines
+
+Please could you send us the guidelines for this integration, including:
+
+  - the current SDK and documentation (we have started from tech.dojo.pos:tap=
+-to-pay-on-pocket:1.0.0);
+  - how to test on sandbox, and how a device is activated for it;
+  - the certification or accreditation steps before going live; and
+  - anything you need from us to enable it for a venue.
+
+Thanks very much,
+
+Vesopa Developer
+Vesopa Software Ltd
+muzahid@vesopa.com | https://vesopasoftware.com
+
+--===============7174847919964497934==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<div style=3D"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-heig=
+ht:1.55;color:#0B0E0A;max-width:640px">
+<p>Hi Fintan, Alex and Francis,</p>
+<p>Thanks for your reply, Finn. That's clear on iPhone, and yes please: we wo=
+uld like to go ahead with the Android Tap to Pay integration on Pocket for ou=
+r Vesopa Go app (com.vesopa.go).</p>
+<h3 style=3D"margin:18px 0 6px;font-size:16px">1. Please enable it</h3>
+<p>Could you please enable Android Tap to Pay for Vesopa Software Ltd, so tha=
+t we can start testing?</p>
+<h3 style=3D"margin:18px 0 6px;font-size:16px">2. Which device do we test on?=
+</h3>
+<p>Do we need to use a Dojo Pocket for the Android Tap to Pay tests, or can w=
+e use any Android phone with NFC? If it has to be a Dojo device, could you le=
+t us know how we can get one for testing?</p>
+<h3 style=3D"margin:18px 0 6px;font-size:16px">3. Guidelines</h3>
+<p>Please could you send us the guidelines for this integration, including:</=
+p>
+<ul>
+<li>the current SDK and documentation (we have started from tech.dojo.pos:tap=
+-to-pay-on-pocket:1.0.0);</li>
+<li>how to test on sandbox, and how a device is activated for it;</li>
+<li>the certification or accreditation steps before going live; and</li>
+<li>anything you need from us to enable it for a venue.</li>
+</ul>
+<p>Thanks very much,</p>
+<p><b>Vesopa Developer</b><br>Vesopa Software Ltd<br>
+<a href=3D"mailto:muzahid@vesopa.com">muzahid@vesopa.com</a> | <a href=3D"htt=
+ps://vesopasoftware.com">vesopasoftware.com</a></p>
+</div>
+
+--===============7174847919964497934==--
