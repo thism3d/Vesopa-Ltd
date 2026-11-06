@@ -1,0 +1,157 @@
+/* go.vesopa.com, the 2026-11 polish: calm and premium, on the brand's dark and
+   lime (and, with body.theme-mix, the brand's cream #F2EFE6 for two sections).
+   Loaded after style.css; everything here is motion and finish, nothing the
+   page needs to read. Reduced motion turns all of it off. */
+
+/* ---- a thin lime line at the top: how far down the page you are ---- */
+.progress { position: fixed; z-index: 40; left: 0; top: 0; height: 2px; width: 100%; transform-origin: 0 50%; transform: scaleX(0);
+  background: linear-gradient(90deg, #5e7a0e, var(--lime) 60%, var(--lime-hi)); pointer-events: none; }
+
+/* ---- header: tighter once you scroll, and the section you're in is marked ---- */
+header.top { transition: background .4s var(--ease), border-color .4s var(--ease); }
+header.top .wrap { transition: min-height .4s var(--ease); }
+.scrolled header.top { background: rgba(11, 13, 10, .86); }
+.scrolled header.top .wrap { min-height: 56px; }
+nav.links a { position: relative; padding: 4px 0; }
+nav.links a::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; border-radius: 1px; background: var(--lime);
+  transform: scaleX(0); transition: transform .45s var(--ease); }
+nav.links a:hover::after, nav.links a.active::after { transform: scaleX(1); }
+nav.links a.active { color: var(--text); }
+
+/* ---- the top: a slow lime glow, the headline rising line by line ---- */
+.hero .aura { position: absolute; inset: -20% -10% 0 -10%; z-index: 1; pointer-events: none; mix-blend-mode: screen; opacity: .55;
+  background: radial-gradient(38% 46% at 22% 42%, rgba(165,199,21,.20), transparent 70%),
+              radial-gradient(30% 40% at 78% 30%, rgba(212,236,74,.10), transparent 70%);
+  animation: aura 18s ease-in-out infinite alternate; }
+@keyframes aura { to { transform: translate3d(3%, -2%, 0) scale(1.06); } }
+.eyebrow.pill { padding: 7px 14px 7px 12px; border-radius: 999px; border: 1px solid rgba(165,199,21,.30); background: rgba(165,199,21,.07); }
+.hero h1 .ln { display: block; overflow: hidden; padding-bottom: .06em; margin-bottom: -.06em; }
+.hero h1 .ln > * { display: inline-block; transform: translateY(105%); transition: transform 1.1s var(--ease); }
+.ready .hero h1 .ln > * { transform: none; }
+.ready .hero h1 .ln:nth-child(2) > * { transition-delay: .12s; }
+.hero-copy .lead, .hero-copy .stores, .hero-copy .fine, .hero-copy .devices-row { opacity: 0; transform: translateY(14px);
+  transition: opacity .9s var(--ease) .35s, transform .9s var(--ease) .35s; }
+.ready .hero-copy .lead, .ready .hero-copy .stores, .ready .hero-copy .fine, .ready .hero-copy .devices-row { opacity: 1; transform: none; }
+.ready .hero-copy .stores { transition-delay: .48s; }
+.ready .hero-copy .devices-row { transition-delay: .58s; }
+.ready .hero-copy .fine { transition-delay: .66s; }
+.hero .reveal { opacity: 1 !important; transform: none !important; }
+.hero-copy { will-change: transform, opacity; }
+.devices-row { display: flex; gap: 18px; flex-wrap: wrap; margin: 22px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 14px; }
+.devices-row li { display: inline-flex; align-items: center; gap: 8px; }
+.devices-row svg { width: 18px; height: 18px; stroke: var(--lime); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.store { box-shadow: 0 0 0 1px rgba(255,255,255,.08); }
+
+/* ---- headings: they sharpen in rather than slide ---- */
+.js .section-head.reveal, .js .split .reveal { filter: blur(8px); transition: opacity 1.1s var(--ease), transform 1.1s var(--ease), filter 1.1s var(--ease); }
+.js .section-head.reveal.in, .js .split .reveal.in { filter: none; }
+
+/* ---- a soft line between sections ---- */
+.watch::before, .features::before, .pay::before, .network::before, .get::before { content: ""; position: absolute; top: 0; left: 50%;
+  width: min(720px, 80%); height: 1px; transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, rgba(165,199,21,.35), transparent); }
+
+/* ---- features as smart cards: a bento of tiles, a light that follows you ---- */
+.bento { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
+.tile { --mx: 50%; --my: 0%; position: relative; isolation: isolate; overflow: hidden; grid-column: span 2; min-height: 230px; padding: 28px;
+  border-radius: 22px; background: linear-gradient(160deg, var(--raised), var(--card)); border: 1px solid var(--line);
+  transition: transform .6s var(--ease), border-color .4s var(--ease), box-shadow .6s var(--ease); }
+.tile.wide { grid-column: span 4; }
+.tile.full { grid-column: span 6; min-height: 0; display: grid; grid-template-columns: 1fr 1.2fr; gap: 30px; align-items: center; }
+.tile::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; transition: opacity .5s var(--ease);
+  background: radial-gradient(420px circle at var(--mx) var(--my), rgba(165,199,21,.13), transparent 60%); }
+.tile:hover::before, .tile.lit::before { opacity: 1; }
+.tile:hover { transform: translateY(-4px); border-color: rgba(165,199,21,.38); box-shadow: 0 30px 70px rgba(0,0,0,.35); }
+.tile .ic { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; color: var(--lime);
+  background: rgba(165,199,21,.10); border: 1px solid rgba(165,199,21,.22); }
+.tile .ic svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tile h3 { margin: 18px 0 6px; font-size: 20px; letter-spacing: -.01em; }
+.tile p { margin: 0; color: var(--muted); font-size: 15.5px; max-width: 460px; }
+.js .tile.reveal { transition: opacity 1s var(--ease), transform 1s var(--ease), border-color .4s var(--ease), box-shadow .6s var(--ease); }
+
+/* the small live pictures inside the big tiles */
+.mini { position: absolute; right: 26px; bottom: 26px; pointer-events: none; }
+.mini.keys { display: grid; grid-template-columns: repeat(5, 30px); gap: 7px; }
+.mini.keys i { height: 30px; border-radius: 7px; background: #262b21; transition: background .6s var(--ease), box-shadow .6s var(--ease); }
+.mini.keys i.on { background: var(--lime); box-shadow: 0 0 18px rgba(165,199,21,.45); }
+.mini.floor { top: 30px; bottom: auto; display: grid; grid-template-columns: repeat(3, 16px); gap: 8px; }
+.mini.floor i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #3a4033; transition: background .6s var(--ease), border-color .6s var(--ease); }
+.mini.floor i.seated { background: rgba(165,199,21,.18); border-color: var(--lime); }
+.mini.floor i.paying { background: #f2efe6; border-color: #f2efe6; }
+.signal { position: relative; height: 70px; }
+.signal .wire { position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: repeating-linear-gradient(90deg, var(--lime) 0 10px, transparent 10px 18px);
+  animation: wire 1.2s linear infinite; opacity: .8; }
+.signal .wire.cut { background: repeating-linear-gradient(90deg, #4a5040 0 10px, transparent 10px 18px); animation: none; }
+@keyframes wire { to { background-position: 18px 0; } }
+.signal .dot { position: absolute; top: 50%; width: 14px; height: 14px; margin-top: -7px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 16px rgba(165,199,21,.6); }
+.signal .dot.a { left: 0; } .signal .dot.b { right: 0; }
+.signal .label { position: absolute; left: 50%; top: 0; transform: translateX(-50%); font-size: 12.5px; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--lime); transition: color .4s; }
+.signal.off .label { color: var(--muted); }
+.signal .q { position: absolute; left: 50%; bottom: -4px; transform: translateX(-50%); display: flex; gap: 5px; }
+.signal .q i { width: 10px; height: 10px; border-radius: 3px; background: var(--lime); opacity: 0; transform: scale(.4); transition: opacity .4s, transform .4s var(--ease); }
+.signal.off .q i { opacity: .9; transform: none; }
+
+/* ---- the scroll story: which step, and how far through ---- */
+.steps-phone .frame { transition: box-shadow .8s var(--ease); }
+.steps-phone .glow { position: absolute; z-index: -1; width: 420px; height: 420px; top: 18%; left: 50%; margin-left: -210px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(165,199,21,.22), transparent); filter: blur(10px); animation: breathe 6s ease-in-out infinite; }
+@keyframes breathe { 50% { transform: scale(1.08); opacity: .8; } }
+.steps-phone .count { font-size: 13px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.steps-phone .count b { color: var(--lime); }
+.steps-phone .frame img { transform: translateY(14px) scale(1.02); }
+.steps-phone .frame img.on { transform: none; }
+.dots { display: flex; gap: 10px; }
+.dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); transition: background .4s var(--ease), transform .4s var(--ease); }
+.dots i.on { background: var(--lime); transform: scale(1.35); }
+.steps-bar { display: none; }
+.step { position: relative; padding-left: 26px; }
+.step::before { content: ""; position: absolute; left: 0; top: 30px; bottom: 30px; width: 2px; border-radius: 1px; background: var(--line); }
+.step::after { content: ""; position: absolute; left: 0; top: 30px; width: 2px; height: 0; border-radius: 1px; background: var(--lime); transition: height .8s var(--ease); }
+.step.on::after { height: calc(100% - 60px); }
+
+/* ---- payments: each way a card you can feel ---- */
+.ways li { position: relative; padding-left: 64px; transition: border-color .4s var(--ease), transform .5s var(--ease), background .4s; }
+.ways li:hover { border-color: rgba(165,199,21,.4); transform: translateX(4px); }
+.ways li::before { counter-increment: way; content: "0" counter(way); position: absolute; left: 20px; top: 19px; font-weight: 900; font-size: 14px; color: var(--lime); letter-spacing: .06em; }
+.ways { counter-reset: way; }
+
+/* ---- the film frame: a quiet lime edge ---- */
+.film-frame { position: relative; }
+.film-frame::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: inset 0 0 0 1px rgba(165,199,21,.18); }
+
+/* ---- option B: two sections on the brand's cream, as sheets ---- */
+.theme-mix .features, .theme-mix .get { --text: #0b0e0a; --muted: #5a6050; --line: #e1dccd; --card: #ffffff; --raised: #fbfaf6;
+  background: #f2efe6; color: var(--text); margin: 0 12px; border-radius: 36px; }
+.theme-mix .features em, .theme-mix .get em, .theme-mix .features .eyebrow, .theme-mix .get .eyebrow { color: #5e7a0e; }
+.theme-mix .features::before, .theme-mix .get::before { display: none; }
+.theme-mix .features + .gallery { margin-top: 30px; }
+.theme-mix .tile { background: #fff; box-shadow: 0 1px 0 rgba(11,14,10,.04), 0 18px 40px rgba(11,14,10,.06); }
+.theme-mix .tile:hover { box-shadow: 0 30px 60px rgba(11,14,10,.12); border-color: rgba(94,122,14,.45); }
+.theme-mix .tile::before { background: radial-gradient(420px circle at var(--mx) var(--my), rgba(165,199,21,.16), transparent 60%); }
+.theme-mix .tile .ic { color: #5e7a0e; background: rgba(165,199,21,.16); border-color: rgba(94,122,14,.25); }
+.theme-mix .mini.keys i { background: #ebe7da; }
+.theme-mix .mini.floor i { border-color: #cfc9b8; }
+.theme-mix .mini.floor i.paying { background: #0b0e0a; border-color: #0b0e0a; }
+.theme-mix .signal .label { color: #5e7a0e; }
+.theme-mix .qr { background: #fff; }
+.theme-mix .qr:hover { border-color: #5e7a0e; }
+.theme-mix .steps li { color: var(--muted); }
+.theme-mix .steps a { color: #5e7a0e; }
+
+@media (max-width: 900px) {
+  .bento { grid-template-columns: 1fr; }
+  .tile, .tile.wide, .tile.full { grid-column: auto; }
+  .tile.full { grid-template-columns: 1fr; }
+  .mini { position: static; margin-top: 22px; }
+  .tile { min-height: 0; }
+  .steps-phone .glow { width: 220px; height: 220px; margin-left: -110px; }
+  .steps-phone .count { display: none; }
+  .theme-mix .features, .theme-mix .get { margin: 0 8px; border-radius: 26px; }
+  .devices-row { gap: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero h1 .ln > *, .hero-copy .lead, .hero-copy .stores, .hero-copy .fine, .hero-copy .devices-row { transform: none !important; opacity: 1 !important; }
+  .js .section-head.reveal, .js .split .reveal { filter: none; }
+  .progress { display: none; }
+}
