@@ -1,8 +1,9 @@
 /* go.vesopa.com sound (2026-11-06), like vesopasoftware.com's: nothing plays
-   until the Sound button is pressed (browsers would block it anyway). Then a
-   calm bed (an E major chord of soft detuned tones through a low-pass filter)
-   that opens up as you scroll down the page, and the app's own small sounds:
-   a soft tap as each step of the sale comes up, a chime on the last one.
+   until asked for (browsers would block it anyway). The owner wanted it
+   soothing and quiet, so: pure sine tones only, in a warm slow chord that
+   drifts every quarter of a minute, a few soft bell notes far apart in a long
+   reverb, and a very faint wash like distant waves. The app's own sounds are
+   a soft wooden tap on each step of the sale and a gentle chime on the last.
    All made here with Web Audio; no files to load. */
 (function () {
   'use strict';
@@ -11,51 +12,104 @@
   if (!btn) return;
   if (!AC) { btn.hidden = true; return; }
 
-  var ctx = null, master = null, bedGain = null, filter = null, fx = null, on = false;
+  var ctx = null, master = null, filter = null, fx = null, room = null, on = false;
+  var LEVEL = 0.85;     // the whole mix: quiet by design
+  var voices = [], bells = null, drift = null;
+
+  function hz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+  // A long soft room: two seconds of decaying noise, darkened as it fades.
+  function reverb(seconds) {
+    var n = Math.floor(ctx.sampleRate * seconds), buf = ctx.createBuffer(2, n, ctx.sampleRate);
+    for (var c = 0; c < 2; c++) {
+      var d = buf.getChannelData(c), last = 0;
+      for (var i = 0; i < n; i++) {
+        var k = i / n;
+        last += (Math.random() * 2 - 1 - last) * (0.5 - k * 0.42);
+        d[i] = last * Math.pow(1 - k, 2.4);
+      }
+    }
+    var v = ctx.createConvolver();
+    v.buffer = buf;
+    return v;
+  }
+
+  // Four warm chords in E, each tone gliding slowly to the next.
+  var CHORDS = [[52, 59, 64, 68, 71], [49, 56, 61, 64, 68], [45, 57, 61, 64, 69], [47, 54, 59, 63, 66]];
 
   function build() {
     ctx = new AC();
     master = ctx.createGain();
     master.gain.value = 0;
     master.connect(ctx.destination);
-    // A little room: a short feedback delay, quiet.
-    var delay = ctx.createDelay(1), fb = ctx.createGain(), wet = ctx.createGain();
-    delay.delayTime.value = 0.32; fb.gain.value = 0.28; wet.gain.value = 0.22;
-    delay.connect(fb); fb.connect(delay); delay.connect(wet); wet.connect(master);
+    room = reverb(3.2);
+    var wet = ctx.createGain();
+    wet.gain.value = 0.7;
+    room.connect(wet); wet.connect(master);
 
     filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass'; filter.frequency.value = 1400; filter.Q.value = 0.6;
-    bedGain = ctx.createGain(); bedGain.gain.value = 0.32;
-    filter.connect(bedGain); bedGain.connect(master); bedGain.connect(delay);
-    // E3 B3 E4 G#4 B4: high enough for a phone's speaker (they play little
-    // under 200 Hz); two oscillators each, a few cents apart, so it breathes.
-    [52, 59, 64, 68, 71].forEach(function (m, i) {
-      var f = 440 * Math.pow(2, (m - 69) / 12);
-      [-4, 4].forEach(function (cents) {
+    filter.type = 'lowpass'; filter.frequency.value = 900; filter.Q.value = 0.2;
+    var bed = ctx.createGain();
+    bed.gain.value = 0.15;
+    filter.connect(bed); bed.connect(master); bed.connect(room);
+    CHORDS[0].forEach(function (m, i) {
+      [-3, 3].forEach(function (cents) {
         var o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = i < 2 ? 'sine' : 'triangle';
-        o.frequency.value = f; o.detune.value = cents;
-        g.gain.value = i < 2 ? 0.14 : 0.09;
+        o.type = 'sine';
+        o.frequency.value = hz(m); o.detune.value = cents;
+        g.gain.value = 0.1;
+        // each voice breathes at its own slow rate
         var lfo = ctx.createOscillator(), depth = ctx.createGain();
-        lfo.frequency.value = 0.05 + i * 0.017; depth.gain.value = g.gain.value * 0.5;
+        lfo.frequency.value = 0.04 + i * 0.013; depth.gain.value = 0.05;
         lfo.connect(depth); depth.connect(g.gain); lfo.start();
         o.connect(g); g.connect(filter); o.start();
+        voices.push({ o: o, i: i });
       });
     });
-    fx = ctx.createGain(); fx.gain.value = 1.0;
-    fx.connect(master); fx.connect(delay);
+
+    // Distant waves: soft noise, low-passed, rising and falling very slowly.
+    var n = ctx.sampleRate * 4, buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0), last = 0;
+    for (var i = 0; i < n; i++) { last += (Math.random() * 2 - 1 - last) * 0.02; d[i] = last * 3; }
+    var src = ctx.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    var low = ctx.createBiquadFilter(), wave = ctx.createGain(), swell = ctx.createOscillator(), amount = ctx.createGain();
+    low.type = 'lowpass'; low.frequency.value = 520;
+    wave.gain.value = 0.035;
+    swell.frequency.value = 0.09; amount.gain.value = 0.028;
+    swell.connect(amount); amount.connect(wave.gain); swell.start();
+    src.connect(low); low.connect(wave); wave.connect(master); src.start();
+
+    fx = ctx.createGain();
+    fx.gain.value = 1;
+    fx.connect(master); fx.connect(room);
   }
 
-  function tone(freq, at, dur, vol, type) {
+  // A soft note: never a click, it swells in and rings away.
+  function tone(freq, at, dur, vol, attack) {
     var o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = type || 'sine'; o.frequency.value = freq;
-    g.gain.setValueAtTime(0, at);
-    g.gain.linearRampToValueAtTime(vol, at + 0.006);
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(vol, at + (attack || 0.02));
     g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
     o.connect(g); g.connect(fx); o.start(at); o.stop(at + dur + 0.05);
   }
-  function tap() { var t = ctx.currentTime; tone(1760, t, 0.09, 0.22); tone(880, t, 0.12, 0.14, 'triangle'); }
-  function chime() { var t = ctx.currentTime; tone(1318.5, t, 1.3, 0.24); tone(1975.5, t + 0.11, 1.5, 0.2); tone(659.3, t, 1.6, 0.12, 'triangle'); }
+  function tap() { var t = ctx.currentTime; tone(523.25, t, 0.32, 0.05, 0.012); tone(784, t, 0.24, 0.018, 0.012); }
+  function chime() { var t = ctx.currentTime; tone(659.25, t, 3.2, 0.06, 0.03); tone(987.77, t + 0.22, 3.2, 0.05, 0.03); tone(1318.5, t + 0.44, 3.4, 0.035, 0.03); }
+
+  // While sound is on: the chord moves on every 20 seconds, and now and then
+  // one soft bell from the scale sounds, far away.
+  function startDrift() {
+    var c = 0, SCALE = [76, 80, 83, 85, 88];
+    if (!drift) drift = setInterval(function () {
+      c = (c + 1) % CHORDS.length;
+      voices.forEach(function (v) { v.o.frequency.setTargetAtTime(hz(CHORDS[c][v.i]), ctx.currentTime, 3.5); });
+    }, 20000);
+    (function ring() {
+      if (!on) { bells = null; return; }
+      tone(hz(SCALE[Math.floor(Math.random() * SCALE.length)]), ctx.currentTime, 4.5, 0.03, 0.05);
+      bells = setTimeout(ring, 6000 + Math.random() * 6000);
+    })();
+  }
 
   // iPhone: with the silent switch on, Safari mutes Web Audio unless the page
   // is also playing media. A looping, silent <audio> (and, on newer Safari,
@@ -83,20 +137,21 @@
     var t = ctx.currentTime;
     master.gain.cancelScheduledValues(t);
     master.gain.setValueAtTime(master.gain.value, t);
-    master.gain.linearRampToValueAtTime(on ? 1.0 : 0, t + (on ? 1.2 : 0.5));
+    master.gain.linearRampToValueAtTime(on ? LEVEL : 0, t + (on ? 3 : 0.8));
     btn.setAttribute('aria-pressed', String(on));
     btn.classList.toggle('on', on);
     btn.querySelector('span').textContent = on ? 'Sound on' : 'Sound';
-    if (on) { brighten(); tap(); }
+    if (on) { brighten(); if (!bells) startDrift(); }
+    else if (bells) { clearTimeout(bells); bells = null; }
   }
   btn.addEventListener('click', function () { set(!on); });
 
-  // The bed opens up as you go down the page.
+  // The bed opens a little as you go down the page; only a little.
   function brighten() {
     if (!ctx) return;
     var max = document.documentElement.scrollHeight - window.innerHeight;
     var k = max > 0 ? Math.min(1, window.scrollY / max) : 0;
-    filter.frequency.setTargetAtTime(1400 + k * 2600, ctx.currentTime, 0.4);
+    filter.frequency.setTargetAtTime(900 + k * 500, ctx.currentTime, 1.2);
   }
   window.addEventListener('scroll', function () { if (on) brighten(); }, { passive: true });
 
@@ -134,7 +189,7 @@
     + '<img src="/img/go-mark.png" alt="" width="84" height="84">'
     + '<p class="welcome-name">Vesopa <b>Go</b></p>'
     + '<p class="welcome-t">Best with sound.</p>'
-    + '<p class="welcome-s">A calm tone plays under this page, with the app\'s own taps as you scroll. Turn it off any time.</p>'
+    + '<p class="welcome-s">Soft, calm music plays quietly under this page. Turn it off any time.</p>'
     + '<div class="welcome-go"><button type="button" class="btn primary" data-sound="1">Enter with sound</button>'
     + '<button type="button" class="btn ghost" data-sound="0">Enter quietly</button></div></div>';
   document.body.appendChild(w);
