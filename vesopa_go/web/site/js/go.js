@@ -243,18 +243,40 @@
     var visible = true;
     if (io) new IntersectionObserver(function (es) { visible = es[0].isIntersecting; }).observe(canvas);
 
+    // Zoom mode (a page with html.zoom-hero, wide screens): the hero is a tall
+    // scroll scene; the iPad drifts back and the iPhone comes to the middle,
+    // grows and turns to face you (go.vesopa.com polish, 2026-11-06).
+    var hero = document.getElementById('hero');
+    var zoomCap = document.querySelector('.zoom-caption');
+    card.material.transparent = true;
+    function smooth(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
+    function lerp(a, b, k) { return a + (b - a) * k; }
+
     var clock = new THREE.Clock();
     function frame() {
       var t = clock.getElapsedTime();
       var scroll = Math.min(1, window.scrollY / Math.max(1, canvas.clientHeight));
+      var zoom = root.classList.contains('zoom-hero') && !narrow;
+      var z = 0;
+      if (zoom) {
+        z = smooth(window.scrollY / Math.max(1, hero.offsetHeight - window.innerHeight));
+        scroll = 0;
+        if (zoomCap) { var past = window.scrollY - (hero.offsetHeight - window.innerHeight); var kc = smooth((z - .62) / .25) * (1 - smooth(past / (window.innerHeight * .35))); zoomCap.style.opacity = kc.toFixed(3); zoomCap.style.transform = 'translate3d(-50%,' + ((1 - kc) * 24).toFixed(1) + 'px,0)'; }
+      }
       eased.x += (pointer.x - eased.x) * 0.06;
       eased.y += (pointer.y - eased.y) * 0.06;
 
       var base = rig.userData.base;
-      rig.position.set(base.x, base.y + Math.sin(t * 0.8) * 0.06 + scroll * 1.6, base.z - scroll * 2.5);
-      rig.rotation.set(eased.y * 0.25 + scroll * 0.5, eased.x * 0.45 + Math.sin(t * 0.3) * 0.05, 0);
-      ipad.position.y = 0.15 + Math.sin(t * 0.9 + 1) * 0.05;
-      phone.position.y = -0.35 + Math.sin(t * 1.1) * 0.07;
+      var calm = 1 - z * .8; // the pointer moves it less once it faces you
+      rig.position.set(lerp(base.x, 0, z), base.y + Math.sin(t * 0.8) * 0.06 + scroll * 1.6, base.z - scroll * 2.5);
+      rig.rotation.set((eased.y * 0.25) * calm + scroll * 0.5, (eased.x * 0.45 + Math.sin(t * 0.3) * 0.05) * calm, 0);
+      ipad.position.set(0.55 + z * 2.4, 0.15 + Math.sin(t * 0.9 + 1) * 0.05 - z * 0.3, -0.6 - z * 3.2);
+      ipad.rotation.set(-0.12 - z * 0.1, -0.42 - z * 0.25, 0.04);
+      phone.position.set(lerp(-1.05, 0, z), lerp(-0.35, 0.05, z) + Math.sin(t * 1.1) * 0.07 * (1 - z * .6), lerp(0.8, 1.9, z));
+      phone.rotation.set(lerp(0.05, 0, z), lerp(0.32, 0, z), lerp(-0.05, 0, z));
+      phone.scale.setScalar(1 + z * 0.55);
+      card.material.opacity = 1 - smooth(z / .25);
+      card.visible = card.material.opacity > 0.01;
 
       // The card's loop, 3.2 s: in from above, held at the reader, away.
       var c = (t % 3.2) / 3.2;
@@ -270,7 +292,7 @@
         var p = (t * 0.7 + i / 3) % 1;
         r.scale.setScalar(0.6 + p * 1.6);
         r.position.y = 0.95 + p * 0.25;
-        r.material.opacity = Math.sin(p * Math.PI) * (0.35 + 0.65 * near);
+        r.material.opacity = Math.sin(p * Math.PI) * (0.35 + 0.65 * near) * (1 - smooth(z / .25));
       });
       rim.intensity = 1.6 + near * 1.6;
 
