@@ -4,7 +4,7 @@
 <section class="head card">
   <div>
     <h2><%= v.name %></h2>
-    <p class="muted"><%= v.email %> · venue <%= v.id %><%= v.plan ? ' · ' + v.plan : '' %> · <a href="/venues/<%= v.id %>/terminals">Terminals</a> · <a href="/venues/<%= v.id %>/cards">Card payments</a> · <a href="/venues/<%= v.id %>/print-drives">Printer drives</a></p>
+    <p class="muted"><%= v.email %> · venue <%= v.id %><%= v.plan ? ' · ' + v.plan : '' %> · <a href="/venues/<%= v.id %>/terminals">Terminals</a> · <a href="/venues/<%= v.id %>/cards">Card payments</a> · <a href="/venues/<%= v.id %>/print-drives">Virtual printers</a></p>
   </div>
   <div class="facts">
     <div><span>Status</span><b class="<%= v.status === 'active' ? 'ok' : 'bad' %>"><%= v.status %></b></div>

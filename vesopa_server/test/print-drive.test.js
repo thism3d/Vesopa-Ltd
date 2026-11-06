@@ -33,6 +33,10 @@ assert.ok(!mayMove('printed', 'failed'), 'a late answer cannot undo a result');
 assert.ok(mayMove('failed', 'waiting'));
 assert.ok(mayMove('printed', 'waiting'));
 
+// A saved document can go to paper once a printer is attached.
+assert.ok(mayMove('saved', 'waiting'));
+assert.ok(!mayMove('saved', 'printed'));
+
 // The printers a till reported.
 assert.deepStrictEqual(printersOf('[{"id":"a","name":"Bar"},{"id":"b"},{"name":"no id"}]'), [
   { id: 'a', name: 'Bar' },

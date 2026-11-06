@@ -4,7 +4,9 @@
  * should go to the live drive of that specific printer").
  *
  * A venue can have any number. An ONLINE-ONLY drive has no paper printer: what
- * goes in is saved there to read or download, until a printer is attached.
+ * goes in is saved there to read or download, until a printer is attached. A
+ * manager can attach one later, or take it away, and what is waiting follows.
+ * The back office calls these Virtual Printers (public/print_drive.js).
  *
  * A DRIVE is one printer on one terminal. Documents go in from the back office,
  * or from anybody holding the drive's private link, on any phone or computer.
@@ -25,6 +27,7 @@
  *
  * PDF, PNG and JPEG only, decided by the file's own bytes and not its name.
  * Files are kept out of the public folder, and go a week after they finish.
+ * Saved documents stay until somebody deletes them or removes their printer.
  */
 'use strict';
 
@@ -72,7 +75,7 @@ function safeName(name) {
 }
 
 /** Where a job may go next. Anything else is refused, so a late answer cannot undo a result. */
-const NEXT = { saved: ['cancelled'], waiting: ['printing', 'cancelled'], printing: ['printed', 'failed'], failed: ['waiting'], cancelled: ['waiting'], printed: ['waiting'] };
+const NEXT = { saved: ['waiting', 'cancelled'], waiting: ['printing', 'cancelled'], printing: ['printed', 'failed'], failed: ['waiting'], cancelled: ['waiting'], printed: ['waiting'] };
 const mayMove = (from, to) => (NEXT[from] || []).includes(to);
 
 /** The printers a terminal last reported, from its settings (terminal_sync.dart). */
@@ -173,10 +176,24 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
     await ensure();
     const [rows] = await pool.query(
       `SELECT d.*, t.name AS terminal_name, t.terminal_no, t.last_ping_at,
-              (SELECT COUNT(*) FROM bo_print_jobs j WHERE j.drive_id = d.id AND j.status = 'waiting') AS waiting
-         FROM bo_print_drives d LEFT JOIN bo_terminals t ON t.id = d.terminal_id
+              COALESCE(j.waiting, 0) AS waiting, COALESCE(j.saved, 0) AS saved, COALESCE(j.failed, 0) AS failed,
+              COALESCE(j.today, 0) AS today, COALESCE(j.total, 0) AS total, COALESCE(j.bytes, 0) AS bytes,
+              j.last_job_at
+         FROM bo_print_drives d
+         LEFT JOIN bo_terminals t ON t.id = d.terminal_id
+         LEFT JOIN (
+           SELECT drive_id,
+                  SUM(status = 'waiting') AS waiting,
+                  SUM(status = 'saved') AS saved,
+                  SUM(status = 'failed' AND finished_at >= NOW() - INTERVAL ${KEEP_DAYS} DAY) AS failed,
+                  SUM(created_at >= CURDATE()) AS today,
+                  COUNT(*) AS total,
+                  SUM(IF(status IN ('saved', 'waiting', 'printing') OR finished_at >= NOW() - INTERVAL ${KEEP_DAYS} DAY, size, 0)) AS bytes,
+                  MAX(created_at) AS last_job_at
+             FROM bo_print_jobs WHERE office = ? GROUP BY drive_id
+         ) j ON j.drive_id = d.id
         WHERE d.office = ? AND d.deleted_at IS NULL ORDER BY d.name`,
-      [office]
+      [office, office]
     );
     return rows.map((d) => ({
       id: d.id,
@@ -190,6 +207,13 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
       enabled: Boolean(Number(d.enabled)),
       phones: Boolean(Number(d.phones)),
       waiting: Number(d.waiting),
+      saved: Number(d.saved),
+      failed: Number(d.failed),
+      today: Number(d.today),
+      total: Number(d.total),
+      bytes: Number(d.bytes),
+      last_job_at: d.last_job_at,
+      created_at: d.created_at,
       link: `/print/${d.code}`,
     }));
   }
@@ -250,6 +274,39 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
     );
   }
 
+  /** What a change to a printer comes to, or why it cannot be made. Only what was sent changes. */
+  async function changesFor(office, drive, b) {
+    const set = {};
+    if ('name' in b) {
+      set.name = clamp(b.name, 80);
+      if (!set.name) return { error: 'Give the printer a name.' };
+    }
+    if ('enabled' in b) set.enabled = b.enabled ? 1 : 0;
+    if ('phones' in b) set.phones = b.phones ? 1 : 0;
+    if ('terminal_id' in b) {
+      const id = asInt(b.terminal_id);
+      if (id) {
+        const connector = (await connectorsOf(office)).find((c) => c.id === id);
+        const printer = connector && connector.printers.find((p) => p.id === clamp(b.printer_id, 64));
+        if (!printer) return { error: 'Choose a till and one of its printers.' };
+        Object.assign(set, { terminal_id: connector.id, printer_id: printer.id, printer_name: printer.name });
+      } else {
+        Object.assign(set, { terminal_id: 0, printer_id: '', printer_name: null });
+      }
+    }
+    // Phones find a printer through its till, so with no till there is nothing to find.
+    if (!Number('terminal_id' in set ? set.terminal_id : drive.terminal_id)) {
+      if ('phones' in set || Number(drive.phones)) set.phones = 0;
+    }
+    return { set };
+  }
+
+  /** Good for ten minutes, because a browser has to fetch the profile, not the app. */
+  function profileLink(office) {
+    const token = jwt.sign({ scope: 'print-profile', office }, secret, { expiresIn: '10m' });
+    return `https://${PRINT_HOST}/print-profile/${token}`;
+  }
+
   function pages(sub, officeOf, guard, { uploads }) {
     const office = async (req, res) => {
       const o = await officeOf(req);
@@ -294,7 +351,20 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
         if (!o) return;
         const d = await driveOf(o, asInt(req.params.id));
         if (!d) return res.status(404).json({ error: 'No such drive' });
-        await pool.execute('UPDATE bo_print_drives SET phones = ? WHERE id = ?', [(req.body || {}).phones ? 1 : 0, d.id]);
+        const change = await changesFor(o, d, req.body || {});
+        if (change.error) return res.status(400).json({ error: change.error });
+        const fields = Object.keys(change.set);
+        if (fields.length) {
+          await pool.execute(
+            `UPDATE bo_print_drives SET ${fields.map((f) => `${f} = ?`).join(', ')} WHERE id = ?`,
+            [...Object.values(change.set), d.id]
+          );
+        }
+        // With no paper printer any more, what was waiting for one is kept instead.
+        if (change.set.terminal_id === 0) {
+          await pool.execute("UPDATE bo_print_jobs SET status = 'saved' WHERE drive_id = ? AND status = 'waiting'", [d.id]);
+        }
+        say(o);
         res.json({ ok: true });
       } catch (e) { next(e); }
     });
@@ -307,6 +377,11 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
         if (!d) return res.status(404).json({ error: 'No such drive' });
         // The link stops at once; what was already printed stays in the history.
         await pool.execute('UPDATE bo_print_drives SET deleted_at = NOW(), enabled = 0 WHERE id = ?', [d.id]);
+        // Nothing is left that could reach these, so they go with the week's sweep.
+        await pool.execute(
+          `UPDATE bo_print_jobs SET status = 'cancelled', finished_at = NOW()
+            WHERE drive_id = ? AND status IN ('saved', 'waiting')`, [d.id]);
+        say(o);
         res.json({ ok: true });
       } catch (e) { next(e); }
     });
@@ -320,6 +395,30 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
         const code = crypto.randomBytes(16).toString('hex');
         await pool.execute('UPDATE bo_print_drives SET code = ? WHERE id = ?', [code, d.id]);
         res.json({ link: `/print/${code}` });
+      } catch (e) { next(e); }
+    });
+
+    // Every printer's documents together, newest first, for the page's list.
+    sub.get('/activity', guard, async (req, res, next) => {
+      try {
+        const o = await office(req, res);
+        if (!o) return;
+        await ensure();
+        const [jobs] = await pool.query(
+          `SELECT j.id, j.drive_id, d.name AS drive_name, d.terminal_id, j.filename, j.mime, j.size, j.status,
+                  j.error, j.sent_by, j.created_at, j.finished_at
+             FROM bo_print_jobs j JOIN bo_print_drives d ON d.id = j.drive_id
+            WHERE j.office = ? AND d.deleted_at IS NULL ORDER BY j.created_at DESC LIMIT 300`, [o]);
+        res.json({ jobs: jobs.map((j) => ({ ...j, online_only: !Number(j.terminal_id) })) });
+      } catch (e) { next(e); }
+    });
+
+    // A browser link to every printer at once, the same one Vesopa Go opens.
+    sub.post('/profile-link', guard, async (req, res, next) => {
+      try {
+        const o = await office(req, res);
+        if (!o) return;
+        res.json({ url: profileLink(o) });
       } catch (e) { next(e); }
     });
 
@@ -388,7 +487,26 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
         if (!job) return res.status(404).json({ error: 'No such job' });
         const to = { cancel: 'cancelled', again: 'waiting' }[req.params.action];
         if (job.mime === 'local') return res.status(409).json({ error: 'That was printed from a phone, so there is no copy here.' });
+        if (to === 'waiting') {
+          const d = await driveOf(o, job.drive_id);
+          if (!d || !Number(d.terminal_id)) return res.status(409).json({ error: 'This printer has no paper printer attached.' });
+        }
         if (!to || !(await move(job, to))) return res.status(409).json({ error: 'That job cannot do that now.' });
+        res.json({ ok: true });
+      } catch (e) { next(e); }
+    });
+
+    // Gone for good, file and all. Not while a till is part way through it.
+    sub.delete('/jobs/:job', guard, async (req, res, next) => {
+      try {
+        const o = await office(req, res);
+        if (!o) return;
+        const job = await jobOf(o, clamp(req.params.job, 32));
+        if (!job) return res.status(404).json({ error: 'No such document' });
+        if (job.status === 'printing') return res.status(409).json({ error: 'That is printing now.' });
+        await fs.promises.rm(fileOf(job), { force: true });
+        await pool.execute('DELETE FROM bo_print_jobs WHERE id = ?', [job.id]);
+        say(o);
         res.json({ ok: true });
       } catch (e) { next(e); }
     });
@@ -525,7 +643,12 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
     try {
       res.set('Cache-Control', 'no-store');
       const d = await driveByCode(String(req.params.code));
-      if (!d) return res.status(404).type('html').send(page('Not found', '<h1>This printer link is not known</h1><p>Ask the venue for a new one.</p>'));
+      if (!d) {
+        const [[paused]] = /^[0-9a-f]{32}$/.test(String(req.params.code)) ? await pool.query(
+          'SELECT 1 AS yes FROM bo_print_drives WHERE code = ? AND enabled = 0 AND deleted_at IS NULL', [String(req.params.code)]) : [[]];
+        if (paused) return res.status(404).type('html').send(page('Paused', '<h1>This printer is paused</h1><p>The venue has switched it off for now.</p>'));
+        return res.status(404).type('html').send(page('Not found', '<h1>This printer link is not known</h1><p>Ask the venue for a new one.</p>'));
+      }
       res.type('html').send(page(`Print to ${d.name}`, `<h1>Print to ${esc(d.name)}</h1>
 <p>Choose a PDF or a picture and it prints there.</p>
 <link rel="manifest" href="/print/${esc(d.code)}/manifest.webmanifest">
@@ -568,15 +691,13 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
   });
 
   /**
-   * Every printer of a venue at once, for Vesopa Go's one button. A link good for
-   * ten minutes, because a browser has to fetch the profile, not the app.
+   * Every printer of a venue at once, for Vesopa Go's one button.
    */
   router.get('/api/device/print-profile-link', device, async (req, res, next) => {
     try {
-      const drives = await drivesOf(req.office);
-      const token = jwt.sign({ scope: 'print-profile', office: req.office }, secret, { expiresIn: '10m' });
+      const drives = (await drivesOf(req.office)).filter((d) => d.enabled);
       res.json({
-        url: `https://${PRINT_HOST}/print-profile/${token}`,
+        url: profileLink(req.office),
         drives: drives.map((d) => ({ name: d.name, url: `https://${PRINT_HOST}${d.link}` })),
       });
     } catch (e) { next(e); }
@@ -591,7 +712,7 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
         return res.status(404).type('text').send('This link has run out. Tap the button in Vesopa Go again.');
       }
       if (claims.scope !== 'print-profile') return res.status(404).end();
-      const drives = await drivesOf(claims.office);
+      const drives = (await drivesOf(claims.office)).filter((d) => d.enabled);
       const [[venue]] = await pool.query('SELECT name FROM offices WHERE contact_email = ?', [claims.office]);
       res.set('Cache-Control', 'no-store');
       res.set('Content-Disposition', 'attachment; filename="vesopa-printers.mobileconfig"');

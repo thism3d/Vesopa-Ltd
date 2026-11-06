@@ -356,6 +356,7 @@ const ROUTES = {
   wallet: '/wallet',
   loyalty_app: '/loyalty-app',
   devices: '/devices',
+  virtual_printers: '/virtual-printers',
   activity_log: '/activity-log',
   gym: '/gym',
   memberships: '/memberships',
@@ -1407,6 +1408,7 @@ const VIEW_LOADERS = {
     wallet: loadWallet,
     loyalty_app: loadLoyaltyApp,
     devices: loadDevices,
+    virtual_printers: loadVirtualPrinters,
     activity_log: loadActivity,
     tender: loadTender,
     rules: loadRules,
@@ -14021,10 +14023,6 @@ async function loadDevices() {
   if (typeof loadTerminals === 'function') {
     bindTerminals();
     loadTerminals().catch(() => {});
-  }
-  if (typeof loadPrintDrives === 'function') {
-    bindPrintDrives();
-    loadPrintDrives().catch(() => {});
   }
   let rows = [];
   try {

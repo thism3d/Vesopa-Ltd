@@ -1,32 +1,50 @@
 <%- include('_top') %>
 <% if (error) { %><div class="flash bad"><%= error %></div><% } %>
 <div class="bar">
-  <span class="muted"><a href="/venues/<%= venueId %>">Venue <%= venueId %></a> › Printer drives</span>
+  <span class="muted"><a href="/venues/<%= venueId %>">Venue <%= venueId %></a> › Virtual printers</span>
 </div>
 
 <% const usable = connectors.filter((c) => c.printers.length); %>
 <% if (can('licences.sell', 'epos')) { %>
 <form method="post" action="/venues/<%= venueId %>/print-drives" class="card batch">
   <input type="hidden" name="_csrf" value="<%= me.csrf %>">
-  <b>Add a drive</b>
-  <input name="name" maxlength="80" placeholder="Name, such as Office" aria-label="Drive name" required>
+  <b>New virtual printer</b>
+  <input name="name" maxlength="80" placeholder="Name, such as Office" aria-label="Printer name" required>
   <select name="printer" aria-label="Till and printer">
     <option value="0|">Online only, no paper</option>
     <% for (const c of usable) { for (const p of c.printers) { %>
       <option value="<%= c.id %>|<%= p.id %>"><%= c.name %>: <%= p.name %></option>
     <% } } %>
   </select>
-  <button class="btn primary">Add drive</button>
+  <button class="btn primary">Create printer</button>
 </form>
 <% } %>
 
+<% const total = (k) => drives.reduce((n, d) => n + (d[k] || 0), 0); %>
+<div class="bar">
+  <span class="pill"><%= drives.length %> printers</span>
+  <span class="pill"><%= total('today') %> today</span>
+  <span class="pill"><%= total('saved') %> saved</span>
+  <span class="pill"><%= total('waiting') %> waiting</span>
+  <span class="pill<%= total('failed') ? ' red' : '' %>"><%= total('failed') %> failed this week</span>
+</div>
+
 <div class="card table-wrap">
   <table>
-    <thead><tr><th>Drive</th><th>Till</th><th>Printer</th><th>Phones</th><th>Waiting</th><th></th></tr></thead>
+    <thead><tr><th>Printer</th><th>Till</th><th>Paper printer</th><th>Venue Wi-Fi</th><th>Waiting</th><th></th></tr></thead>
     <tbody>
     <% for (const d of drives) { %>
       <tr>
-        <td><b><%= d.name %></b></td>
+        <td>
+          <% if (can('licences.sell', 'epos')) { %>
+          <form method="post" action="/venues/<%= venueId %>/print-drives/<%= d.id %>/update" class="inline">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <input name="name" maxlength="80" value="<%= d.name %>" aria-label="Printer name" required>
+            <button class="btn">Rename</button>
+          </form>
+          <% } else { %><b><%= d.name %></b><% } %>
+          <% if (!d.enabled) { %><span class="pill">paused</span><% } %>
+        </td>
         <td><% if (d.online_only) { %><span class="muted">Online only</span><% } else { %><%= d.terminal || '—' %> <span class="pill<%= d.online ? ' green' : '' %>"><%= d.online ? 'on now' : 'off' %></span><% } %></td>
         <td class="muted"><%= d.printer_name || d.printer_id || '—' %></td>
         <td>
@@ -37,11 +55,25 @@
         </td>
         <td><%= d.waiting %></td>
         <td>
-          <a class="btn" href="https://backoffice.vesopaepos.com<%= d.link %>" target="_blank" rel="noopener">Send a file</a>
+          <a class="btn" href="https://backoffice.vesopaepos.com<%= d.link %>" target="_blank" rel="noopener">Open link</a>
           <form method="post" action="/venues/<%= venueId %>/print-drives/<%= d.id %>/test" class="inline">
             <input type="hidden" name="_csrf" value="<%= me.csrf %>">
             <button class="btn">Test page</button>
           </form>
+          <% if (can('licences.sell', 'epos')) { %>
+          <form method="post" action="/venues/<%= venueId %>/print-drives/<%= d.id %>/update" class="inline">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <button class="btn" name="enabled" value="<%= d.enabled ? '0' : '1' %>"><%= d.enabled ? 'Pause' : 'Resume' %></button>
+          </form>
+          <form method="post" action="/venues/<%= venueId %>/print-drives/<%= d.id %>/link" class="inline" onsubmit="return confirm('Change the link? Every phone with this printer has to add it again.')">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <button class="btn">New link</button>
+          </form>
+          <form method="post" action="/venues/<%= venueId %>/print-drives/<%= d.id %>/remove" class="inline" onsubmit="return confirm('Remove this printer? Its link stops working.')">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <button class="btn">Remove</button>
+          </form>
+          <% } %>
         </td>
       </tr>
       <% for (const j of (jobs[d.id] || []).slice(0, 10)) { %>
@@ -52,7 +84,7 @@
         </tr>
       <% } %>
     <% } %>
-    <% if (!drives.length) { %><tr><td colspan="6" class="muted">No printer drives yet.</td></tr><% } %>
+    <% if (!drives.length) { %><tr><td colspan="6" class="muted">No virtual printers yet.</td></tr><% } %>
     </tbody>
   </table>
 </div>

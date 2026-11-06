@@ -147,6 +147,36 @@ const check = (name, ok, extra) => {
     const wholeText = await whole.text();
     check('the profile holds every printer', whole.status === 200 && (wholeText.match(/ResourcePath/g) || []).length >= 2, whole.status);
     check('a made-up profile link is refused', (await fetch(`${base}/print-profile/nonsense`)).status === 404);
+
+    // The Virtual Printers page's operations.
+    const row = async (id) => (await call('GET', drives)).body.drives.find((d) => d.id === id);
+    const keep = (await row(extra));
+    check('the page gets its counts', keep.saved === 1 && keep.today === 1 && keep.total === 1 && keep.bytes > 0 && !!keep.last_job_at, keep);
+    const feed = await call('GET', `${drives}/activity`);
+    check('every printer\'s documents in one list', feed.status === 200 && feed.body.jobs.some((j) => j.drive_name === 'E2E online only' && j.online_only), feed.status);
+    check('a printer needs a name', (await call('PUT', `${drives}/${extra}`, { name: '  ' })).status === 400);
+    check('it can be renamed', (await call('PUT', `${drives}/${extra}`, { name: 'E2E renamed' })).status === 200 && (await row(extra)).name === 'E2E renamed');
+    check('renaming leaves everything else alone', (await row(extra)).online_only && (await row(extra)).enabled);
+    check('it can be paused', (await call('PUT', `${drives}/${extra}`, { enabled: false })).status === 200);
+    const pausedPage = await fetch(base + keep.link);
+    check('a paused printer says so', pausedPage.status === 404 && (await pausedPage.text()).includes('paused'));
+    check('a paused printer takes nothing', (await send(keep.link, 'x.pdf', 'application/pdf', Buffer.from('%PDF-1.4 x'))).status === 404);
+    const noPaused = (await call('GET', '/api/device/print-profile-link', undefined, token)).body.drives;
+    check('Go is not offered a paused printer', !noPaused.some((d) => d.name === 'E2E renamed'), noPaused);
+    check('and it resumes', (await call('PUT', `${drives}/${extra}`, { enabled: true })).status === 200 && (await fetch(base + keep.link)).status === 200);
+    check('a printer must be a real one', (await call('PUT', `${drives}/${extra}`, { terminal_id: terminal, printer_id: 'nope' })).status === 400);
+    const savedJob = (await call('GET', `${drives}/${extra}/jobs`)).body.jobs[0];
+    check('with no paper printer it cannot go to paper', (await call('POST', `${drives}/jobs/${savedJob.id}/again`)).status === 409);
+    check('a paper printer can be attached later', (await call('PUT', `${drives}/${extra}`, { terminal_id: terminal, printer_id: 'p1' })).status === 200 && !(await row(extra)).online_only);
+    check('a saved document can then go to paper', (await call('POST', `${drives}/jobs/${savedJob.id}/again`)).status === 200);
+    check('and the phones switch works there', (await call('PUT', `${drives}/${extra}`, { phones: true })).status === 200 && (await row(extra)).phones);
+    check('taking the paper printer away keeps what was waiting', (await call('PUT', `${drives}/${extra}`, { terminal_id: 0 })).status === 200);
+    const back = await row(extra);
+    check('it is saved again, with phones off', back.online_only && back.saved === 1 && back.waiting === 0 && !back.phones, back);
+    const web = await call('POST', `${drives}/profile-link`);
+    check('the page gets a link for every printer', web.status === 200 && (await (await fetch(`${base}${new URL(web.body.url).pathname}`)).text()).includes('com.apple.airprint'));
+    check('a document can be deleted', (await call('DELETE', `${drives}/jobs/${savedJob.id}`)).status === 200);
+    check('and is gone', (await call('GET', `${drives}/jobs/${savedJob.id}/file`)).status === 404 && (await row(extra)).total === 0);
     const swapped = await call('POST', `${drives}/${drive}/link`);
     check('a new link can be made', swapped.status === 200, swapped);
     check('the old link stops', (await fetch(base + link)).status === 404);

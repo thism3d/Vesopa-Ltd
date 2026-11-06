@@ -232,7 +232,7 @@ async function printDrivesPage(req, res, error = null) {
     data = await epos.printDrives(venueId, req.me.email);
     for (const d of data.drives) jobs[d.id] = (await epos.printDriveJobs(venueId, d.id, req.me.email)).jobs;
   } catch (e) { error = error || e.message; }
-  page(req, res, 'print_drives', { title: 'Printer drives', venueId, drives: data.drives, connectors: data.connectors, jobs, error });
+  page(req, res, 'print_drives', { title: 'Virtual printers', venueId, drives: data.drives, connectors: data.connectors, jobs, error });
 }
 
 router.get('/venues/:id/print-drives', signedIn, allow('licences.view', 'epos'), (req, res, next) => {
@@ -268,6 +268,43 @@ router.post('/venues/:id/print-drives/:drive/test', signedIn, csrf, allow('licen
   const venueId = Number(req.params.id);
   try {
     await epos.printDriveTest(venueId, req.params.drive, req.me.email);
+    res.redirect(303, `/venues/${venueId}/print-drives`);
+  } catch (e) {
+    printDrivesPage(req, res, e.message).catch(next);
+  }
+});
+
+router.post('/venues/:id/print-drives/:drive/update', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res, next) => {
+  const venueId = Number(req.params.id);
+  const b = req.body || {};
+  const body = {};
+  if ('name' in b) body.name = b.name;
+  if ('enabled' in b) body.enabled = String(b.enabled) === '1';
+  try {
+    await epos.updatePrintDrive(venueId, req.params.drive, body, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'print-drive.update', venueId, detail: `${Number(req.params.drive)} ${JSON.stringify(body).slice(0, 120)}` });
+    res.redirect(303, `/venues/${venueId}/print-drives`);
+  } catch (e) {
+    printDrivesPage(req, res, e.message).catch(next);
+  }
+});
+
+router.post('/venues/:id/print-drives/:drive/link', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res, next) => {
+  const venueId = Number(req.params.id);
+  try {
+    await epos.newPrintDriveLink(venueId, req.params.drive, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'print-drive.new-link', venueId, detail: String(Number(req.params.drive)) });
+    res.redirect(303, `/venues/${venueId}/print-drives`);
+  } catch (e) {
+    printDrivesPage(req, res, e.message).catch(next);
+  }
+});
+
+router.post('/venues/:id/print-drives/:drive/remove', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res, next) => {
+  const venueId = Number(req.params.id);
+  try {
+    await epos.removePrintDrive(venueId, req.params.drive, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'print-drive.remove', venueId, detail: String(Number(req.params.drive)) });
     res.redirect(303, `/venues/${venueId}/print-drives`);
   } catch (e) {
     printDrivesPage(req, res, e.message).catch(next);

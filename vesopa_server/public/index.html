@@ -338,6 +338,7 @@
           <button class="nav" data-view="error_reasons">Error Reasons</button>
           <button class="nav" data-view="tax">Tax</button>
           <button class="nav" data-view="idle">Till &amp; Printers</button>
+          <button class="nav" data-view="virtual_printers">Virtual Printers</button>
           <button class="nav" data-view="kitchen">Kitchen Screens</button>
           <button class="nav" data-view="devices">Devices</button>
           <button class="nav" data-view="modules">Modules</button>
@@ -4101,6 +4102,44 @@
           <div id="modules-list" class="modules-list"></div>
         </section>
 
+        <section id="view-virtual_printers" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Virtual Printers</h2>
+              <p class="muted small">
+                Print from any phone, tablet or computer, from anywhere. Documents
+                land here, and print on paper if you attach a till's printer.
+              </p>
+            </div>
+            <div class="vp-head-actions">
+              <button class="btn ghost" id="vp-refresh">Refresh</button>
+              <button class="btn" id="vp-all-phones" hidden>Add all to an iPhone</button>
+              <button class="btn primary" data-vp-new>New virtual printer</button>
+            </div>
+          </div>
+          <div class="stats vp-stats" id="vp-stats"></div>
+          <div class="vp-grid" id="vp-printers"></div>
+          <div class="card rd-card">
+            <div class="vp-jobs-head">
+              <h3 style="margin:0">Documents</h3>
+              <div class="vp-filters">
+                <input id="vp-find" type="search" placeholder="Search documents" aria-label="Search documents">
+                <select id="vp-filter-printer" aria-label="Printer"></select>
+                <select id="vp-filter-status" aria-label="Status">
+                  <option value="">All statuses</option>
+                  <option value="saved">Saved</option>
+                  <option value="waiting">Waiting</option>
+                  <option value="printing">Printing</option>
+                  <option value="printed">Printed</option>
+                  <option value="failed">Failed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+            </div>
+            <div id="vp-jobs"></div>
+          </div>
+        </section>
+
         <section id="view-devices" class="view" hidden>
           <div class="page-head">
             <div>
@@ -4209,9 +4248,9 @@
           </div>
 
           <div class="card rd-card">
-            <h3 style="margin-top:0">Printer drives</h3>
-            <p class="muted small">Each printer's place online. Put a PDF or a picture in its drive, or send its link to anybody, and it prints there, through the till it is attached to.</p>
-            <div id="print-drives-list"></div>
+            <h3 style="margin-top:0">Virtual printers</h3>
+            <p class="muted small">Printers your phones can print to from anywhere, with or without a paper printer.</p>
+            <button class="btn" data-view="virtual_printers">Open Virtual Printers</button>
           </div>
 
           <div class="card rd-card">
