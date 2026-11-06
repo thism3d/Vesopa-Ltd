@@ -1,0 +1,52 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad"><%= error %></div><% } %>
+<div class="bar">
+  <span class="muted"><a href="/venues/<%= venueId %>">Venue <%= venueId %></a> › Printer drives</span>
+</div>
+
+<% const usable = connectors.filter((c) => c.printers.length); %>
+<% if (can('licences.sell', 'epos') && usable.length) { %>
+<form method="post" action="/venues/<%= venueId %>/print-drives" class="card batch">
+  <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+  <b>Add a drive</b>
+  <input name="name" maxlength="80" placeholder="Name, such as Office" aria-label="Drive name" required>
+  <select name="printer" aria-label="Till and printer">
+    <% for (const c of usable) { for (const p of c.printers) { %>
+      <option value="<%= c.id %>|<%= p.id %>"><%= c.name %>: <%= p.name %></option>
+    <% } } %>
+  </select>
+  <button class="btn primary">Add drive</button>
+</form>
+<% } %>
+
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Drive</th><th>Till</th><th>Printer</th><th>Waiting</th><th></th></tr></thead>
+    <tbody>
+    <% for (const d of drives) { %>
+      <tr>
+        <td><b><%= d.name %></b></td>
+        <td><%= d.terminal || '—' %> <span class="pill<%= d.online ? ' green' : '' %>"><%= d.online ? 'on now' : 'off' %></span></td>
+        <td class="muted"><%= d.printer_name || d.printer_id %></td>
+        <td><%= d.waiting %></td>
+        <td>
+          <a class="btn" href="https://backoffice.vesopaepos.com<%= d.link %>" target="_blank" rel="noopener">Send a file</a>
+          <form method="post" action="/venues/<%= venueId %>/print-drives/<%= d.id %>/test" class="inline">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <button class="btn">Test page</button>
+          </form>
+        </td>
+      </tr>
+      <% for (const j of (jobs[d.id] || []).slice(0, 10)) { %>
+        <tr class="muted">
+          <td colspan="2"><%= j.filename %></td>
+          <td><%= j.status %><%= j.error ? ': ' + j.error : '' %></td>
+          <td colspan="2"><%= ago(j.created_at) %></td>
+        </tr>
+      <% } %>
+    <% } %>
+    <% if (!drives.length) { %><tr><td colspan="5" class="muted">No printer drives yet.</td></tr><% } %>
+    </tbody>
+  </table>
+</div>
+<%- include('_bottom') %>

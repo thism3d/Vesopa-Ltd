@@ -223,6 +223,45 @@ router.get('/venues/:id', signedIn, allow('licences.view', 'epos'), async (req, 
   } catch (e) { next(e); }
 });
 
+// Each printer's place online. The same drives as the back office's Devices page.
+async function printDrivesPage(req, res, error = null) {
+  const venueId = Number(req.params.id);
+  let data = { drives: [], connectors: [] };
+  const jobs = {};
+  try {
+    data = await epos.printDrives(venueId, req.me.email);
+    for (const d of data.drives) jobs[d.id] = (await epos.printDriveJobs(venueId, d.id, req.me.email)).jobs;
+  } catch (e) { error = error || e.message; }
+  page(req, res, 'print_drives', { title: 'Printer drives', venueId, drives: data.drives, connectors: data.connectors, jobs, error });
+}
+
+router.get('/venues/:id/print-drives', signedIn, allow('licences.view', 'epos'), (req, res, next) => {
+  printDrivesPage(req, res).catch(next);
+});
+
+router.post('/venues/:id/print-drives', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res, next) => {
+  const venueId = Number(req.params.id);
+  const b = req.body || {};
+  const [terminal, printer] = String(b.printer || '').split('|');
+  try {
+    await epos.addPrintDrive(venueId, { name: b.name, terminal_id: Number(terminal), printer_id: printer }, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'print-drive.add', venueId, detail: String(b.name || '').slice(0, 80) });
+    res.redirect(303, `/venues/${venueId}/print-drives`);
+  } catch (e) {
+    printDrivesPage(req, res, e.message).catch(next);
+  }
+});
+
+router.post('/venues/:id/print-drives/:drive/test', signedIn, csrf, allow('licences.sell', 'epos'), async (req, res, next) => {
+  const venueId = Number(req.params.id);
+  try {
+    await epos.printDriveTest(venueId, req.params.drive, req.me.email);
+    res.redirect(303, `/venues/${venueId}/print-drives`);
+  } catch (e) {
+    printDrivesPage(req, res, e.message).catch(next);
+  }
+});
+
 // Who takes each kind of card payment at a venue. The same switch as the back
 // office's Card Payments page, through the same route.
 router.get('/venues/:id/cards', signedIn, allow('licences.view', 'epos'), async (req, res) => {

@@ -10,7 +10,9 @@ import '../config/constants.dart';
 import '../data/display_link.dart';
 import '../data/swipe_cards.dart';
 import '../data/hardware.dart';
+import '../data/printer_settings.dart';
 import '../data/terminal_sync.dart';
+import '../printing/print_drive_connector.dart';
 import '../data/lan/lan_service.dart';
 import '../data/lan/offline_money.dart';
 import '../data/app_update.dart';
@@ -91,6 +93,7 @@ class _PosShellState extends ConsumerState<PosShell> {
   /// `customerDisplayProvider`), because the payment screen writes to it too.
   StreamSubscription<void>? _displayFeed;
   StreamSubscription<String>? _displayMembers;
+  PrintDriveConnector? _printDrive;
 
   /// Says "this till is running" for any customer display on this machine.
   ///
@@ -489,6 +492,15 @@ class _PosShellState extends ConsumerState<PosShell> {
     // minutes, under the same machine id as the device list.
     final machineId = await terminalDeviceId();
     startTerminalSettingsPush(apiBase: registry.apiBase);
+    // Documents sent to this till's printers online (printing/print_drive_connector.dart).
+    final store = PrinterSettingsStore();
+    _printDrive?.stop();
+    _printDrive = PrintDriveConnector(
+      apiBase: registry.apiBase,
+      token: registry.terminalToken ?? '',
+      deviceId: machineId,
+      printers: () async => (await store.load()).printers,
+    )..start();
     HardwareReporter.start(
       apiBase: registry.apiBase,
       token: registry.terminalToken ?? '',

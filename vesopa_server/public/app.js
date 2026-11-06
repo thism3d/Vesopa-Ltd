@@ -14022,6 +14022,10 @@ async function loadDevices() {
     bindTerminals();
     loadTerminals().catch(() => {});
   }
+  if (typeof loadPrintDrives === 'function') {
+    bindPrintDrives();
+    loadPrintDrives().catch(() => {});
+  }
   let rows = [];
   try {
     rows = await api('/devices');

@@ -948,6 +948,7 @@ async function deviceProvider(pool, office, seatId) {
 
 module.exports = {
   terminalLicenceRoutes,
+  requireDevice,
   deviceProvider,
   CARD_PROVIDERS,
   bindDecision,
