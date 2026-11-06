@@ -66,7 +66,7 @@ def polish(html, theme):
         '      <div class="steps-phone" aria-hidden="true">\n        <div class="glow"></div>\n        <p class="count">Step <b>1</b> of 5</p>')
     rep('        <div class="steps-bar"><i></i></div>', '        <div class="steps-bar"><i></i></div>\n        <div class="dots"></div>')
     rep('<script src="/js/go.js?v=6" defer></script>',
-        '<script src="/js/go.js?v=7" defer></script>\n<script src="/js/premium.js?v=3" defer></script>\n<script src="/js/sound.js?v=4" defer></script>')
+        '<script src="/js/go.js?v=7" defer></script>\n<script src="/js/premium.js?v=3" defer></script>\n<script src="/js/sound.js?v=5" defer></script>')
     # the Sound button, beside "Get the app"
     rep('    <a class="btn small primary" href="#get">Get the app</a>',
         '    <button class="sound-btn" type="button" aria-pressed="false" title="Sound"><i aria-hidden="true"><b></b><b></b><b></b></i><span>Sound</span></button>\n'
