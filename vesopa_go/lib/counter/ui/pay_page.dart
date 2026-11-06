@@ -45,9 +45,16 @@ import 'till_pay_board.dart';
 class PayPage extends ConsumerStatefulWidget {
   const PayPage({super.key, required this.billId});
   final String billId;
+
+  @visibleForTesting
+  static void debugShowGooglePayFor(bool on) => _debugShowGooglePay = on;
+
   @override
   ConsumerState<PayPage> createState() => _PayPageState();
 }
+
+/// For screenshots, where no Google Play is running to say yes.
+bool _debugShowGooglePay = false;
 
 class _PayPageState extends ConsumerState<PayPage> {
   PayStep? _step;
@@ -168,10 +175,6 @@ class _PayPageState extends ConsumerState<PayPage> {
 
   /// Google's own client, once it says this device can pay.
   Pay? _googlePay;
-
-  /// For the Console's screenshots, where no Google Play is running.
-  @visibleForTesting
-  static bool debugShowGooglePay = false;
 
   Future<void> _loadGooglePay() async {
     final s = ref.read(tapProvider);
@@ -730,7 +733,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         otherCard: teya || (other == 'tap' && _isIpad(context) && !config.testVenue) ? null : (amount) => _card(other, amount: amount),
         otherCardLabel: other == 'machine' ? 'Card machine' : (_isIpad(context) ? 'Test payment' : 'Tap to Pay'),
         qrPay: _qr,
-        googlePay: _googlePay != null || debugShowGooglePay ? _takeGooglePay : null,
+        googlePay: _googlePay != null || _debugShowGooglePay ? _takeGooglePay : null,
         manualCard: _manualCard,
         split: _split,
         voucher: () => askVoucher(context, ref, bill),

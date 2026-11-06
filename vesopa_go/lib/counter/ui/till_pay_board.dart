@@ -186,15 +186,13 @@ class _TillPayBoardState extends State<TillPayBoard> {
           onTap: () => _then(() => a.card(_amount.clamp(1, _due))))),
     ]);
 
+    // A row of its own: Google's name is not to be cut short on a phone.
+    final google = a.googlePay == null ? null : _ToolKey(key: const ValueKey('pay-google'), label: 'Google Pay', mark: SvgPicture.asset('assets/marks/google_pay_mark.svg', height: 28), onTap: () => _then(() => a.googlePay!(_amount.clamp(1, _due))));
     final row2 = Row(children: [
       Expanded(child: _ToolKey(label: 'Manual card', icon: Icons.keyboard_alt_rounded, onTap: () => _then(() => a.manualCard(_amount.clamp(1, _due))))),
       const SizedBox(width: 10),
       if (a.otherCard != null) ...[
         Expanded(child: _ToolKey(label: a.otherCardLabel ?? 'Other card', icon: a.otherCardLabel == 'Card machine' ? Icons.point_of_sale_rounded : null, mark: a.otherCardLabel == 'Card machine' ? null : const TapToPayMark(size: 22), onTap: () => _then(() => a.otherCard!(_amount.clamp(1, _due))))),
-        const SizedBox(width: 10),
-      ],
-      if (a.googlePay != null) ...[
-        Expanded(child: _ToolKey(key: const ValueKey('pay-google'), label: 'Google Pay', mark: SvgPicture.asset('assets/marks/google_pay_mark.svg', height: 24), onTap: () => _then(() => a.googlePay!(_amount.clamp(1, _due))))),
         const SizedBox(width: 10),
       ],
       if (a.qrPay != null)
@@ -264,6 +262,7 @@ class _TillPayBoardState extends State<TillPayBoard> {
         const SizedBox(height: 12),
         SizedBox(height: 110, child: tenders),
         const SizedBox(height: 10),
+        if (google != null) ...[SizedBox(height: 56, child: google), const SizedBox(height: 10)],
         SizedBox(height: 56, child: row2),
         const SizedBox(height: 14),
         notes,
@@ -284,7 +283,8 @@ class _TillPayBoardState extends State<TillPayBoard> {
             const SizedBox(height: 14),
             Expanded(flex: 5, child: tenders),
             const SizedBox(height: 12),
-            SizedBox(height: 60, child: row2),
+            if (google != null) ...[SizedBox(height: 60, child: google), const SizedBox(height: 10)],
+        SizedBox(height: 60, child: row2),
             const SizedBox(height: 16),
             notes,
             const Spacer(),
