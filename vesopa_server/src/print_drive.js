@@ -41,6 +41,7 @@ const multer = require('multer');
 const PDFDocument = require('pdfkit');
 
 const ipp = require('./ipp');
+const profileSigning = require('./profile_signing');
 const { attachAccess, requirePermission } = require('./permissions');
 const { requireDevice } = require('./terminal_licences');
 
@@ -690,6 +691,10 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
     } catch (e) { next(e); }
   });
 
+  async function sendProfile(res, text) {
+    res.type('application/x-apple-aspen-config').send((await profileSigning.sign(text)) || Buffer.from(text));
+  }
+
   /**
    * Every printer of a venue at once, for Vesopa Go's one button.
    */
@@ -716,7 +721,7 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
       const [[venue]] = await pool.query('SELECT name FROM offices WHERE contact_email = ?', [claims.office]);
       res.set('Cache-Control', 'no-store');
       res.set('Content-Disposition', 'attachment; filename="vesopa-printers.mobileconfig"');
-      res.type('application/x-apple-aspen-config').send(ipp.airPrintProfile({
+      await sendProfile(res, ipp.airPrintProfile({
         name: `Vesopa printers, ${(venue && venue.name) || 'your venue'}`,
         printers: drives.map((d) => ({ host: PRINT_HOST, path: d.link.replace('/print/', 'ipp/print/') })),
         seed: claims.office,
@@ -731,7 +736,7 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
       if (!d) return res.status(404).end();
       res.set('Cache-Control', 'no-store');
       res.set('Content-Disposition', 'attachment; filename="vesopa-printer.mobileconfig"');
-      res.type('application/x-apple-aspen-config').send(ipp.airPrintProfile({
+      await sendProfile(res, ipp.airPrintProfile({
         name: `Vesopa ${d.name}`,
         printers: [{ host: PRINT_HOST, path: `ipp/print/${d.code}` }],
         seed: d.code,

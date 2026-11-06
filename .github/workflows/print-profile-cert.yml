@@ -1,0 +1,64 @@
+# A certificate from Apple for signing printer profiles (vesopa_server/src/profile_signing.js).
+#
+# The request (CSR) is written on the live server, so the private key stays there
+# and never passes through here. The certificate that comes back is public.
+# It lasts a year. tool/print_profile_cert.py runs the whole thing.
+name: Print profile certificate
+
+on:
+  workflow_dispatch:
+    inputs:
+      csr:
+        description: The certificate request, PEM, base64 on one line
+        required: true
+
+jobs:
+  certificate:
+    runs-on: ubuntu-latest
+    environment: App Store Connect API
+    steps:
+      - name: Ask Apple
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          CSR: ${{ inputs.csr }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/asc"
+          "$RUNNER_TEMP/asc/bin/pip" install --quiet "pyjwt[crypto]"
+          "$RUNNER_TEMP/asc/bin/python" - <<'PY'
+          import base64, json, os, pathlib, sys, time, urllib.error, urllib.request
+          import jwt
+
+          now = int(time.time())
+          token = jwt.encode(
+              {"iss": os.environ["ASC_ISSUER_ID"], "iat": now, "exp": now + 900, "aud": "appstoreconnect-v1"},
+              os.environ["ASC_KEY_P8"], algorithm="ES256", headers={"kid": os.environ["ASC_KEY_ID"]})
+
+          def call(method, path, body=None):
+              req = urllib.request.Request(
+                  "https://api.appstoreconnect.apple.com" + path, method=method,
+                  data=json.dumps(body).encode() if body else None,
+                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return json.load(r)
+              except urllib.error.HTTPError as e:
+                  print("Apple said:", e.code, e.read().decode()[:600])
+                  for c in call("GET", "/v1/certificates?limit=50&fields[certificates]=name,certificateType,expirationDate")["data"]:
+                      a = c["attributes"]
+                      print(" ", a["certificateType"], a["name"], a["expirationDate"])
+                  sys.exit(1)
+
+          csr = base64.b64decode(os.environ["CSR"]).decode()
+          made = call("POST", "/v1/certificates", {"data": {"type": "certificates", "attributes": {
+              "certificateType": "DISTRIBUTION", "csrContent": csr}}})
+          a = made["data"]["attributes"]
+          print("made", a["name"], "until", a["expirationDate"])
+          pathlib.Path("print-profile.cer").write_bytes(base64.b64decode(a["certificateContent"]))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: print-profile-cert
+          path: print-profile.cer
+          retention-days: 1

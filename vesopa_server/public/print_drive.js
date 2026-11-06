@@ -263,7 +263,7 @@ const VP_TABS = {
     hint: 'Point the camera at this code and open it in Safari.',
     steps: ['Tap <b>Allow</b> when it asks to download a profile.',
       'Open <b>Settings</b>, then tap <b>Profile Downloaded</b> near the top.',
-      'Tap <b>Install</b> and enter your passcode. It may say not verified, which is expected.',
+      'Tap <b>Install</b> and enter your passcode.',
       'Print from any app, and choose this printer. It works on any connection.'],
   },
   android: {
