@@ -5,12 +5,13 @@
 </div>
 
 <% const usable = connectors.filter((c) => c.printers.length); %>
-<% if (can('licences.sell', 'epos') && usable.length) { %>
+<% if (can('licences.sell', 'epos')) { %>
 <form method="post" action="/venues/<%= venueId %>/print-drives" class="card batch">
   <input type="hidden" name="_csrf" value="<%= me.csrf %>">
   <b>Add a drive</b>
   <input name="name" maxlength="80" placeholder="Name, such as Office" aria-label="Drive name" required>
   <select name="printer" aria-label="Till and printer">
+    <option value="0|">Online only, no paper</option>
     <% for (const c of usable) { for (const p of c.printers) { %>
       <option value="<%= c.id %>|<%= p.id %>"><%= c.name %>: <%= p.name %></option>
     <% } } %>
@@ -26,8 +27,8 @@
     <% for (const d of drives) { %>
       <tr>
         <td><b><%= d.name %></b></td>
-        <td><%= d.terminal || '—' %> <span class="pill<%= d.online ? ' green' : '' %>"><%= d.online ? 'on now' : 'off' %></span></td>
-        <td class="muted"><%= d.printer_name || d.printer_id %></td>
+        <td><% if (d.online_only) { %><span class="muted">Online only</span><% } else { %><%= d.terminal || '—' %> <span class="pill<%= d.online ? ' green' : '' %>"><%= d.online ? 'on now' : 'off' %></span><% } %></td>
+        <td class="muted"><%= d.printer_name || d.printer_id || '—' %></td>
         <td>
           <form method="post" action="/venues/<%= venueId %>/print-drives/<%= d.id %>/phones" class="inline">
             <input type="hidden" name="_csrf" value="<%= me.csrf %>">

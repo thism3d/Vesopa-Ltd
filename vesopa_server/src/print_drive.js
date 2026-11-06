@@ -3,6 +3,9 @@
  * on that printer (owner, 2026-11-06: "every venue documents and pdf printing
  * should go to the live drive of that specific printer").
  *
+ * A venue can have any number. An ONLINE-ONLY drive has no paper printer: what
+ * goes in is saved there to read or download, until a printer is attached.
+ *
  * A DRIVE is one printer on one terminal. Documents go in from the back office,
  * or from anybody holding the drive's private link, on any phone or computer.
  * That terminal is the connector: it asks what is waiting, prints it through the
@@ -30,6 +33,7 @@ const fs = require('fs');
 const path = require('path');
 
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const PDFDocument = require('pdfkit');
 
@@ -40,6 +44,7 @@ const { requireDevice } = require('./terminal_licences');
 const MAX_BYTES = 25 * 1024 * 1024;
 const KEEP_DAYS = 7;
 const NO_ANSWER_MINUTES = 10;
+const PRINT_HOST = process.env.PRINT_HOST || 'backoffice.vesopaepos.com';
 const BASE = process.env.PRINT_DRIVE_DIR || path.join(__dirname, '..', 'data', 'print-drive');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BYTES, files: 10 } });
@@ -67,7 +72,7 @@ function safeName(name) {
 }
 
 /** Where a job may go next. Anything else is refused, so a late answer cannot undo a result. */
-const NEXT = { waiting: ['printing', 'cancelled'], printing: ['printed', 'failed'], failed: ['waiting'], cancelled: ['waiting'], printed: ['waiting'] };
+const NEXT = { saved: ['cancelled'], waiting: ['printing', 'cancelled'], printing: ['printed', 'failed'], failed: ['waiting'], cancelled: ['waiting'], printed: ['waiting'] };
 const mayMove = (from, to) => (NEXT[from] || []).includes(to);
 
 /** The printers a terminal last reported, from its settings (terminal_sync.dart). */
@@ -155,9 +160,10 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
     await fs.promises.mkdir(path.dirname(fileOf(job)), { recursive: true });
     await fs.promises.writeFile(fileOf(job), bytes);
     await pool.execute(
-      `INSERT INTO bo_print_jobs (id, drive_id, office, filename, mime, size, sent_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [job.id, drive.id, drive.office, safeName(filename), mime, bytes.length, clamp(sentBy, 120) || null]
+      `INSERT INTO bo_print_jobs (id, drive_id, office, filename, mime, size, sent_by, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [job.id, drive.id, drive.office, safeName(filename), mime, bytes.length, clamp(sentBy, 120) || null,
+        Number(drive.terminal_id) ? 'waiting' : 'saved']
     );
     say(drive.office);
     return job.id;
@@ -176,6 +182,7 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
       id: d.id,
       name: d.name,
       terminal_id: d.terminal_id,
+      online_only: !Number(d.terminal_id),
       terminal: d.terminal_name || (d.terminal_no ? `Terminal ${d.terminal_no}` : null),
       online: d.last_ping_at ? Date.now() - new Date(d.last_ping_at).getTime() < 15 * 60 * 1000 : false,
       printer_id: d.printer_id,
@@ -266,15 +273,16 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
         const o = await office(req, res);
         if (!o) return;
         const b = req.body || {};
+        const onlineOnly = !asInt(b.terminal_id);
         const connector = (await connectorsOf(o)).find((c) => c.id === asInt(b.terminal_id));
         const printer = connector && connector.printers.find((p) => p.id === clamp(b.printer_id, 64));
         const name = clamp(b.name, 80);
-        if (!name || !printer) return res.status(400).json({ error: 'Choose a name, a till and one of its printers.' });
+        if (!name || (!onlineOnly && !printer)) return res.status(400).json({ error: 'Choose a name, and a till and printer or online only.' });
         const code = crypto.randomBytes(16).toString('hex');
         const [r] = await pool.execute(
           `INSERT INTO bo_print_drives (office, name, terminal_id, printer_id, printer_name, code, created_by)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [o, name, connector.id, printer.id, printer.name, code, who(req)]
+          [o, name, onlineOnly ? 0 : connector.id, onlineOnly ? '' : printer.id, onlineOnly ? null : printer.name, code, who(req)]
         );
         res.status(201).json({ id: r.insertId, link: `/print/${code}` });
       } catch (e) { next(e); }
@@ -336,6 +344,20 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
         if (!d) return res.status(404).json({ error: 'No such drive' });
         const job = await addJob(d, { bytes: await testPage(d.name), filename: 'Test page.pdf', sentBy: who(req) });
         res.status(201).json({ id: job });
+      } catch (e) { next(e); }
+    });
+
+    // To read or keep a document, which is all an online-only drive is for.
+    sub.get('/jobs/:job/file', guard, async (req, res, next) => {
+      try {
+        const o = await office(req, res);
+        if (!o) return;
+        const job = await jobOf(o, clamp(req.params.job, 32));
+        if (!job || job.mime === 'local') return res.status(404).json({ error: 'No such document' });
+        res.set('Content-Disposition', `${req.query.save ? 'attachment' : 'inline'}; filename="${job.filename}"`);
+        res.type(job.mime).sendFile(path.resolve(fileOf(job)), (e) => {
+          if (e && !res.headersSent) res.status(404).json({ error: 'That document has gone.' });
+        });
       } catch (e) { next(e); }
     });
 
@@ -545,6 +567,42 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
     } catch (e) { next(e); }
   });
 
+  /**
+   * Every printer of a venue at once, for Vesopa Go's one button. A link good for
+   * ten minutes, because a browser has to fetch the profile, not the app.
+   */
+  router.get('/api/device/print-profile-link', device, async (req, res, next) => {
+    try {
+      const drives = await drivesOf(req.office);
+      const token = jwt.sign({ scope: 'print-profile', office: req.office }, secret, { expiresIn: '10m' });
+      res.json({
+        url: `https://${PRINT_HOST}/print-profile/${token}`,
+        drives: drives.map((d) => ({ name: d.name, url: `https://${PRINT_HOST}${d.link}` })),
+      });
+    } catch (e) { next(e); }
+  });
+
+  router.get('/print-profile/:token', async (req, res, next) => {
+    try {
+      let claims;
+      try {
+        claims = jwt.verify(String(req.params.token), secret);
+      } catch {
+        return res.status(404).type('text').send('This link has run out. Tap the button in Vesopa Go again.');
+      }
+      if (claims.scope !== 'print-profile') return res.status(404).end();
+      const drives = await drivesOf(claims.office);
+      const [[venue]] = await pool.query('SELECT name FROM offices WHERE contact_email = ?', [claims.office]);
+      res.set('Cache-Control', 'no-store');
+      res.set('Content-Disposition', 'attachment; filename="vesopa-printers.mobileconfig"');
+      res.type('application/x-apple-aspen-config').send(ipp.airPrintProfile({
+        name: `Vesopa printers, ${(venue && venue.name) || 'your venue'}`,
+        printers: drives.map((d) => ({ host: PRINT_HOST, path: d.link.replace('/print/', 'ipp/print/') })),
+        seed: claims.office,
+      }));
+    } catch (e) { next(e); }
+  });
+
   /** The profile that puts this printer in an iPhone's Print menu, anywhere. */
   router.get('/print/:code/airprint.mobileconfig', async (req, res, next) => {
     try {
@@ -554,8 +612,7 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
       res.set('Content-Disposition', 'attachment; filename="vesopa-printer.mobileconfig"');
       res.type('application/x-apple-aspen-config').send(ipp.airPrintProfile({
         name: `Vesopa ${d.name}`,
-        host: req.hostname,
-        path: `ipp/print/${d.code}`,
+        printers: [{ host: PRINT_HOST, path: `ipp/print/${d.code}` }],
         seed: d.code,
       }));
     } catch (e) { next(e); }
@@ -576,7 +633,7 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
       }
       const answer = await ipp.respond(req.body, {
         name: `Vesopa ${d.name}`,
-        uri: `ipps://${req.hostname}/ipp/print/${code}`,
+        uri: `ipps://${PRINT_HOST}/ipp/print/${code}`,
         uuid: ipp.uuidFor(code),
         secure: true,
       }, phoneJobs.get(code), async (bytes, name) => {

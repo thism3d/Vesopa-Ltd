@@ -244,7 +244,7 @@ router.post('/venues/:id/print-drives', signedIn, csrf, allow('licences.sell', '
   const b = req.body || {};
   const [terminal, printer] = String(b.printer || '').split('|');
   try {
-    await epos.addPrintDrive(venueId, { name: b.name, terminal_id: Number(terminal), printer_id: printer }, req.me.email);
+    await epos.addPrintDrive(venueId, { name: b.name, terminal_id: Number(terminal) || 0, printer_id: printer }, req.me.email);
     await audit.record({ actor: req.me.email, action: 'print-drive.add', venueId, detail: String(b.name || '').slice(0, 80) });
     res.redirect(303, `/venues/${venueId}/print-drives`);
   } catch (e) {

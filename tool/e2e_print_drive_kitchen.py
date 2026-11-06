@@ -60,6 +60,7 @@ const check = (name, ok, extra) => {
   const device = `e2e-${crypto.randomUUID().slice(0, 12)}`;
   let terminal = null;
   let drive = null;
+  let extra = null;
   try {
     const made = await call('POST', terminals, { kind: 'till', name: 'E2E print' });
     terminal = made.body.id;
@@ -130,17 +131,33 @@ const check = (name, ok, extra) => {
     check('the iPhone profile downloads', profile.status === 200 && (await profile.text()).includes('com.apple.airprint'));
     const manifest = await fetch(`${base}${link}/manifest.webmanifest`);
     check('Android gets its Share menu entry', manifest.status === 200 && !!(await manifest.json()).share_target);
+    const online = await call('POST', drives, { name: 'E2E online only' });
+    check('an online-only printer is made', online.status === 201, online);
+    extra = online.body.id;
+    check('a second printer on one venue', (await call('GET', drives)).body.drives.filter((d) => /^E2E/.test(d.name)).length === 2);
+    check('it takes a document', (await send(online.body.link, 'report.pdf', 'application/pdf', Buffer.from('%PDF-1.4 kept'))).status === 200);
+    const kept = await call('GET', `${drives}/${extra}/jobs`);
+    check('and keeps it, saved', kept.body.jobs[0].status === 'saved', kept.body);
+    check('no till is sent it', (await call('GET', `/api/device/print-jobs?device_id=${device}&kind=till`, undefined, token)).body.jobs.length === 2);
+    const opened = await call('GET', `${drives}/jobs/${kept.body.jobs[0].id}/file`);
+    check('it can be opened', opened.status === 200 && opened.text.startsWith('%PDF'), opened.status);
+    const offer = await call('GET', '/api/device/print-profile-link', undefined, token);
+    check('Go gets a link for all the printers', offer.status === 200 && offer.body.drives.length >= 2, offer);
+    const whole = await fetch(`${base}${new URL(offer.body.url).pathname}`);
+    const wholeText = await whole.text();
+    check('the profile holds every printer', whole.status === 200 && (wholeText.match(/ResourcePath/g) || []).length >= 2, whole.status);
+    check('a made-up profile link is refused', (await fetch(`${base}/print-profile/nonsense`)).status === 404);
     const swapped = await call('POST', `${drives}/${drive}/link`);
     check('a new link can be made', swapped.status === 200, swapped);
     check('the old link stops', (await fetch(base + link)).status === 404);
   } catch (e) {
     check('the run finished', false, e.message);
   } finally {
-    if (drive) {
-      const [files] = await db.query('SELECT id, office FROM bo_print_jobs WHERE drive_id = ?', [drive]);
+    for (const gone of [drive, extra].filter(Boolean)) {
+      const [files] = await db.query('SELECT id, office FROM bo_print_jobs WHERE drive_id = ?', [gone]);
       for (const f of files) fs.rmSync(path.join(__dirname, 'data', 'print-drive', OFFICE.replace(/[^\w.@-]/g, '_'), f.id), { force: true });
-      await db.query('DELETE FROM bo_print_jobs WHERE drive_id = ?', [drive]);
-      await db.query('DELETE FROM bo_print_drives WHERE id = ?', [drive]);
+      await db.query('DELETE FROM bo_print_jobs WHERE drive_id = ?', [gone]);
+      await db.query('DELETE FROM bo_print_drives WHERE id = ?', [gone]);
     }
     if (terminal) {
       await call('POST', `${terminals}/${terminal}/revoke`);

@@ -69,10 +69,15 @@ const status = (r) => r.readUInt16BE(2);
   assert.notStrictEqual(ipp.uuidFor('a'), ipp.uuidFor('b'));
   assert.match(ipp.uuidFor('a'), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
 
-  const profile = ipp.airPrintProfile({ name: 'Vesopa <Office>', host: 'x.example', path: 'ipp/print/abc', seed: 's' });
+  const profile = ipp.airPrintProfile({
+    name: 'Vesopa <Office>',
+    printers: [{ host: 'x.example', path: 'ipp/print/abc' }, { host: 'x.example', path: 'ipp/print/def' }],
+    seed: 's',
+  });
   assert.ok(profile.includes('com.apple.airprint'));
   assert.ok(profile.includes('<key>ForceTLS</key><true/>'));
   assert.ok(profile.includes('<string>ipp/print/abc</string>'));
+  assert.ok(profile.includes('<string>ipp/print/def</string>'), 'every printer of a venue at once');
   assert.ok(profile.includes('Vesopa &lt;Office&gt;'), 'names are escaped');
 
   console.log('ipp: checks passed');

@@ -501,6 +501,9 @@ class TapApi {
   /// go_modes.js): `ask`, `epos`, `kitchen` or `display`, and whether fixed.
   Future<Map<String, dynamic>> goMode() => _send('GET', '/api/go/mode');
 
+  /// A short-lived link to all this venue's online printers.
+  Future<Map<String, dynamic>> printProfileLink() => _send('GET', '/api/device/print-profile-link');
+
   /// A manager changing what this device runs as, after their PIN on it.
   Future<Map<String, dynamic>> changeGoMode(String deviceId, String mode) =>
       _send('POST', '/api/go/mode/change', {'device_id': deviceId, 'mode': mode});

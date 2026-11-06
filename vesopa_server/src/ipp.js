@@ -231,19 +231,19 @@ function uuidFor(seed) {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
-/** The profile that puts a drive in an iPhone's Print menu, wherever it is. */
-function airPrintProfile({ name, host, path, seed }) {
+/** The profile that puts a venue's drives in an iPhone's Print menu, wherever it is. */
+function airPrintProfile({ name, printers, seed }) {
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>PayloadContent</key><array><dict>
-<key>AirPrint</key><array><dict>
+<key>AirPrint</key><array>${printers.map((p) => `<dict>
 <key>ForceTLS</key><true/>
-<key>IPAddress</key><string>${esc(host)}</string>
+<key>IPAddress</key><string>${esc(p.host)}</string>
 <key>Port</key><integer>443</integer>
-<key>ResourcePath</key><string>${esc(path)}</string>
-</dict></array>
+<key>ResourcePath</key><string>${esc(p.path)}</string>
+</dict>`).join('')}</array>
 <key>PayloadDisplayName</key><string>${esc(name)}</string>
 <key>PayloadIdentifier</key><string>com.vesopa.print.${uuidFor(`${seed}a`)}</string>
 <key>PayloadType</key><string>com.apple.airprint</string>

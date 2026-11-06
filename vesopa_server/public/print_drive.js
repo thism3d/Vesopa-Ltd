@@ -38,19 +38,19 @@ function renderPrintDrives() {
   const box = $('print-drives-list');
   const usable = printDrives.connectors.filter((c) => c.printers.length);
   box.innerHTML = `
-    ${usable.length ? `<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+    ${`<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
       <input id="print-drive-name" placeholder="Name, such as Office" maxlength="80" aria-label="Drive name">
-      <select id="print-drive-till" aria-label="Till">${usable.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>
+      <select id="print-drive-till" aria-label="Till"><option value="0">Online only, no paper</option>${usable.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>
       <select id="print-drive-printer" aria-label="Printer"></select>
       <button class="btn primary" data-pd-add>Add drive</button>
-    </div>` : '<p class="muted small">A till needs a printer set up, and to have reported to the back office, before it can hold a drive.</p>'}
+    </div>`}
     ${printDrives.drives.length ? `<div class="table-wrap"><table class="table"><thead><tr>
       <th>Drive</th><th>Till</th><th>Printer</th><th>Phones</th><th>Waiting</th><th></th></tr></thead><tbody>
       ${printDrives.drives.map((d) => `<tr>
         <td><b>${esc(d.name)}</b></td>
-        <td>${esc(d.terminal || '—')} ${d.online ? '<span class="pill on">on now</span>' : '<span class="pill">off</span>'}</td>
-        <td class="small">${esc(d.printer_name || d.printer_id)}</td>
-        <td><label class="small"><input type="checkbox" data-pd-phones="${esc(d.id)}"${d.phones ? ' checked' : ''}> On the venue's Wi-Fi</label></td>
+        <td>${d.online_only ? '<span class="small muted">Online only</span>' : `${esc(d.terminal || '—')} ${d.online ? '<span class="pill on">on now</span>' : '<span class="pill">off</span>'}`}</td>
+        <td class="small">${esc(d.printer_name || d.printer_id || '—')}</td>
+        <td><label class="small"><input type="checkbox" data-pd-phones="${esc(d.id)}"${d.phones ? ' checked' : ''}${d.online_only ? ' disabled' : ''}> On the venue's Wi-Fi</label></td>
         <td>${esc(d.waiting)}</td>
         <td class="right" style="white-space:nowrap">
           <label class="btn small">Add files<input type="file" hidden multiple accept="application/pdf,image/png,image/jpeg" data-pd-upload="${esc(d.id)}"></label>
@@ -83,7 +83,8 @@ async function showPrintJobs(id) {
       <td class="small muted">${esc(j.sent_by || '—')}</td>
       <td>${esc(j.status)}${j.error ? `<div class="small muted">${esc(j.error)}</div>` : ''}</td>
       <td class="small muted">${esc(new Date(j.created_at).toLocaleString('en-GB'))}</td>
-      <td class="right">${j.status === 'waiting' ? `<button class="btn small" data-pd-cancel="${esc(j.id)}">Cancel</button>` : ''}
+      <td class="right">${j.sent_by === 'Phone on the network' ? '' : `<button class="btn small" data-pd-open="${esc(j.id)}">Open</button>`}
+        ${j.status === 'waiting' ? `<button class="btn small" data-pd-cancel="${esc(j.id)}">Cancel</button>` : ''}
         ${again(j) && j.sent_by !== 'Phone on the network' ? `<button class="btn small" data-pd-again="${esc(j.id)}">Print again</button>` : ''}</td>
     </tr>`).join('')}</tbody></table></div>` : '<p class="muted small">Nothing has been sent to this drive yet.</p>';
 }
@@ -149,6 +150,10 @@ function bindPrintDrives() {
         toast('Link copied. Anybody with it can print here.');
       } else if ((el = on('pd-jobs'))) {
         await showPrintJobs(value(el, 'pd-jobs'));
+      } else if ((el = on('pd-open'))) {
+        const res = await fetch(`/api/print-drives/jobs/${value(el, 'pd-open')}/file`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) throw new Error('That document has gone.');
+        window.open(URL.createObjectURL(await res.blob()), '_blank');
       } else if ((el = on('pd-cancel'))) {
         await api(`/print-drives/jobs/${value(el, 'pd-cancel')}/cancel`, { method: 'POST' });
         await loadPrintDrives();

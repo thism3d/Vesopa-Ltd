@@ -11,6 +11,7 @@ import '../../data/models.dart';
 import '../../data/session.dart';
 import '../../nfc/staff_card.dart';
 import '../../payments/payment_service.dart';
+import '../add_printers_tile.dart';
 import '../tap_to_pay_intro.dart';
 import '../tap_to_pay_mark.dart';
 import '../theme.dart';
@@ -122,6 +123,7 @@ class _MorePageState extends ConsumerState<MorePage> {
       ),
       const SizedBox(height: 12),
       _TapToPayCard(status: _tapStatus),
+      if (!ref.watch(tapProvider.select((s) => s.demo))) const AddPrintersTile(),
       const SizedBox(height: 12),
       Card(
         child: ListTile(
