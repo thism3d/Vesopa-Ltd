@@ -27,7 +27,6 @@ const VP_STATUS = {
 };
 
 const vpUrl = (link) => `${location.origin}${link}`;
-const vpProfileUrl = (d) => vpUrl(`${d.link}/airprint.mobileconfig`);
 const vpUsable = () => vp.connectors.filter((c) => c.printers.length);
 const vpDrive = (id) => vp.drives.find((d) => d.id === Number(id));
 
@@ -259,18 +258,17 @@ function vpNew() {
 const VP_TABS = {
   iphone: {
     label: 'iPhone or iPad',
-    qr: vpProfileUrl,
-    hint: 'Point the camera at this code and open it in Safari.',
-    steps: ['Tap <b>Allow</b> when it asks to download a profile.',
-      'Open <b>Settings</b>, then tap <b>Profile Downloaded</b> near the top.',
-      'Tap <b>Install</b> and enter your passcode.',
-      'Print from any app, and choose this printer. It works on any connection.'],
+    qr: (d) => vpUrl(d.link),
+    hint: 'Point the camera at this code and open it in Safari. The page then takes you through it.',
+    steps: ['Tap <b>Add to this device</b>, then <b>Allow</b>.',
+      'Open <b>Settings</b>, tap <b>Profile Downloaded</b>, then <b>Install</b>.',
+      'Print from any app and choose this printer. The page ticks when it connects.'],
   },
   android: {
     label: 'Android',
     qr: (d) => vpUrl(d.link),
     hint: 'Point the camera at this code and open it in Chrome.',
-    steps: ['In the Chrome menu, choose <b>Install app</b> or <b>Add to Home screen</b>.',
+    steps: ['Tap <b>Add to this phone</b> and confirm.',
       'In any app, tap <b>Share</b> on a document and pick this printer.',
       'Android cannot show an online printer in its Print menu, so Share is the way in.'],
   },

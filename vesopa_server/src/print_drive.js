@@ -622,15 +622,88 @@ function printDriveRoutes({ pool, secret, auth, requireAdmin, broadcast }) {
     return recent.length > 60;
   };
 
-  const page = (title, body) => `<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
+  const page = (title, body, head = '') => `<!doctype html><html lang="en-GB"><head><meta charset="utf-8">${head}
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
 <title>${esc(title)}</title><style>
 body{margin:0;background:#0b0e0a;color:#f2efe6;font:16px/1.5 system-ui,sans-serif;display:flex;justify-content:center;padding:24px 16px}
 main{width:100%;max-width:440px}h1{font-size:24px;margin:0 0 4px}p{color:#b9b9b0;margin:0 0 20px}
 label.drop{display:block;border:2px dashed #a5c715;border-radius:14px;padding:36px 16px;text-align:center;cursor:pointer;margin-bottom:14px}
 input[type=file]{display:block;width:100%;margin-top:12px}input[type=text]{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #444;background:#15190f;color:#fff;font:inherit;margin-bottom:14px}
-button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;color:#0b0e0a;font:inherit;font-weight:700}
+button,a.go{display:block;box-sizing:border-box;width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;color:#0b0e0a;font:inherit;font-weight:700;text-align:center;text-decoration:none;cursor:pointer}
+.ghost{background:none;color:#a5c715;margin-top:8px}.step{border:1px solid #333;border-radius:14px;padding:14px 16px;margin-bottom:12px;opacity:.45}
+.step.now{opacity:1;border-color:#a5c715}.step.done{opacity:.7}.step h2{font-size:16px;margin:0 0 4px}.step.done h2::after{content:" ✓";color:#a5c715}
+.step p{margin:0 0 10px;font-size:15px}.step p:last-child{margin-bottom:0}.step:not(.now) a.go,.step:not(.now) button{display:none}
+details{margin-top:20px}summary{cursor:pointer;margin-bottom:14px;font-weight:600}[hidden]{display:none!important}
 </style></head><body><main>${body}</main></body></html>`;
+
+  /**
+   * The printer's page: on a phone, the steps to add it, one at a time. Nothing
+   * on the web or in an app can install a profile by itself: Apple keeps the
+   * last tap for the owner of the phone, in Settings.
+   */
+  const addPage = (d) => `<h1>${esc(d.name)}</h1><p id="lead">Choose a PDF or a picture and it arrives there.</p>
+<section id="ios" hidden>
+<div class="step now" id="s1"><h2>1. Download the printer</h2><p>Tap the button, then tap <b>Allow</b>.</p>
+<a class="go" id="get" href="/print/${esc(d.code)}/airprint.mobileconfig">Add to this device</a></div>
+<div class="step" id="s2"><h2>2. Install it in Settings</h2><p>Open the <b>Settings</b> app, tap <b>Profile Downloaded</b> near the top, then <b>Install</b>. Come back here when it is done.</p>
+<button id="installed" type="button">I have installed it</button></div>
+<div class="step" id="s3"><h2>3. Try it</h2><p>In any app choose <b>Print</b>, then <b>Printer</b>, and pick <b>Vesopa ${esc(d.name)}</b>. This page ticks when your device reaches it.</p></div>
+</section>
+<section id="android" hidden>
+<div class="step now" id="a1"><h2>1. Add it to this phone</h2><p id="a1t">Tap the button and confirm.</p>
+<button id="install" type="button" hidden>Add to this phone</button></div>
+<div class="step" id="a2"><h2>2. Print from any app</h2><p>Tap <b>Share</b> on a document and pick <b>${esc(d.name)}</b>.</p></div>
+</section>
+<details id="send"><summary>Send a file from here</summary>
+<form method="post" enctype="multipart/form-data" action="/print/${esc(d.code)}">
+<label class="drop">Choose files<input type="file" name="files" multiple required accept="application/pdf,image/png,image/jpeg"></label>
+<input type="text" name="sender" maxlength="120" placeholder="Your name (optional)">
+<button>Send</button></form></details>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var ua = navigator.userAgent;
+  var apple = /iPhone|iPad|iPod/.test(ua) || (ua.indexOf('Macintosh') >= 0 && navigator.maxTouchPoints > 1);
+  var android = /Android/.test(ua);
+  var move = function (from, to) {
+    $(from).className = 'step done';
+    if (to) $(to).className = 'step now';
+  };
+  if (!apple && !android) {
+    $('send').open = true;
+    return;
+  }
+  $('lead').textContent = 'Add this printer to your device, then print to it from any app, anywhere.';
+  if (apple) {
+    $('ios').hidden = false;
+    var watch = function () {
+      var since = Date.now();
+      var timer = setInterval(function () {
+        fetch('/print/${esc(d.code)}/seen?since=' + since).then(function (r) { return r.json(); }).then(function (r) {
+          if (!r.seen) return;
+          clearInterval(timer);
+          move('s3');
+          $('lead').textContent = 'All done. This printer is on your device.';
+        }).catch(function () {});
+      }, 3000);
+    };
+    $('get').addEventListener('click', function () { setTimeout(function () { move('s1', 's2'); }, 600); });
+    $('installed').addEventListener('click', function () { move('s2', 's3'); watch(); });
+    return;
+  }
+  $('android').hidden = false;
+  $('a1t').textContent = 'In the Chrome menu, choose Install app or Add to Home screen.';
+  var offer = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    offer = e;
+    $('a1t').textContent = 'Tap the button and confirm.';
+    $('install').hidden = false;
+  });
+  $('install').addEventListener('click', function () { if (offer) offer.prompt(); });
+  window.addEventListener('appinstalled', function () { move('a1', 'a2'); });
+})();
+</script>`;
 
   async function driveByCode(code) {
     if (!/^[0-9a-f]{32}$/.test(code)) return null;
@@ -650,16 +723,7 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
         if (paused) return res.status(404).type('html').send(page('Paused', '<h1>This printer is paused</h1><p>The venue has switched it off for now.</p>'));
         return res.status(404).type('html').send(page('Not found', '<h1>This printer link is not known</h1><p>Ask the venue for a new one.</p>'));
       }
-      res.type('html').send(page(`Print to ${d.name}`, `<h1>Print to ${esc(d.name)}</h1>
-<p>Choose a PDF or a picture and it prints there.</p>
-<link rel="manifest" href="/print/${esc(d.code)}/manifest.webmanifest">
-<form method="post" enctype="multipart/form-data" action="/print/${esc(d.code)}">
-<label class="drop">Choose files<input type="file" name="files" multiple required accept="application/pdf,image/png,image/jpeg"></label>
-<input type="text" name="sender" maxlength="120" placeholder="Your name (optional)">
-<button>Print</button></form>
-<h2 style="font-size:17px;margin:28px 0 6px">Keep this printer on your phone</h2>
-<p><a style="color:#a5c715" href="/print/${esc(d.code)}/airprint.mobileconfig">iPhone or iPad: add it to the Print menu</a>. Open Settings when it says so, and install the profile.</p>
-<p>Android: use your browser's menu and choose Install app or Add to Home screen. Then choose Share on any document and pick this printer.</p>`));
+      res.type('html').send(page(`Print to ${d.name}`, addPage(d), `<link rel="manifest" href="/print/${esc(d.code)}/manifest.webmanifest">`));
     } catch (e) { next(e); }
   });
 
@@ -746,6 +810,17 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
 
   // What phones have sent, by drive, for the few moments a phone asks after it.
   const phoneJobs = new Map();
+  // When a phone last reached each printer, for the tick on the printer's page.
+  const lastSeen = new Map();
+
+  router.get('/print/:code/seen', async (req, res, next) => {
+    try {
+      const code = String(req.params.code);
+      if (!(await driveByCode(code))) return res.status(404).json({ seen: false });
+      res.set('Cache-Control', 'no-store');
+      res.json({ seen: (lastSeen.get(code) || 0) >= (Number(req.query.since) || 0) && lastSeen.has(code) });
+    } catch (e) { next(e); }
+  });
 
   /** The drive as a printer on the internet. */
   router.post('/ipp/print/:code', express.raw({ type: () => true, limit: MAX_BYTES + 1024 * 1024 }), async (req, res, next) => {
@@ -753,6 +828,8 @@ button{width:100%;padding:14px;border:0;border-radius:12px;background:#a5c715;co
       const code = String(req.params.code);
       const d = await driveByCode(code);
       if (!d) return res.status(404).end();
+      lastSeen.set(code, Date.now());
+      if (lastSeen.size > 2000) lastSeen.clear();
       if (!phoneJobs.has(code)) {
         if (phoneJobs.size > 500) phoneJobs.clear();
         phoneJobs.set(code, {});

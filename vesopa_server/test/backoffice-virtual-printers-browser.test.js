@@ -153,14 +153,14 @@ async function main() {
       assert.match(await text('.vp-modal h3'), /Office is ready/);
       assert.match(await text('#vp-steps'), /Profile Downloaded/);
       await sleep(300);
-      assert.match(state.qr, /\/print\/a{32}\/airprint\.mobileconfig$/);
+      assert.match(state.qr, /\/print\/a{32}$/);
       assert.ok(await cdp.eval(`return !!document.querySelector('#vp-qr svg');`));
     });
 
     await check('each kind of device has its own steps', async () => {
       await cdp.clickOn('[data-tab="android"]');
       await sleep(200);
-      assert.match(await text('#vp-steps'), /Install app/);
+      assert.match(await text('#vp-steps'), /Add to this phone/);
       assert.match(state.qr, /\/print\/a{32}$/);
       await cdp.clickOn('[data-tab="go"]');
       await sleep(100);

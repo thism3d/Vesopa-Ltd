@@ -128,7 +128,18 @@ const check = (name, ok, extra) => {
     jobs = (await call('GET', `/api/device/print-jobs?device_id=${device}&kind=till`, undefined, token)).body.jobs;
     check('and it lands in the drive for the till', jobs.length === 2, jobs);
     const profile = await fetch(`${base}${link}/airprint.mobileconfig`);
-    check('the iPhone profile downloads', profile.status === 200 && (await profile.text()).includes('com.apple.airprint'));
+    const profileBytes = Buffer.from(await profile.arrayBuffer());
+    check('the iPhone profile downloads', profile.status === 200 && profileBytes.includes('com.apple.airprint'));
+    const signedFile = path.join(require('os').tmpdir(), `e2e-${device}.der`);
+    fs.writeFileSync(signedFile, profileBytes);
+    const signer = require('child_process').spawnSync('sh', ['-c',
+      `openssl smime -verify -binary -inform der -in ${signedFile} -noverify -signer ${signedFile}.pem >/dev/null 2>&1 && openssl x509 -in ${signedFile}.pem -noout -subject -enddate; rm -f ${signedFile} ${signedFile}.pem`]);
+    check('it is signed by Apple Distribution: Vesopa Software Ltd', /Apple Distribution: Vesopa Software Ltd/.test(String(signer.stdout)), String(signer.stdout));
+    console.log(`       ${String(signer.stdout).trim().replace(/\n/g, ' | ')}`);
+    check('the page says when a phone has reached the printer', (await (await fetch(`${base}${link}/seen?since=${Date.now() - 60000}`)).json()).seen === true);
+    check('and not before it did', (await (await fetch(`${base}${link}/seen?since=${Date.now() + 60000}`)).json()).seen === false);
+    const guide = await (await fetch(base + link)).text();
+    check('the page has the steps and the manifest in its head', guide.includes('Add to this device') && guide.indexOf('rel="manifest"') < guide.indexOf('</head>'));
     const manifest = await fetch(`${base}${link}/manifest.webmanifest`);
     check('Android gets its Share menu entry', manifest.status === 200 && !!(await manifest.json()).share_target);
     const online = await call('POST', drives, { name: 'E2E online only' });
