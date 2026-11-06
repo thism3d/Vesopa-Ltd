@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../main.dart';
 import 'local/database.dart';
+import 'till_settings.dart';
 
 /// Who is working the till right now, and whether the idle screen is up.
 ///
@@ -13,7 +14,12 @@ import 'local/database.dart';
 /// survives for months. This says which member of staff is standing at it, and
 /// changes every few minutes.
 class StaffSession {
-  const StaffSession({this.staff, this.idle = false, this.promptPin = false});
+  const StaffSession({
+    this.staff,
+    this.idle = false,
+    this.promptPin = false,
+    this.notice,
+  });
 
   /// The signed-on member of staff, or null if nobody is.
   final StaffData? staff;
@@ -31,6 +37,11 @@ class StaffSession {
   /// what they want, so making them touch the screensaver first to be offered it
   /// would be a step that answers a question nobody asked.
   final bool promptPin;
+
+  /// A line for the idle screen to say as it comes down, like "Table 18 saved".
+  ///
+  /// Good for that one sign-off only, so [copyWith] does not carry it.
+  final String? notice;
 
   bool get signedOn => staff != null;
 
@@ -119,10 +130,31 @@ class StaffSessionController extends Notifier<StaffSession> {
   /// can actually check one. Otherwise there is nothing to unlock it with and the
   /// till would be stuck behind a pad nobody can satisfy — which is exactly what
   /// happened on a till commissioned before the terminal token existed.
-  void signOff() {
+  void signOff({String? notice}) {
     if (state.staff != null) ActivityLog.instance.signedOut();
-    state = StaffSession(staff: null, idle: _requirePin && _canVerify);
+    state = StaffSession(
+      staff: null,
+      idle: _requirePin && _canVerify,
+      notice: notice,
+    );
     _ticker?.cancel();
+  }
+
+  /// A table has been saved: sign off and go back to the idle screen, saying so.
+  ///
+  /// Nicki, Pontardawe RFC, 2026-11-06: "When they click save table please log
+  /// the staff out so it goes back to idle screen and say table 18 saved."
+  ///
+  /// Follows the venue's "idle after a sale" setting, since it is the same
+  /// moment: the clerk has finished with the till. Where a PIN could not bring
+  /// anybody back the clerk stays on. True when they were signed off, and the
+  /// idle screen is telling them; otherwise the caller says it.
+  bool signOffAfterTable(TillSettings settings, int number) {
+    if (!state.signedOn) return false;
+    if (!settings.idleEnabled || !settings.idleAfterSale) return false;
+    if (!_requirePin || !_canVerify) return false;
+    signOff(notice: 'Table $number saved');
+    return true;
   }
 
   /// Whether a PIN typed on this terminal can be checked against anybody.

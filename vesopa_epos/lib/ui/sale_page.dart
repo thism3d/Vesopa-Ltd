@@ -1196,6 +1196,7 @@ class SalePage extends ConsumerWidget {
 
       onNewOrder();
       if (!context.mounted) return;
+      if (_signOffAfterTable(ref, number)) return;
       PosMessenger.success(
         context,
         lines.length == 1
@@ -1257,6 +1258,7 @@ class SalePage extends ConsumerWidget {
 
     onNewOrder();
     if (!context.mounted) return;
+    if (_signOffAfterTable(ref, number)) return;
     PosMessenger.success(
       context,
       unsent == 0
@@ -1266,6 +1268,11 @@ class SalePage extends ConsumerWidget {
           : 'Added $unsent items to table $number.',
     );
   }
+
+  /// See [StaffSessionController.signOffAfterTable].
+  bool _signOffAfterTable(WidgetRef ref, int number) => ref
+      .read(staffSessionProvider.notifier)
+      .signOffAfterTable(ref.read(tillSettingsProvider), number);
 
   /// Pay on a bill worth nothing: close it at £0.00 rather than do nothing.
   ///

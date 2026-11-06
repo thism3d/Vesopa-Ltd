@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -204,6 +205,8 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
     // composition below, so it is answered once here rather than guessed twice.
     final overImage = backdrop != null && backdrop.key != _failedSource;
 
+    final notice = ref.watch(staffSessionProvider.select((s) => s.notice));
+
     return Material(
       color: Colors.black,
       child: Stack(
@@ -283,6 +286,14 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
                     child: _resting(context, overImage: overImage),
                   ),
           ),
+
+          // Over the picture and over the pad alike: the next person may
+          // already be typing their PIN.
+          if (notice != null)
+            Align(
+              alignment: Alignment.topCenter,
+              child: _SavedNotice(key: ValueKey(notice), text: notice),
+            ),
         ],
       ),
     );
@@ -486,6 +497,79 @@ class _Background extends StatelessWidget {
       onFailed(backdrop.key);
       return const SizedBox.shrink();
     },
+  );
+}
+
+/// "Table 18 saved", for a few seconds, across the top of the idle screen.
+///
+/// Touches pass straight through it, so it never stands between a clerk and
+/// the pad.
+class _SavedNotice extends StatefulWidget {
+  const _SavedNotice({super.key, required this.text});
+
+  final String text;
+
+  /// Long enough to read while walking away from the till.
+  static const showFor = Duration(seconds: 5);
+
+  @override
+  State<_SavedNotice> createState() => _SavedNoticeState();
+}
+
+class _SavedNoticeState extends State<_SavedNotice> {
+  bool _showing = true;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(_SavedNotice.showFor, () {
+      if (mounted) setState(() => _showing = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: AnimatedOpacity(
+      opacity: _showing ? 1 : 0,
+      duration: const Duration(milliseconds: 400),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xE6000000),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Pos.brand, width: 2),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle, color: Pos.brand, size: 30),
+                const SizedBox(width: 14),
+                Flexible(
+                  child: Text(
+                    widget.text,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
   );
 }
 
