@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vesopa Go: three more ideas</title>
+<link rel="icon" href="/favicon.png">
+<link rel="stylesheet" href="/style.css?v=6">
+<link rel="stylesheet" href="/css/premium.css?v=2">
+<style>
+  /* Ideas for go.vesopa.com, to look at before choosing (2026-11-06). */
+  .idea-tag { display: block; width: max-content; margin: 0 auto 26px; padding: 6px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 800;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border: 1px dashed var(--line); }
+  .intro { padding: 90px 0 30px; text-align: center; }
+  .intro h1 { font-size: clamp(36px, 5vw, 60px); letter-spacing: -.04em; line-height: 1.02; margin: 12px 0 10px; font-weight: 900; }
+  .intro p { color: var(--muted); }
+
+  /* 1: words that fill with lime as you scroll */
+  .words { padding: 120px 0 160px; }
+  .words p.big { max-width: 1000px; margin: 0 auto; text-align: center; font-weight: 900; letter-spacing: -.04em; line-height: 1.04;
+    font-size: clamp(40px, 7vw, 104px); }
+  .words .w { color: #2b3026; transition: color .5s var(--ease); }
+  .words .w.lit { color: var(--text); }
+  .words .w.lime.lit { color: var(--lime); }
+
+  /* 2: a live ticker of the evening */
+  .ticker { padding: 100px 0; overflow: hidden; }
+  .ticker .row { display: flex; gap: 14px; width: max-content; animation: tick 60s linear infinite; }
+  .ticker .row.back { animation-direction: reverse; animation-duration: 75s; margin-top: 14px; }
+  .ticker:hover .row { animation-play-state: paused; }
+  @keyframes tick { to { transform: translateX(-50%); } }
+  .chip { display: inline-flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 16px; background: var(--card); border: 1px solid var(--line);
+    white-space: nowrap; font-size: 15.5px; color: var(--muted); }
+  .chip b { color: var(--text); }
+  .chip .ok { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: rgba(165,199,21,.16); color: var(--lime); font-size: 13px; font-weight: 900; }
+  .chip .amt { color: var(--lime); font-weight: 800; }
+  .ticker .fade { position: relative; }
+  .ticker .fade::before, .ticker .fade::after { content: ""; position: absolute; top: 0; bottom: 0; width: 14vw; z-index: 1; pointer-events: none; }
+  .ticker .fade::before { left: 0; background: linear-gradient(90deg, var(--ink), transparent); }
+  .ticker .fade::after { right: 0; background: linear-gradient(-90deg, var(--ink), transparent); }
+
+  /* 3: one lime moment */
+  .moment { margin: 60px 12px; border-radius: 36px; overflow: hidden; position: relative; padding: 140px 20px; text-align: center;
+    background: linear-gradient(180deg, #b4d31e 0%, var(--lime) 55%, #98b813 100%); color: #0b0e0a; }
+  .moment::before, .moment::after { content: ""; position: absolute; border-radius: 50%; background: rgba(255,255,255,.14); pointer-events: none; }
+  .moment::before { width: 900px; height: 900px; right: -300px; top: -420px; }
+  .moment::after { width: 700px; height: 700px; left: -320px; bottom: -420px; background: rgba(255,255,255,.09); }
+  .moment h2 { position: relative; margin: 0; font-weight: 900; letter-spacing: -.045em; line-height: .98; font-size: clamp(48px, 8.5vw, 132px); }
+  .moment h2 b { color: #fff; }
+  .moment p { position: relative; margin: 26px auto 0; max-width: 560px; font-size: 19px; color: #2a3108; font-weight: 600; }
+  .moment .btn { position: relative; margin-top: 34px; background: #0b0e0a; color: #f2efe6; }
+  .js .moment h2 { transform: scale(.94); opacity: 0; transition: transform 1.2s var(--ease), opacity 1.2s var(--ease); }
+  .js .moment.in h2 { transform: none; opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .ticker .row { animation: none; } .js .moment h2 { transform: none; opacity: 1; } }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap bar">
+  <a class="brand" href="/preview/a/"><img src="/img/go-mark.png" alt="" width="34" height="34">Vesopa <b>Go</b></a>
+  <a class="btn small primary" href="/preview/a/" style="margin-left:auto">Back to design A</a>
+</div></header>
+
+<main>
+  <section class="intro"><div class="wrap">
+    <p class="eyebrow">Ideas to choose from</p>
+    <h1>Three more ways to <em>catch the eye.</em></h1>
+    <p>Scroll down slowly. Each one could go into the page, or none of them.</p>
+  </div></section>
+
+  <section class="words" id="words"><div class="wrap">
+    <span class="idea-tag">Idea 1 · Words light up as you scroll</span>
+    <p class="big" id="bigline"><span class="w">One</span> <span class="w">till.</span> <span class="w">Every</span> <span class="w">table.</span> <span class="w lime">Any</span> <span class="w lime">device.</span></p>
+  </div></section>
+
+  <section class="ticker"><div class="wrap"><span class="idea-tag">Idea 2 · A live strip of the evening</span></div>
+    <div class="fade">
+      <div class="row" id="row1"></div>
+      <div class="row back" id="row2"></div>
+    </div>
+  </section>
+
+  <section class="moment reveal" id="moment">
+    <span class="idea-tag" style="position:relative;color:#2a3108;border-color:rgba(11,14,10,.3)">Idea 3 · One big lime moment</span>
+    <h2>Work <b>faster.</b><br>Serve <b>more.</b></h2>
+    <p>Every table, every payment, every receipt, on the device already in your hand.</p>
+    <a class="btn" href="/preview/a/#get">Get Vesopa Go</a>
+  </section>
+</main>
+
+<footer class="bottom"><div class="wrap"><span>© Vesopa Software Ltd · ideas preview, not the live site</span></div></footer>
+
+<script>
+(function () {
+  document.documentElement.classList.add('js');
+  // Idea 1: each word lights as the line passes the middle of the screen.
+  var words = Array.prototype.slice.call(document.querySelectorAll('#bigline .w'));
+  function paint() {
+    var r = document.getElementById('bigline').getBoundingClientRect();
+    var vh = window.innerHeight;
+    var k = Math.max(0, Math.min(1, (vh * .85 - r.top) / (vh * .6)));
+    words.forEach(function (w, i) { w.classList.toggle('lit', k > (i + .5) / words.length); });
+  }
+  window.addEventListener('scroll', paint, { passive: true }); paint();
+
+  // Idea 2: example orders and payments, as a venue's evening goes.
+  var items = [
+    ['Table 4', '2× Peroni, 1× Coke', '£12.50', 'Card'], ['Bar', 'Gin & Tonic', '£7.50', 'Tap to Pay'],
+    ['Table 9', 'Fish & Chips ×2', '£29.00', 'QR Pay'], ['Terrace', 'Aperol Spritz ×3', '£27.00', 'Card'],
+    ['Table 2', 'Sticky Toffee', '£7.00', 'Cash'], ['Table 12', 'Cheeseburger, Chips', '£17.50', 'QR Pay'],
+    ['Bar', 'House White ×2', '£11.00', 'Tap to Pay'], ['Table 6', 'Mojito, Negroni', '£19.50', 'Card']];
+  function chips(list) {
+    return list.concat(list).map(function (it) {
+      return '<span class="chip"><span class="ok">✓</span><b>' + it[0] + '</b>' + it[1] + '<span class="amt">' + it[2] + '</span>' + it[3] + '</span>';
+    }).join('');
+  }
+  document.getElementById('row1').innerHTML = chips(items);
+  document.getElementById('row2').innerHTML = chips(items.slice(4).concat(items.slice(0, 4)));
+
+  // Idea 3: the line grows in when it comes on screen.
+  new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) e.target.classList.add('in'); }); },
+    { rootMargin: '0px 0px -20% 0px' }).observe(document.getElementById('moment'));
+})();
+</script>
+</body>
+</html>
