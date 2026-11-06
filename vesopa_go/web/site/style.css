@@ -77,6 +77,10 @@ section { position: relative; }
 .section-head h2, .split h2 { font-size: clamp(32px, 4.4vw, 56px); line-height: 1.04; letter-spacing: -.035em; margin: 12px 0 16px; font-weight: 900; }
 .section-head p, .split p { color: var(--muted); font-size: 18px; }
 .watch, .features, .pay, .network, .get { padding: 110px 0; }
+.film { padding: 110px 0 30px; }
+.film-frame { max-width: 1000px; margin: 0 auto; aspect-ratio: 16 / 9; border-radius: 22px; overflow: hidden;
+  background: #000; border: 1px solid rgba(255,255,255,.10); box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 6px rgba(165,199,21,.08); }
+.film-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
 
 /* Devices drawn in CSS around the films and screenshots. */
 .films { display: flex; justify-content: center; align-items: flex-end; gap: 34px; flex-wrap: wrap; perspective: 1400px; }
@@ -193,6 +197,8 @@ footer.bottom small { width: 100%; font-size: 12px; opacity: .75; }
   .step { min-height: 34vh; }
   .rail img.tall { height: 380px; }
   .watch, .features, .pay, .network, .get { padding: 80px 0; }
+  .film { padding: 80px 0 20px; }
+  .film-frame { border-radius: 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
