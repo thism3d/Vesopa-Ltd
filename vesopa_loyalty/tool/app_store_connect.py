@@ -1089,6 +1089,73 @@ def set_screenshots(c, version_loc, venue_dir, skip=()):
             todo(f"Screenshots {folder}: {e.detail()}")
 
 
+# App Previews: the video beside the screenshots. Folders are ours under
+# <venue>/store/previews/; Apple takes up to three 15-30 s videos per size.
+PREVIEW_SETS = {"iphone-6.9": "IPHONE_67", "ipad-13": "IPAD_PRO_3GEN_129"}
+
+
+def set_previews(c, version_loc, venue_dir):
+    root = venue_dir / "store" / "previews"
+    if not root.exists():
+        return
+    sets = {s["attributes"]["previewType"]: s for s in c.all(f"/v1/appStoreVersionLocalizations/{version_loc['id']}/appPreviewSets")}
+    for folder, kind in PREVIEW_SETS.items():
+        files = sorted((root / folder).glob("*.mp4")) if (root / folder).exists() else []
+        if not files:
+            continue
+        try:
+            pset = sets.get(kind) or c.post("/v1/appPreviewSets", {"data": {
+                "type": "appPreviewSets", "attributes": {"previewType": kind},
+                "relationships": {"appStoreVersionLocalization": {"data": {"type": "appStoreVersionLocalizations", "id": version_loc["id"]}}},
+            }})["data"]
+            have = c.all(f"/v1/appPreviewSets/{pset['id']}/appPreviews")
+            want = [hashlib.md5(f.read_bytes()).hexdigest() for f in files]
+            if [h["attributes"].get("sourceFileChecksum") for h in have] == want:
+                note(f"  previews {folder}: already up to date")
+                continue
+            for h in have:
+                c.delete(f"/v1/appPreviews/{h['id']}")
+            made = []
+            for f in files:
+                data = f.read_bytes()
+                pv = c.post("/v1/appPreviews", {"data": {
+                    "type": "appPreviews",
+                    "attributes": {"fileName": f.name, "fileSize": len(data), "mimeType": "video/mp4",
+                                   "previewFrameTimeCode": "00:00:05:00"},
+                    "relationships": {"appPreviewSet": {"data": {"type": "appPreviewSets", "id": pset["id"]}}},
+                }})["data"]
+                for op in pv["attributes"]["uploadOperations"]:
+                    req = urllib.request.Request(op["url"], data=data[op["offset"]: op["offset"] + op["length"]], method=op["method"])
+                    for h in op.get("requestHeaders", []):
+                        req.add_header(h["name"], h["value"])
+                    with urllib.request.urlopen(req, timeout=600):
+                        pass
+                c.patch(f"/v1/appPreviews/{pv['id']}", {"data": {
+                    "type": "appPreviews", "id": pv["id"],
+                    "attributes": {"uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
+                made.append((pv["id"], f.name))
+            note(f"  previews {folder}: {len(made)} uploaded ({kind})")
+            # Apple checks and re-encodes the video after the upload; say if it is refused.
+            deadline = time.time() + 600
+            while made and time.time() < deadline:
+                left = []
+                for pid, name in made:
+                    st = (c.get(f"/v1/appPreviews/{pid}")["data"]["attributes"].get("assetDeliveryState") or {})
+                    if st.get("state") == "FAILED":
+                        todo(f"Preview {folder}/{name}: Apple refused it: {st.get('errors')}")
+                    elif st.get("state") != "COMPLETE":
+                        left.append((pid, name))
+                made = left
+                if made:
+                    time.sleep(15)
+            if made:
+                note(f"  previews {folder}: still processing at Apple; it shows once done")
+            else:
+                note(f"  previews {folder}: processed by Apple")
+        except AppleError as e:
+            todo(f"Previews {folder}: {e.detail()}")
+
+
 def set_beta_review_details(c, app, store):
     """TestFlight's own review contact and sign-in, for the app. Kept the same as
     the App Store's, so the listing and TestFlight runs both refresh it."""
@@ -1170,6 +1237,7 @@ def cmd_store(venue_name):
     set_beta_review_details(c, app, store)
     placed = set_library_pictures(c, app, vloc, venue_dir)
     set_screenshots(c, vloc, venue_dir, skip=placed or ())
+    set_previews(c, vloc, venue_dir)
 
     todo("App Privacy (App Store Connect > the app > App Privacy): Apple's API cannot answer it. "
          f"The answers are in {venue_name}/store/listing.md under \"App Privacy\".")
