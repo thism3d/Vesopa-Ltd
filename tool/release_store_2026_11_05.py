@@ -28,9 +28,9 @@ APPS = [
      "Version 1.7.24.0 - Access keys\n\n"
      "License a screen once with an access key. Its settings are kept in the back office.\n"),
     ("vesopa-display", "vesopa_epos_display", "1.7.12.0", "vesopa-display-store.msix",
-     "Version 1.7.12.0 - Access keys and swipeable adverts\\n\\n"
-     "License a display once with an access key. Its settings are kept in the back office.\\n"
-     "Customers can swipe to the next advert.\\n"),
+     "Version 1.7.12.0 - Access keys and swipeable adverts\n\n"
+     "License a display once with an access key. Its settings are kept in the back office.\n"
+     "Customers can swipe to the next advert.\n"),
 ]
 
 try:
