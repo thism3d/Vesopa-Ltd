@@ -236,8 +236,13 @@ class _TillPayBoardState extends State<TillPayBoard> {
       // three to a row on a phone.
       final cols = wide ? (grid.length <= 5 ? grid.length : (grid.length == 9 ? 5 : 4)) : 3;
       final w = (box.maxWidth - 10 * (cols - 1)) / cols;
+      // A short last row fills the width, so the board has no empty slot.
+      final left = grid.length % cols;
+      final lastRow = left == 0 ? grid.length : grid.length - left;
+      final stretched = left == 0 ? w : (box.maxWidth - 10 * (left - 1)) / left;
       return Wrap(spacing: 10, runSpacing: 10, children: [
-        for (final (label, onTap) in grid) SizedBox(width: w, height: 64, child: _ToolKey(label: label, icon: _toolIcons[label], onTap: onTap)),
+        for (final (i, (label, onTap)) in grid.indexed)
+          SizedBox(width: i >= lastRow ? stretched : w, height: 64, child: _ToolKey(label: label, icon: _toolIcons[label], onTap: onTap)),
       ]);
     });
 
@@ -368,7 +373,7 @@ class _ToolKey extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   if (mark != null) ...[mark!, const SizedBox(width: 8)] else if (icon != null) ...[Icon(icon, size: 22), const SizedBox(width: 8)],
-                  Flexible(child: FitText(label, maxLines: 2, minSize: 12, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, height: 1.1, fontWeight: FontWeight.w600))),
+                  Flexible(child: FitText(label, maxLines: 1, minSize: 10, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, height: 1.1, fontWeight: FontWeight.w600))),
                 ]),
               ),
             ),
