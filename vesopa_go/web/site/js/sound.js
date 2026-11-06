@@ -118,4 +118,42 @@
     if (!ctx || !on) return;
     if (document.hidden) ctx.suspend(); else ctx.resume();
   });
+
+  // The way in, as vesopasoftware.com does it: once a visit, a short welcome
+  // asks for sound, because only a click may start it. Either button lets the
+  // page in; the headline rises after, so it isn't spent behind the welcome.
+  var asked = false;
+  try { asked = sessionStorage.getItem('go-sound-asked') === '1'; } catch (e) {}
+  if (asked || !btn.closest('header')) return;
+  var root = document.documentElement;
+  var w = document.createElement('div');
+  w.className = 'welcome';
+  w.setAttribute('role', 'dialog');
+  w.setAttribute('aria-label', 'Welcome to Vesopa Go');
+  w.innerHTML = '<div class="welcome-in">'
+    + '<img src="/img/go-mark.png" alt="" width="84" height="84">'
+    + '<p class="welcome-name">Vesopa <b>Go</b></p>'
+    + '<p class="welcome-t">Best with sound.</p>'
+    + '<p class="welcome-s">A calm tone plays under this page, with the app\'s own taps as you scroll. Turn it off any time.</p>'
+    + '<div class="welcome-go"><button type="button" class="btn primary" data-sound="1">Enter with sound</button>'
+    + '<button type="button" class="btn ghost" data-sound="0">Enter quietly</button></div></div>';
+  document.body.appendChild(w);
+  root.classList.add('welcoming');
+  requestAnimationFrame(function () { w.classList.add('shown'); });
+  w.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-sound]');
+    if (!b) return;
+    try { sessionStorage.setItem('go-sound-asked', '1'); } catch (er) {}
+    if (b.getAttribute('data-sound') === '1') set(true);
+    // replay the headline's rise for the visitor, now that they can see it
+    root.classList.add('snap');
+    root.classList.remove('ready');
+    void root.offsetWidth;
+    root.classList.remove('snap', 'welcoming');
+    w.classList.remove('shown');
+    w.classList.add('gone');
+    setTimeout(function () { root.classList.add('ready'); }, 120);
+    setTimeout(function () { w.remove(); }, 900);
+  });
+  w.querySelector('[data-sound="1"]').focus({ preventScroll: true });
 })();

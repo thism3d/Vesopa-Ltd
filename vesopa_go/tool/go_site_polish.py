@@ -53,7 +53,7 @@ def polish(html, theme):
     b = html.index("      </div>\n    </div>\n  </section>", a) + len("      </div>")
     html = html[:a] + BENTO + html[b:]
     rep('<link rel="stylesheet" href="/style.css?v=6">',
-        '<link rel="stylesheet" href="/style.css?v=6">\n<link rel="stylesheet" href="/css/premium.css?v=4">')
+        '<link rel="stylesheet" href="/style.css?v=6">\n<link rel="stylesheet" href="/css/premium.css?v=5">')
     rep('<body>', f'<body{" class=\"theme-mix\"" if theme == "b" else ""}>\n<div class="progress" aria-hidden="true"></div>')
     rep('<canvas id="stage" aria-hidden="true"></canvas>', '<canvas id="stage" aria-hidden="true"></canvas>\n    <div class="aura" aria-hidden="true"></div>')
     rep('<p class="eyebrow"><span class="pulse"></span>', '<p class="eyebrow pill"><span class="pulse"></span>')
@@ -66,7 +66,7 @@ def polish(html, theme):
         '      <div class="steps-phone" aria-hidden="true">\n        <div class="glow"></div>\n        <p class="count">Step <b>1</b> of 5</p>')
     rep('        <div class="steps-bar"><i></i></div>', '        <div class="steps-bar"><i></i></div>\n        <div class="dots"></div>')
     rep('<script src="/js/go.js?v=6" defer></script>',
-        '<script src="/js/go.js?v=7" defer></script>\n<script src="/js/premium.js?v=3" defer></script>\n<script src="/js/sound.js?v=2" defer></script>')
+        '<script src="/js/go.js?v=7" defer></script>\n<script src="/js/premium.js?v=3" defer></script>\n<script src="/js/sound.js?v=3" defer></script>')
     # the Sound button, beside "Get the app"
     rep('    <a class="btn small primary" href="#get">Get the app</a>',
         '    <button class="sound-btn" type="button" aria-pressed="false" title="Sound"><i aria-hidden="true"><b></b><b></b><b></b></i><span>Sound</span></button>\n'

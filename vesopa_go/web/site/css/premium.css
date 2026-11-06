@@ -211,3 +211,23 @@ nav.links a.active { color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .live .row { animation: none; } }
 .sound-btn i b:nth-child(2) { height: 11px; }
 .sound-btn i b:nth-child(3) { height: 7px; }
+
+/* ---- the way in (js/sound.js): once a visit, asks for sound ---- */
+.welcoming body { overflow: hidden; }
+.welcome { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px;
+  background: radial-gradient(60% 60% at 50% 45%, rgba(165,199,21,.12), transparent 70%), rgba(8,10,7,.94);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); opacity: 0; transition: opacity .7s var(--ease); }
+.welcome.shown { opacity: 1; }
+.welcome.gone { opacity: 0; pointer-events: none; }
+.welcome-in { max-width: 460px; text-align: center; transform: translateY(14px); transition: transform .9s var(--ease); }
+.welcome.shown .welcome-in { transform: none; }
+.welcome img { margin: 0 auto 18px; width: 84px; height: 84px; border-radius: 22px; box-shadow: 0 0 60px rgba(165,199,21,.35); }
+.welcome-name { margin: 0; font-size: 22px; font-weight: 800; }
+.welcome-name b { color: var(--lime); }
+.welcome-t { margin: 26px 0 8px; font-size: clamp(28px, 4vw, 38px); font-weight: 900; letter-spacing: -.03em; line-height: 1.1; }
+.welcome-s { margin: 0 auto; color: var(--muted); font-size: 16px; max-width: 380px; }
+.welcome-go { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
+.welcome .btn { cursor: pointer; border: 0; font: inherit; font-weight: 800; }
+.welcome .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+.welcome .btn.ghost:hover { border-color: rgba(165,199,21,.5); }
+.snap .hero * { transition: none !important; }
