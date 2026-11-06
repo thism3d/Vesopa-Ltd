@@ -112,11 +112,19 @@ const check = (name, ok, extra) => {
     check('admin reads who takes the cards', (await call('GET', `/api/admin/offices/${o.id}/payment-providers`)).status === 200);
     check('admin reads the Go devices', (await call('GET', `/api/admin/offices/${o.id}/go-modes`)).status === 200);
 
+    const back = await call('POST', '/api/terminal/relicense', { device_kind: 'till', device_fingerprint: 'e2e-fingerprint-long', device_id: device }, 'none');
+    check('an unknown machine is not licensed by itself', back.status === 404, back);
+    await db.query('UPDATE bo_terminals SET device_fingerprint = ? WHERE id = ?', ['e2e-fingerprint-long', one.body.id]);
+    const relicensed = await call('POST', '/api/terminal/relicense', { device_kind: 'till', device_fingerprint: 'e2e-fingerprint-long', device_id: device }, 'none');
+    check('a known machine comes back with no typing', relicensed.status === 200 && !!relicensed.body.terminalToken, relicensed);
+
     const gone = await call('POST', `${pages}/${one.body.id}/revoke`);
     check('the licence can be withdrawn', gone.status === 200 && !!gone.body.revoked_at, gone);
     const after = await call('GET', `/api/device/terminal${q}`, undefined, token);
     check('a withdrawn device stops', after.status === 401, after);
     check('a withdrawn key stops', (await license({})).status === 403);
+    const noBack = await call('POST', '/api/terminal/relicense', { device_kind: 'till', device_fingerprint: 'e2e-fingerprint-long', device_id: device }, 'none');
+    check('a withdrawn machine cannot come back by itself', noBack.status === 404, noBack);
   } catch (e) {
     check('the run finished', false, e.message);
   } finally {

@@ -44,6 +44,8 @@ import 'data/training_mode.dart';
 import 'data/sync_service.dart';
 import 'data/terminal_identity.dart';
 import 'data/terminal_service.dart';
+import 'data/hardware_fingerprint.dart';
+import 'data/terminal_relicense.dart';
 import 'data/terminal_sync.dart';
 import 'data/table_repository.dart';
 import 'data/till_settings.dart';
@@ -1126,7 +1128,14 @@ Future<void> main() async {
 
   // This terminal's settings from the back office, before any provider reads
   // them, so a reinstall starts with its printers (data/terminal_sync.dart).
-  await restoreTerminalSettings(apiBase: Api.base, version: VesopaBrand.appVersion);
+  String? fingerprint;
+  try {
+    fingerprint = await HardwareFingerprint.get().timeout(const Duration(seconds: 5));
+  } catch (_) {
+    // No fingerprint: this till signs in the ordinary way if it has to.
+  }
+  await relicenseIfNeeded(apiBase: Api.base, fingerprint: fingerprint, version: VesopaBrand.appVersion);
+  await restoreTerminalSettings(apiBase: Api.base, version: VesopaBrand.appVersion, fingerprint: fingerprint);
 
   await _lockWindowToKiosk();
   runApp(

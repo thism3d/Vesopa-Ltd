@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/constants.dart';
 import 'hardware_fingerprint.dart';
 import 'licence_key.dart';
+import 'terminal_relicense.dart' show signedOutKey;
 import 'terminal_sync.dart';
 import 'terminal_identity.dart';
 import 'vesopa_sso.dart';
@@ -442,6 +443,7 @@ class SessionController extends AsyncNotifier<Session> {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, jsonEncode(session.toJson()));
+    await prefs.remove(signedOutKey);
     state = AsyncData(session);
   }
 
@@ -450,6 +452,7 @@ class SessionController extends AsyncNotifier<Session> {
   Future<void> signOut() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
+    await prefs.setBool(signedOutKey, true);
     state = const AsyncData(Session.empty);
   }
 }

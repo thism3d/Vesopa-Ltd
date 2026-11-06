@@ -477,13 +477,14 @@ function terminalStore(pool) {
     return row;
   }
 
-  async function ping(id, { version, appliedRev }) {
+  async function ping(id, { version, appliedRev, fingerprint }) {
     await pool.execute(
       `UPDATE bo_terminals
           SET last_ping_at = NOW(), app_version = COALESCE(?, app_version),
-              applied_rev = GREATEST(applied_rev, ?)
+              applied_rev = GREATEST(applied_rev, ?),
+              device_fingerprint = COALESCE(device_fingerprint, ?)
         WHERE id = ?`,
-      [version || null, appliedRev || 0, id]
+      [version || null, appliedRev || 0, fingerprint || null, id]
     );
   }
 
@@ -737,6 +738,57 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
         });
       }
 
+      const answer = await licensed(row, { fingerprint, deviceId, deviceName, version: clamp(body.app_version, 32) });
+      limiter.passed(ip);
+      res.status(answer.status || 200).json(answer.body);
+    } catch (e) { next(e); }
+  });
+
+  /**
+   * A machine the back office knows, come back with no session.
+   *
+   * Pontardawe's lounge till logged the manager out and lost its printers on
+   * 2026-11-04. The fingerprint is a hash of things that survive that, and it
+   * only ever finds a terminal of this venue that has not been withdrawn, so
+   * the worst a copied hash can do is run that one till: no back-office access.
+   */
+  router.post('/api/terminal/relicense', express.json(), async (req, res, next) => {
+    try {
+      const ip = req.ip;
+      if (limiter.blocked(ip)) return res.status(429).json({ error: 'Too many tries.' });
+      await store.ensure();
+      const body = req.body || {};
+      const fingerprint = clamp(body.device_fingerprint, 64);
+      const kind = clamp(body.device_kind, 24);
+      if (fingerprint.length < 16 || !LICENSED_KINDS.includes(kind)) {
+        limiter.failed(ip);
+        return res.status(404).json({ error: 'This machine is not known.' });
+      }
+      const [[row]] = await pool.query(
+        `SELECT t.*, o.id AS office_id, o.name AS office_name
+           FROM bo_terminals t
+           JOIN offices o
+             ON o.contact_email COLLATE utf8mb4_general_ci = t.office COLLATE utf8mb4_general_ci
+          WHERE t.device_fingerprint = ? AND t.kind = ? AND t.revoked_at IS NULL
+          ORDER BY t.last_ping_at DESC LIMIT 1`,
+        [fingerprint, kind]
+      );
+      if (!row) {
+        limiter.failed(ip);
+        return res.status(404).json({ error: 'This machine is not known.' });
+      }
+      const answer = await licensed(row, {
+        fingerprint,
+        deviceId: clamp(body.device_id, 64),
+        deviceName: row.device_name,
+        version: clamp(body.app_version, 32),
+      });
+      res.status(answer.status || 200).json(answer.body);
+    } catch (e) { next(e); }
+  });
+
+  /** A seat and a token for a terminal, and the row brought up to date. */
+  async function licensed(row, { fingerprint, deviceId, deviceName, version }) {
       let seatId;
       try {
         seatId = await tillSeats.claimSeat(pool, {
@@ -748,7 +800,7 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
           by: `terminal ${row.terminal_no}`,
         });
       } catch (e) {
-        if (e instanceof tillSeats.SeatLimitError) return res.status(409).json({ error: e.message });
+        if (e instanceof tillSeats.SeatLimitError) return { status: 409, body: { error: e.message } };
         throw e;
       }
 
@@ -760,10 +812,9 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
           WHERE id = ?`,
         [
           deviceId || null, fingerprint || null, deviceName || null, seatId,
-          clamp(body.app_version, 32) || null, row.id,
+          version || null, row.id,
         ]
       );
-      limiter.passed(ip);
 
       const token = deviceToken({
         kind: row.kind,
@@ -773,7 +824,7 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
         seatId,
         secret,
       });
-      res.json({
+      return { body: {
         // The device token in both places, and no person's session. The till
         // treats it as it does a session that has run out: the back office
         // refuses it, and everything a till does runs on its terminal token.
@@ -788,9 +839,8 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
         office_id: row.office_id,
         venue: row.office_name,
         terminal: terminalView(row),
-      });
-    } catch (e) { next(e); }
-  });
+      } };
+  }
 
   /** A device's own terminal and settings. Also its "last ping". */
   router.get('/api/device/terminal', device, async (req, res, next) => {
@@ -806,6 +856,7 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
       await store.ping(row.id, {
         version: clamp(req.query.version, 32),
         appliedRev: Math.max(0, Number(req.query.applied_rev) || 0),
+        fingerprint: clamp(req.query.fingerprint, 64),
       });
       const rows = await store.settings(row.id);
       res.json({
