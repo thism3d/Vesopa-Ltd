@@ -251,8 +251,18 @@ class _AdvertPanelState extends State<AdvertPanel> {
     if (mounted) _next();
   }
 
+  // A customer can swipe on to the next advert. The till's touch lock stops
+  // this with every other touch (TouchGate).
   @override
-  Widget build(BuildContext context) => widget.standingMessage.trim().isEmpty
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.translucent,
+    onHorizontalDragEnd: (e) {
+      if ((e.primaryVelocity ?? 0).abs() > 100) _next();
+    },
+    child: _panel(context),
+  );
+
+  Widget _panel(BuildContext context) => widget.standingMessage.trim().isEmpty
       ? _advert(context)
       : Stack(
           fit: StackFit.expand,

@@ -190,6 +190,7 @@ Future<void> restoreTerminalSettings({
   required String apiBase,
   required String version,
   String kind = 'display',
+  String? fingerprint,
   http.Client? client,
 }) async {
   final http_ = client ?? http.Client();
@@ -202,6 +203,7 @@ Future<void> restoreTerminalSettings({
       'kind': kind,
       'version': version,
       'applied_rev': '${prefs.getInt(_revKey) ?? 0}',
+      'fingerprint': ?fingerprint,
     });
     final res = await http_
         .get(uri, headers: {'Authorization': 'Bearer $token'})

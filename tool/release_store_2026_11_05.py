@@ -1,4 +1,4 @@
-"""Send EPOS 1.16.43, Kitchen 1.7.24 and Display 1.7.11 to the Microsoft Store (2026-11-05).
+"""Send EPOS 1.16.43, Kitchen 1.7.24 and Display 1.7.12 to the Microsoft Store (2026-11-05).
 
     python tool/release_store_2026_11_05.py msix     # make and check the packages
     python tool/release_store_2026_11_05.py store    # send them
@@ -27,9 +27,10 @@ APPS = [
     ("vesopa-kitchen", "vesopa_epos_kitchen", "1.7.24.0", "vesopa-kitchen-store.msix",
      "Version 1.7.24.0 - Access keys\n\n"
      "License a screen once with an access key. Its settings are kept in the back office.\n"),
-    ("vesopa-display", "vesopa_epos_display", "1.7.11.0", "vesopa-display-store.msix",
-     "Version 1.7.11.0 - Access keys\n\n"
-     "License a display once with an access key. Its settings are kept in the back office.\n"),
+    ("vesopa-display", "vesopa_epos_display", "1.7.12.0", "vesopa-display-store.msix",
+     "Version 1.7.12.0 - Access keys and swipeable adverts\\n\\n"
+     "License a display once with an access key. Its settings are kept in the back office.\\n"
+     "Customers can swipe to the next advert.\\n"),
 ]
 
 try:
