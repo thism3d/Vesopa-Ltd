@@ -18,7 +18,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:vesopa_go/ui/adaptive.dart';
 import 'package:vesopa_go/display/data/display_feed.dart' show displayCardProvider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pay/pay.dart' show Pay;
+import 'package:vesopa_go/data/api.dart';
 import 'package:vesopa_go/data/models.dart';
+import 'package:vesopa_go/payments/google_pay.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/payments/payment_service.dart';
 import 'package:vesopa_go/ui/pay_motion.dart';
@@ -159,7 +162,59 @@ class _PayPageState extends ConsumerState<PayPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _takeQrBill(ref.read(qrBillPaymentsProvider)[widget.billId]);
+      _loadGooglePay();
     });
+  }
+
+  /// Google's own client, once it says this device can pay.
+  Pay? _googlePay;
+
+  /// For the Console's screenshots, where no Google Play is running.
+  @visibleForTesting
+  static bool debugShowGooglePay = false;
+
+  Future<void> _loadGooglePay() async {
+    final s = ref.read(tapProvider);
+    try {
+      final client = await googlePayClient(ref.read(apiProvider), gateway: s.config.go.googlePayGateway, venue: s.venue?.name ?? 'Vesopa');
+      if (mounted) setState(() => _googlePay = client);
+    } catch (_) {
+      // No button: every other way to pay is still there.
+    }
+  }
+
+  /// Google Pay on this device: Google's sheet, then the server charges it.
+  Future<void> _takeGooglePay(int amount) async {
+    final bill = _bill;
+    final client = _googlePay;
+    if (bill == null || client == null || _busy) return;
+    final config = ref.read(tapProvider).config;
+    var tip = _presetTip;
+    if (tip == 0 && config.tips && config.go.customerTip && config.tipPercents.isNotEmpty) {
+      final chosen = await askTip(context, dueMinor: bill.dueMinor, percents: config.tipPercents);
+      if (chosen == null || !mounted) return;
+      tip = chosen;
+    }
+    _sendFirst(bill);
+    setState(() => _problem = null);
+    final card = amount.clamp(1, bill.dueMinor);
+    try {
+      final id = await takeGooglePay(client, ref.read(apiProvider),
+          amountMinor: card + tip, reference: 'gpay-${DateTime.now().microsecondsSinceEpoch}');
+      if (id == null || !mounted) return;
+      setState(() => _presetTip = 0);
+      _take(Tender(
+        id: id,
+        amountMinor: card,
+        tipMinor: tip,
+        kind: 'tap',
+        at: DateTime.now(),
+        clerk: ref.read(tapProvider).clerk?.name ?? '',
+        reference: id,
+      ));
+    } on TapApiError catch (e) {
+      if (mounted) setState(() => _problem = e.message);
+    }
   }
 
   /// Payments made from this bill's printed QR code, put on the bill.
@@ -675,6 +730,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         otherCard: teya || (other == 'tap' && _isIpad(context) && !config.testVenue) ? null : (amount) => _card(other, amount: amount),
         otherCardLabel: other == 'machine' ? 'Card machine' : (_isIpad(context) ? 'Test payment' : 'Tap to Pay'),
         qrPay: _qr,
+        googlePay: _googlePay != null || debugShowGooglePay ? _takeGooglePay : null,
         manualCard: _manualCard,
         split: _split,
         voucher: () => askVoucher(context, ref, bill),

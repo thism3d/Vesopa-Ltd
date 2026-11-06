@@ -12,6 +12,7 @@ library;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../config/constants.dart' show apiBase;
 import '../../data/models.dart';
@@ -52,6 +53,7 @@ class PayActions {
     this.otherCard,
     this.otherCardLabel,
     this.qrPay,
+    this.googlePay,
   });
 
   final void Function(int tenderedMinor) cash;
@@ -75,6 +77,9 @@ class PayActions {
 
   /// QR Pay: the customer pays [amountMinor] on their own phone.
   final void Function(int amountMinor)? qrPay;
+
+  /// Google Pay on this device, when the venue and Google both allow it.
+  final void Function(int amountMinor)? googlePay;
 }
 
 class TillPayBoard extends StatefulWidget {
@@ -186,6 +191,10 @@ class _TillPayBoardState extends State<TillPayBoard> {
       const SizedBox(width: 10),
       if (a.otherCard != null) ...[
         Expanded(child: _ToolKey(label: a.otherCardLabel ?? 'Other card', icon: a.otherCardLabel == 'Card machine' ? Icons.point_of_sale_rounded : null, mark: a.otherCardLabel == 'Card machine' ? null : const TapToPayMark(size: 22), onTap: () => _then(() => a.otherCard!(_amount.clamp(1, _due))))),
+        const SizedBox(width: 10),
+      ],
+      if (a.googlePay != null) ...[
+        Expanded(child: _ToolKey(key: const ValueKey('pay-google'), label: 'Google Pay', mark: SvgPicture.asset('assets/marks/google_pay_mark.svg', height: 24), onTap: () => _then(() => a.googlePay!(_amount.clamp(1, _due))))),
         const SizedBox(width: 10),
       ],
       if (a.qrPay != null)

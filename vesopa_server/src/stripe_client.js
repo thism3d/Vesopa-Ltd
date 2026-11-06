@@ -182,6 +182,29 @@ function createTerminalPayment(account, { amountMinor, currency = 'gbp', referen
   });
 }
 
+/**
+ * A Google Pay payment on the venue's account: the token Google Pay made for
+ * this venue (tokenized through gateway "stripe") is confirmed at once. Asked
+ * twice with one token, Stripe answers once.
+ */
+function createWalletPayment(account, { amountMinor, currency = 'gbp', token, reference, description }, opts = {}) {
+  return call('POST', '/v1/payment_intents', {
+    ...opts,
+    account,
+    idempotencyKey: `vesopa-gp-${crypto.createHash('sha256').update(String(token)).digest('hex').slice(0, 32)}`,
+    body: {
+      amount: amountMinor,
+      currency,
+      payment_method_types: ['card'],
+      payment_method_data: { type: 'card', card: { token } },
+      confirm: true,
+      use_stripe_sdk: true,
+      description: description || undefined,
+      metadata: reference ? { vesopa_ref: reference } : undefined,
+    },
+  });
+}
+
 function retrievePayment(account, id, opts = {}) {
   return call('GET', `/v1/payment_intents/${encodeURIComponent(id)}`, { ...opts, account });
 }
@@ -231,7 +254,7 @@ module.exports = {
   createLocation,
   connectionToken,
   createTerminalPayment,
-  retrievePayment,
+  createWalletPayment, retrievePayment,
   cancelPayment,
   refund,
   verifyWebhook,

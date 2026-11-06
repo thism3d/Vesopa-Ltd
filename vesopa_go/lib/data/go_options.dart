@@ -33,6 +33,9 @@ class GoOptions {
   String get cardIos => _str('card_ios', 'tap');
   String get cardAndroid => _str('card_android', 'machine');
 
+  /// Who takes Google Pay on the pay page on Android: off, stripe or dojo.
+  String get googlePayGateway => _str('google_pay_gateway', 'off');
+
   bool get loginPin => _flag('login_pin', true);
   bool get loginPhotos => _flag('login_photos', true);
   bool get loginNfc => _flag('login_nfc', true);

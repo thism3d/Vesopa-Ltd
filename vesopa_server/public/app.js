@@ -11704,6 +11704,7 @@ const GO_FIELDS = [
   ['Card payments', [
     ['card_ios', 'iPhone and iPad take cards by', [['tap', 'Tap to Pay on the device'], ['machine', 'The Dojo card machine']]],
     ['card_android', 'Android takes cards by', [['machine', 'The Dojo card machine'], ['pocket', 'A Dojo Pocket'], ['tap', 'Tap to Pay on the device']]],
+    ['google_pay_gateway', 'Google Pay button on the pay page (Android)', [['off', 'Off'], ['stripe', 'Through Stripe'], ['dojo', 'Through Dojo (not ready: needs a gateway ID from Dojo)']]],
   ]],
   ['Customer hand-over', [
     ['customer_handover', 'Pass the device from person to person to pay a split'],

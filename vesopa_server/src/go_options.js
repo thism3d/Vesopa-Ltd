@@ -20,6 +20,8 @@ const GO_DEFAULTS = Object.freeze({
   // Card payments, per platform.
   card_ios: 'tap', // tap | machine
   card_android: 'machine', // tap | machine | pocket
+  // Google Pay on Go's pay page, on Android: which gateway takes it.
+  google_pay_gateway: 'off', // off | stripe | dojo
   // Signing in.
   login_pin: true,
   login_photos: true,
@@ -85,6 +87,7 @@ const CHOICES = {
   floor_view: ['plan', 'list'],
   card_ios: ['tap', 'machine'],
   card_android: ['tap', 'machine', 'pocket'],
+  google_pay_gateway: ['off', 'stripe', 'dojo'],
   memberships_access: ['staff', 'managers', 'off'],
   memberships_cancel: ['staff', 'managers'],
   events_access: ['staff', 'managers', 'off'],

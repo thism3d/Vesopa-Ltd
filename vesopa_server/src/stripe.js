@@ -19,6 +19,7 @@
 const express = require('express');
 
 const stripe = require('./stripe_client');
+const { goOptionsFor } = require('./go_options');
 const { requireAuth, requireTerminal } = require('./auth');
 const { attachAccess, requirePermission } = require('./permissions');
 
@@ -80,6 +81,8 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
       configured: client.configured(),
       environment: client.configured() ? client.environment() : null,
       publishable_key: client.configured() ? process.env.STRIPE_PUBLISHABLE_KEY || null : null,
+      google_pay_environment: process.env.GOOGLE_PAY_ENV === 'PRODUCTION' ? 'PRODUCTION' : 'TEST',
+      google_pay_merchant_id: process.env.GOOGLE_PAY_MERCHANT_ID || null,
       enabled: Boolean(Number(r.enabled)),
       account: r.account_id || null,
       ready: live,
@@ -226,6 +229,34 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
         description: req.body.description ? String(req.body.description).slice(0, 200) : undefined,
       });
       res.status(201).json({ id: pi.id, client_secret: pi.client_secret, status: pi.status, account: row.account_id });
+    } catch (e) { fail(res, e, next); }
+  });
+
+  /**
+   * Google Pay on Go's pay page: the token Google made for this venue, charged
+   * on its account. A bank's extra check cannot be shown on Go, so such a
+   * payment is called off and the clerk takes it another way.
+   */
+  router.post('/till/stripe/google-pay', terminal, async (req, res, next) => {
+    try {
+      if ((await goOptionsFor(pool, req.office)).google_pay_gateway !== 'stripe') {
+        return res.status(409).json({ error: 'Google Pay through Stripe is off for this venue.' });
+      }
+      const row = await settingsFor(req.office);
+      if (!row || !row.account_id || !Number(row.enabled)) return res.status(409).json({ error: 'Connect Stripe in the back office first.' });
+      const amount = Math.round(Number(req.body && req.body.amount_minor));
+      const token = String((req.body && req.body.token) || '');
+      if (!Number.isInteger(amount) || amount < 30) return res.status(400).json({ error: 'At least 30p.' });
+      if (!/^tok_\w{4,}$/.test(token)) return res.status(400).json({ error: 'Google Pay gave no card.' });
+      const pi = await client.createWalletPayment(row.account_id, {
+        amountMinor: amount,
+        token,
+        reference: req.body.reference ? String(req.body.reference).slice(0, 80) : undefined,
+        description: 'Vesopa Go, Google Pay',
+      });
+      if (pi.status === 'succeeded') return res.status(201).json({ id: pi.id, status: pi.status });
+      await client.cancelPayment(row.account_id, pi.id).catch(() => {});
+      res.status(402).json({ error: 'The bank wants a check Go cannot show. Nothing was taken. Use another way to pay.' });
     } catch (e) { fail(res, e, next); }
   });
 
