@@ -118,3 +118,22 @@
     sync();
   }
 })();
+
+// ---- the live strip: example orders of an evening, twice over so it loops ----
+(function () {
+  var rows = document.querySelectorAll('.live .row');
+  if (!rows.length) return;
+  var items = [
+    ['Table 4', '2× Peroni, 1× Coke', '£12.50', 'Card'], ['Bar', 'Gin & Tonic', '£7.50', 'Tap to Pay'],
+    ['Table 9', 'Fish & Chips ×2', '£29.00', 'QR Pay'], ['Terrace', 'Aperol Spritz ×3', '£27.00', 'Card'],
+    ['Table 2', 'Sticky Toffee', '£7.00', 'Cash'], ['Table 12', 'Cheeseburger, Chips', '£17.50', 'QR Pay'],
+    ['Bar', 'House White ×2', '£11.00', 'Tap to Pay'], ['Table 6', 'Mojito, Negroni', '£19.50', 'Card']];
+  function html(list) {
+    return list.concat(list).map(function (it) {
+      return '<span class="order"><span class="ok">✓</span><b>' + it[0] + '</b>' + it[1] +
+        '<span class="amt">' + it[2] + '</span><span class="how">' + it[3] + '</span></span>';
+    }).join('');
+  }
+  rows[0].innerHTML = html(items);
+  if (rows[1]) rows[1].innerHTML = html(items.slice(4).concat(items.slice(0, 4)));
+})();
