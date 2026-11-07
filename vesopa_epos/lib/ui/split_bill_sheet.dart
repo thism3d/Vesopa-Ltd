@@ -525,7 +525,12 @@ class SplitBillSheetState extends State<SplitBillSheet> {
               ),
             ),
             Text(
-              '${_money(widget.state.outstandingMinor)} left to pay',
+              // Each share is its own items at their own prices, so money
+              // already taken on the bill is said here rather than hidden in
+              // the shares (2026-11-07).
+              widget.state.paidMinor > 0
+                  ? '${_money(widget.state.paidMinor)} paid · ${_money(widget.state.outstandingMinor)} left to pay'
+                  : '${_money(widget.state.outstandingMinor)} left to pay',
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
             IconButton(

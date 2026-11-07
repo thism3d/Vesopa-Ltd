@@ -343,8 +343,16 @@ class TenderState {
     // Service, and any reduction taken against the bill rather than a line, is
     // attached to nothing — so it has to be placed, and the shares have to go
     // on summing to the bill either way.
+    //
+    // AGAINST THE BILL AS RUNG, never against what is still owed. Money already
+    // taken is not a discount: a table reopened after one person paid, or the
+    // split opened again after a payment, used to spread that payment across
+    // every share as if it were an offer, so a share holding a £4.50 breakfast
+    // and a £2.00 tea showed £1.82 (Pontardawe RFC, 2026-11-07). What has been
+    // paid stays paid on the bill; [dueNowMinor] never asks a share for more
+    // than the bill still owes.
     final covered = itemised.fold<int>(0, (s, v) => s + v);
-    final amounts = _apportion(itemised, outstandingMinor - covered, covered);
+    final amounts = _apportion(itemised, totals.totalMinor - covered, covered);
 
     return copyWith(
       splitMode: SplitMode.byItem,
