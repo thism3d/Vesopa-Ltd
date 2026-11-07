@@ -136,6 +136,7 @@ void main() {
       expect((lines.first as Map)['stations'], 'kp1,kp2');
       expect(t['table_number'], 12);
       expect(kitchenTicket(bill, [bill.lines[1]], id: 't2', office: 'x'), isNull);
+      expect(t['source'], 'go', reason: 'a phone has no printer: a till prints it');
     });
   });
 

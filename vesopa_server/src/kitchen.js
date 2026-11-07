@@ -38,6 +38,7 @@ function lineId(id) {
 }
 
 const { requireAuth, requireTerminal, verifyPassword, AccessDeniedError } = require('./auth');
+const { queueGoTicket } = require('./kitchen_prints');
 const training = require('./training');
 const licences = require('./licences');
 const { cleanAllergens, readAllergens } = require('./allergens');
@@ -2091,6 +2092,17 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
         { type: 'kitchen.ticket', id: ticket.id, office: ticket.office },
         { office: ticket.office }
       );
+
+      // A phone has no printer: Go's ticket waits for a till that has one
+      // (kitchen_prints.js). The kitchen board has it either way, so a failure
+      // here is logged, not handed back to be sent again.
+      if (ticket.source === 'go') {
+        try {
+          await queueGoTicket(pool, broadcast, ticket, await readModes(pool, ticket.office));
+        } catch (err) {
+          console.error('[kitchen] could not queue a Go ticket for printing', err.message);
+        }
+      }
 
       res.status(201).json({ status: 'accepted', id: ticket.id });
     } catch (err) {

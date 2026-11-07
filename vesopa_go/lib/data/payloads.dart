@@ -95,6 +95,8 @@ Map<String, Object?>? kitchenTicket(Bill bill, List<BillLine> lines, {required S
     'office': office,
     'order_id': bill.id,
     'kind': kind,
+    // A phone has no kitchen printer: this asks a till to print it (kitchen_prints.js).
+    'source': 'go',
     'placed_at': DateTime.now().toUtc().toIso8601String(),
     if (bill.tableNumber != null) 'table_number': bill.tableNumber,
     if (roomName != null) 'room_name': roomName,

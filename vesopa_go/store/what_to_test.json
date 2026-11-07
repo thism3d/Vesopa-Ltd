@@ -1,6 +1,6 @@
 {
   "_comment": "One place for what testers read on each build: TestFlight's What to Test (tool/testflight.py) and Play's release notes (tool/play_upload.py). Change it with the version in pubspec.yaml; a build whose version is not this one says so in its notes instead of repeating an old release's.",
-  "version": "1.2.51",
-  "what_to_test": "On a phone, open the sale screen at a venue whose till has page keys (Pontardawe has them down the right-hand side). The page keys should all sit together at the top, with that page's products underneath, and stay there as you move between pages.",
-  "release_notes": "On a phone, the page buttons now sit together at the top, with each page's products underneath."
+  "version": "1.2.52",
+  "what_to_test": "Send food to the kitchen from Go at a venue whose kitchen station is set to Printer: Save Table or Pay. The ticket should print on the till's kitchen printer within a few seconds, marked Vesopa Go. Needs the till on the matching update. Also: on a phone, page keys sit together at the top with each page's products underneath.",
+  "release_notes": "Orders from Go now print on the till's kitchen printer. On a phone, the page buttons sit together at the top."
 }

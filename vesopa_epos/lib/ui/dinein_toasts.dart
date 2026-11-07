@@ -40,6 +40,7 @@ import '../printing/receipt_builder.dart';
 import 'printers_page.dart' show printerSettingsProvider;
 import '../data/dinein_orders.dart';
 import '../data/express_orders.dart';
+import '../data/kitchen_print_queue.dart';
 import '../data/notifications.dart';
 import '../data/order_alerts.dart';
 import 'dinein_actions.dart';
@@ -83,6 +84,7 @@ class DineInToastLayer extends ConsumerWidget {
     // and a kitchen that gets no kiosk tickets because somebody turned the
     // cards off is the bug this exists to fix.
     ref.watch(expressKitchenPrinterProvider);
+    ref.watch(goKitchenPrinterProvider);
 
     final where = ref.watch(orderAlertsProvider);
     if (!where.showsToasts) return child;

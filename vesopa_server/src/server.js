@@ -479,6 +479,7 @@ app.use('/api', tillModifierRoutes({ pool }));
 app.use('/api', fontsRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', tillFontRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use(tillKitchenRoutes({ pool, broadcast, secret: JWT_SECRET }));
+app.use(require('./kitchen_prints').kitchenPrintRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Customer displays: email sign-in, and the relay to a till on another
 // computer (src/display_link.js).
 const { displayLinkRoutes, attachDisplayRelay } = require('./display_link');
