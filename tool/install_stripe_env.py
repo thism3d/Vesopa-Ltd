@@ -60,7 +60,9 @@ print("env lines set", n)
 
 def keys():
     env = {}
-    for line in (ROOT / ".env.stripe").read_text(encoding="utf-8").splitlines():
+    # A worktree has no gitignored files: they stay in the main checkout.
+    path = next(p / ".env.stripe" for p in (ROOT, *ROOT.parents) if (p / ".env.stripe").exists())
+    for line in path.read_text(encoding="utf-8").splitlines():
         m = re.match(r"\s*([A-Z_]+)=(.*)", line)
         if m:
             env[m[1]] = m[2].strip().strip("'\"")
