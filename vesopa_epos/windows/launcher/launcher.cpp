@@ -27,7 +27,7 @@
 
 namespace {
 
-std::wstring Folder() {
+std::wstring ProgramFolder() {
   wchar_t path[MAX_PATH];
   DWORD n = GetModuleFileNameW(nullptr, path, MAX_PATH);
   std::wstring p(path, n);
@@ -105,7 +105,7 @@ bool Run(const std::wstring& exe, const std::wstring& args, const std::wstring& 
 }  // namespace
 
 int APIENTRY wWinMain(HINSTANCE, HINSTANCE, wchar_t*, int) {
-  const std::wstring dir = Folder();
+  const std::wstring dir = ProgramFolder();
   const std::wstring app = dir + L"\\vesopa_epos.exe";
 
   // Whatever the icon or a link passed on goes to the till as it is.
