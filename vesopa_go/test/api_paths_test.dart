@@ -43,4 +43,39 @@ void main() {
       'GET /api/tap/config',
     ]);
   });
+
+  test('every Stripe call goes to the routes the server mounts under /api', () async {
+    final seen = <String>[];
+    final api = TapApi(
+      base: 'https://office.test',
+      client: MockClient((req) async {
+        seen.add('${req.method} ${req.url.path}');
+        return http.Response('{"id": "x", "readers": []}', 200);
+      }),
+    )
+      ..token = 't'
+      ..office = 'venue@example.com';
+    await api.stripeConfig();
+    await api.stripeConnectionToken();
+    await api.stripePayment(100);
+    await api.stripePaymentState('pi_1');
+    await api.stripeReaders();
+    await api.stripeAddReader(simulated: true);
+    await api.stripeReaderPayment('tmr_1', 100);
+    await api.stripeReaderPaymentState('pi_1', 'tmr_1');
+    await api.stripeReaderCancel('pi_1', 'tmr_1');
+    await api.stripeReaderPresent('tmr_1');
+    expect(seen, [
+      'GET /api/till/stripe/config',
+      'POST /api/till/stripe/connection-token',
+      'POST /api/till/stripe/payments',
+      'GET /api/till/stripe/payments/pi_1',
+      'GET /api/till/stripe/readers',
+      'POST /api/till/stripe/readers',
+      'POST /api/till/stripe/reader-payments',
+      'GET /api/till/stripe/reader-payments/pi_1',
+      'POST /api/till/stripe/reader-payments/pi_1/cancel',
+      'POST /api/till/stripe/readers/tmr_1/present',
+    ]);
+  });
 }

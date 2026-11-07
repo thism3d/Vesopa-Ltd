@@ -4824,6 +4824,14 @@
               <p class="small" id="stripe-msg" style="margin:10px 0 0"></p>
             </div>
             <div class="card rd-card" style="max-width:860px;margin-top:12px" id="stripe-embedded-card" hidden>
+              <!-- Stripe's panels take a few seconds: say so, and say what went wrong (2026-11-07). -->
+              <div id="stripe-loading" class="stripe-loading" role="status" aria-live="polite">
+                <span class="stripe-spin" aria-hidden="true"></span><span>Loading the venue's Stripe account…</span>
+              </div>
+              <div id="stripe-error" class="stripe-error" role="alert" hidden>
+                <span id="stripe-error-text"></span>
+                <button type="button" class="btn" id="stripe-retry-btn">Try again</button>
+              </div>
               <div id="stripe-banner"></div>
               <div id="stripe-onboarding"></div>
               <div id="stripe-payments" style="margin-top:16px"></div>

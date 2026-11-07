@@ -37,5 +37,10 @@ assert.strictEqual(stripe.readerState(pi('requires_payment_method'), other).stat
   assert.ok(asked[1].url.includes('location=tml_1'));
   await stripe.presentTestCard('acct_1', 'tmr_1', { fetchImpl });
   assert.ok(asked[2].url.endsWith('/v1/test_helpers/terminal/readers/tmr_1/present_payment_method'));
+  assert.strictEqual(asked[2].body, '', "no card named: Stripe default approved card");
+  await stripe.presentTestCard('acct_1', 'tmr_1', { fetchImpl, card: 'declined' });
+  assert.strictEqual(new URLSearchParams(asked[3].body).get('card_present[number]'), '4000000000000002');
+  await stripe.presentTestCard('acct_1', 'tmr_1', { fetchImpl, card: 'anything else' });
+  assert.strictEqual(asked[4].body, '', 'an unknown case never sends a number');
   console.log('stripe-readers: ok');
 })().catch((e) => { console.error(e); process.exit(1); });

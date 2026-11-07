@@ -241,12 +241,27 @@ function cancelReaderAction(account, reader, opts = {}) {
   return call('POST', `/v1/terminal/readers/${encodeURIComponent(reader)}/cancel_action`, { ...opts, account, body: {} });
 }
 
-/** Sandbox only: the simulated reader is handed Stripe's test card. */
+/**
+ * Stripe's card-present test numbers, by what they make happen: the cases the
+ * Stripe checklist in Go runs, as the Dojo checklist runs Dojo's. Only these
+ * reach Stripe, so the route cannot be used to try other numbers.
+ */
+const TEST_CARDS = {
+  approved: '4242424242424242',
+  declined: '4000000000000002',
+  insufficient_funds: '4000000000009995',
+  expired: '4000000000000069',
+  pin_retry: '4000000000000101',
+};
+
+/** Sandbox only: the simulated reader is handed one of Stripe's test cards. */
 function presentTestCard(account, reader, opts = {}) {
+  const number = TEST_CARDS[opts.card] || null;
+  const { card, ...rest } = opts;
   return call('POST', `/v1/test_helpers/terminal/readers/${encodeURIComponent(reader)}/present_payment_method`, {
-    ...opts,
+    ...rest,
     account,
-    body: {},
+    body: number ? { type: 'card_present', card_present: { number } } : {},
   });
 }
 
@@ -309,6 +324,7 @@ module.exports = {
   processOnReader,
   cancelReaderAction,
   presentTestCard,
+  TEST_CARDS,
   readerState,
   StripeError,
   PREVIEW,

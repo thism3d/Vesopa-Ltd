@@ -7993,3 +7993,23 @@ tr.ls-off td { opacity: .55; }
 .vp-link { display: flex; gap: 8px; margin-top: 4px; }
 .vp-danger { display: grid; gap: 14px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 .vp-danger p { margin: 2px 0 8px; }
+
+/* Stripe tab: a loader while Stripe's panels arrive, and a plain error with a retry. */
+.stripe-loading { display: flex; align-items: center; gap: 12px; padding: 18px 4px; color: var(--muted, #667085); }
+.stripe-loading[hidden] { display: none; }
+.stripe-spin {
+  width: 22px; height: 22px; border-radius: 50%; flex: none;
+  border: 3px solid rgba(94, 122, 14, .18); border-top-color: #5E7A0E;
+  animation: stripe-spin .8s linear infinite;
+}
+@keyframes stripe-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .stripe-spin { animation-duration: 2.4s; } }
+.stripe-error { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; margin: 4px 0 12px;
+  border-radius: 10px; background: #fef3f2; color: #b42318; }
+.stripe-error[hidden] { display: none; }
+.stripe-skeleton { height: 120px; border-radius: 12px; margin: 12px 0;
+  background: linear-gradient(90deg, rgba(0,0,0,.05) 25%, rgba(0,0,0,.09) 50%, rgba(0,0,0,.05) 75%);
+  background-size: 200% 100%; animation: stripe-shimmer 1.4s ease-in-out infinite; }
+@keyframes stripe-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .stripe-skeleton { animation: none; } }
+

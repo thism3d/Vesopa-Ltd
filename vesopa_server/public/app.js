@@ -15174,6 +15174,9 @@ async function loadStripe() {
     if (s.account && s.publishable_key) mountStripe(s.publishable_key).catch((e) => say(e.message, false));
   };
   let s;
+  // The saved state first, at once; Stripe's own check follows and replaces it.
+  $('stripe-state').innerHTML = '<span class="stripe-spin" style="display:inline-block;vertical-align:middle;width:14px;height:14px;border-width:2px"></span> Checking with Stripe…';
+  try { render(await api('/stripe-settings')); } catch (_) { /* the full check below says why */ }
   try { s = await api('/stripe-settings?refresh=1'); } catch (e) { say(e.message, false); return; }
   render(s);
   const put = async (body) => {
@@ -15197,6 +15200,33 @@ async function loadStripe() {
 /** Connect.js from Stripe, then the embedded components into the tab. */
 async function mountStripe(publishableKey) {
   if (stripeConnect) return;
+  const card = $('stripe-embedded-card');
+  const loading = $('stripe-loading');
+  const showError = (text) => {
+    loading.hidden = true;
+    $('stripe-error-text').textContent = text;
+    $('stripe-error').hidden = false;
+  };
+  card.hidden = false;
+  loading.hidden = false;
+  $('stripe-error').hidden = true;
+  $('stripe-retry-btn').onclick = () => {
+    stripeConnect = null;
+    for (const id of ['stripe-banner', 'stripe-onboarding', 'stripe-payments', 'stripe-payouts']) $(id).innerHTML = '';
+    mountStripe(publishableKey).catch((e) => showError(e.message));
+  };
+  // Grey placeholders where the panels will be, so the page does not jump.
+  for (const id of ['stripe-onboarding', 'stripe-payments']) $(id).innerHTML = '<div class="stripe-skeleton"></div>';
+  try {
+    await mountStripeInner(publishableKey, loading, showError);
+  } catch (e) {
+    stripeConnect = null;
+    showError(e.message || 'Stripe could not be loaded.');
+    throw e;
+  }
+}
+
+async function mountStripeInner(publishableKey, loading, showError) {
   await new Promise((resolve, reject) => {
     if (window.StripeConnect) return resolve();
     const tag = document.createElement('script');
@@ -15214,12 +15244,31 @@ async function mountStripe(publishableKey) {
     fetchClientSecret: async () => (await api('/stripe/account-session', { method: 'POST' })).client_secret,
     appearance: { variables: { colorPrimary: '#5E7A0E', fontFamily: 'inherit' } },
   });
-  const put = (id, name) => { const box = $(id); box.innerHTML = ''; box.appendChild(stripeConnect.create(name)); };
+  // Each panel says when it has drawn, and why when it cannot: an error was
+  // otherwise only in the browser's console and the tab simply stayed empty.
+  let waiting = 0;
+  const done = () => { waiting -= 1; if (waiting <= 0) loading.hidden = true; };
+  const put = (id, name) => {
+    const box = $(id);
+    const panel = stripeConnect.create(name);
+    waiting += 1;
+    if (panel.setOnLoaderStart) panel.setOnLoaderStart(done);
+    if (panel.setOnLoadError) {
+      panel.setOnLoadError((e) => {
+        done();
+        const why = (e && e.error && e.error.message) || 'this part of Stripe did not load';
+        showError(`Stripe ${name.replace(/-/g, ' ')}: ${why}`);
+      });
+    }
+    box.innerHTML = '';
+    box.appendChild(panel);
+  };
   put('stripe-banner', 'notification-banner');
   put('stripe-onboarding', 'account-onboarding');
   put('stripe-payments', 'payments');
   put('stripe-payouts', 'payouts');
-  $('stripe-embedded-card').hidden = false;
+  // Never a spinner for ever: if Stripe has said nothing in 20 seconds, say so.
+  setTimeout(() => { if (!loading.hidden) showError('Stripe is taking too long to answer. Check the connection and try again.'); }, 20000);
 }
 
 /** Barclaycard Smartpay Fuse tab (2026-10-20): the online menu's card payments. */

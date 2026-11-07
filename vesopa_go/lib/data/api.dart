@@ -206,26 +206,29 @@ class TapApi {
   // ---- Card payments on this phone (vesopa_server/src/tap.js) ----------------------
 
   // ---- Stripe Tap to Pay (vesopa_server/src/stripe.js) --------------------
+  // Mounted under /api (server.js: app.use('/api', stripeRoutes(...))), unlike
+  // the till's /till routes. Without it every Stripe call was a 404 (2026-11-07);
+  // test/api_paths_test.dart pins each one.
 
-  Future<Map<String, dynamic>> stripeConfig() => _send('GET', '/till/stripe/config');
-  Future<Map<String, dynamic>> stripeConnectionToken() => _send('POST', '/till/stripe/connection-token', const {});
+  Future<Map<String, dynamic>> stripeConfig() => _send('GET', '/api/till/stripe/config');
+  Future<Map<String, dynamic>> stripeConnectionToken() => _send('POST', '/api/till/stripe/connection-token', const {});
   Future<Map<String, dynamic>> stripePayment(int amountMinor, {String? reference}) =>
-      _send('POST', '/till/stripe/payments', {'amount_minor': amountMinor, 'reference': ?reference});
+      _send('POST', '/api/till/stripe/payments', {'amount_minor': amountMinor, 'reference': ?reference});
   Future<Map<String, dynamic>> googlePayCharge(int amountMinor, String token, {String? reference}) =>
-      _send('POST', '/till/stripe/google-pay', {'amount_minor': amountMinor, 'token': token, 'reference': ?reference});
-  Future<Map<String, dynamic>> stripePaymentState(String id) => _send('GET', '/till/stripe/payments/$id');
+      _send('POST', '/api/till/stripe/google-pay', {'amount_minor': amountMinor, 'token': token, 'reference': ?reference});
+  Future<Map<String, dynamic>> stripePaymentState(String id) => _send('GET', '/api/till/stripe/payments/$id');
 
   // Stripe card readers, for a device without Tap to Pay (an iPad).
-  Future<Map<String, dynamic>> stripeReaders() => _send('GET', '/till/stripe/readers');
+  Future<Map<String, dynamic>> stripeReaders() => _send('GET', '/api/till/stripe/readers');
   Future<Map<String, dynamic>> stripeAddReader({String code = '', String label = '', bool simulated = false}) =>
-      _send('POST', '/till/stripe/readers', {'registration_code': code, 'label': label, 'simulated': simulated});
+      _send('POST', '/api/till/stripe/readers', {'registration_code': code, 'label': label, 'simulated': simulated});
   Future<Map<String, dynamic>> stripeReaderPayment(String reader, int amountMinor, {String? reference}) =>
-      _send('POST', '/till/stripe/reader-payments', {'reader': reader, 'amount_minor': amountMinor, 'reference': ?reference});
+      _send('POST', '/api/till/stripe/reader-payments', {'reader': reader, 'amount_minor': amountMinor, 'reference': ?reference});
   Future<Map<String, dynamic>> stripeReaderPaymentState(String id, String reader) =>
-      _send('GET', '/till/stripe/reader-payments/$id?reader=${Uri.encodeQueryComponent(reader)}');
+      _send('GET', '/api/till/stripe/reader-payments/$id?reader=${Uri.encodeQueryComponent(reader)}');
   Future<Map<String, dynamic>> stripeReaderCancel(String id, String reader) =>
-      _send('POST', '/till/stripe/reader-payments/$id/cancel', {'reader': reader});
-  Future<Map<String, dynamic>> stripeReaderPresent(String reader) => _send('POST', '/till/stripe/readers/$reader/present', const {});
+      _send('POST', '/api/till/stripe/reader-payments/$id/cancel', {'reader': reader});
+  Future<Map<String, dynamic>> stripeReaderPresent(String reader) => _send('POST', '/api/till/stripe/readers/$reader/present', const {});
 
   Future<Map<String, dynamic>> tapConfig() => _send('GET', '/api/tap/config');
 

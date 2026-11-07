@@ -377,8 +377,10 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
       if (client.environment() === 'live') return res.status(400).json({ error: 'Sandbox only.' });
       const row = await settingsFor(req.office);
       if (!row || !row.account_id) return res.status(404).json({ error: 'No Stripe account.' });
-      await client.presentTestCard(row.account_id, req.params.id);
-      res.json({ ok: true });
+      const card = String((req.body && req.body.card) || 'approved');
+      if (!client.TEST_CARDS[card]) return res.status(400).json({ error: 'Which test card?' });
+      await client.presentTestCard(row.account_id, req.params.id, { card });
+      res.json({ ok: true, card });
     } catch (e) { fail(res, e, next); }
   });
 
@@ -418,6 +420,28 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
         if (row) {
           await refresh(row.office, row);
           broadcast({ type: 'till-settings' }, { office: row.office });
+        }
+      }
+      // A payment or a reader moved on (2026-11-07): told to the venue's tills
+      // and Go at once, so a decline, a retry or a refund shows without waiting
+      // for the next poll. The payment's own status still decides a sale.
+      const what = String(event.type || '');
+      if (event.account && /^(payment_intent\.|charge\.refunded|terminal\.reader\.action_)/.test(what)) {
+        await ensure();
+        const [[row]] = await pool.query('SELECT office FROM epos_stripe_settings WHERE account_id = ?', [event.account]);
+        const obj = (event.data && event.data.object) || {};
+        if (row) {
+          broadcast({
+            type: 'stripe-payment',
+            event: what,
+            id: obj.object === 'terminal.reader'
+              ? (obj.action && obj.action.process_payment_intent && obj.action.process_payment_intent.payment_intent) || null
+              : obj.payment_intent || obj.id || null,
+            reader: obj.object === 'terminal.reader' ? obj.id : null,
+            status: obj.status || null,
+            message: (obj.last_payment_error && obj.last_payment_error.message)
+              || (obj.action && obj.action.failure_message) || null,
+          }, { office: row.office });
         }
       }
     } catch (e) {
