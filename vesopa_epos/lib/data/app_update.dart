@@ -12,6 +12,8 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'update_prefs.dart';
+
 /// Moving this app to the version its venue is set to (admin.vesopa.com
 /// Versions, 2026-10-05).
 ///
@@ -71,6 +73,20 @@ class AppUpdate {
 
   /// Permission given in admin: no question on screen.
   bool get permitted => mode == 'now' || mode == 'at';
+
+  /// The same update, to be installed as soon as it can be (a till set to
+  /// update by itself, Settings: Updates).
+  AppUpdate asNow() => AppUpdate(
+        version: version,
+        url: url,
+        sha256: sha256,
+        size: size,
+        downgrade: downgrade,
+        storeId: storeId,
+        switchToDirect: switchToDirect,
+        mode: 'now',
+        force: force,
+      );
 
   /// Permitted and its time has come.
   bool get due => mode == 'now' || (mode == 'at' && installAt != null && !DateTime.now().isBefore(installAt!));
@@ -444,14 +460,21 @@ Future<void> offerUpdate(
   required String builtVersion,
   bool Function()? ready,
   Future<void> Function()? beforeRestart,
+  UpdatePrefs prefs = const UpdatePrefs(),
 }) async {
   if (update == null || kIsWeb || !Platform.isWindows) return;
   final me = await Installation.current(builtVersion);
   if (!await Updater._wanted(update, me)) return;
   if (ready != null && !ready()) return;
-  // Install now, or at a set time, chosen in admin: no question.
+  // Install now, or at a set time, chosen in admin: no question, whatever this
+  // till's own settings say.
   if (update.permitted) {
     return _installPermitted(update, ready: ready, context: context, appName: appName, beforeRestart: beforeRestart);
+  }
+  // This till's own choice (Settings: Updates, 2026-11-07).
+  if (!prefs.enabled) return;
+  if (prefs.automatic && !update.viaStore && !update.switchToDirect) {
+    return _installPermitted(update.asNow(), ready: ready, context: context, appName: appName, beforeRestart: beforeRestart);
   }
   Updater._handled.add(update.version);
   if (update.switchToDirect) {
@@ -496,6 +519,11 @@ Future<void> offerUpdate(
   }
   if (!context.mounted || (ready != null && !ready())) {
     Updater._handled.remove(update.version);
+    return;
+  }
+  // Not asking: it goes in on the next start, quietly.
+  if (!prefs.ask) {
+    await Updater.later(update, file);
     return;
   }
   final now = await _ask(context, update, appName: appName, current: me.version, version: update.version);

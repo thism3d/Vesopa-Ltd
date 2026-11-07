@@ -67,17 +67,27 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
-[InstallDelete]
-; A version moved back must not keep the newer one's files beside its own.
-Type: filesandordirs; Name: "{app}\data"
-Type: files; Name: "{app}\*.dll"
+; No [InstallDelete] of the program's DLLs or data any more (2026-11-07). They
+; were deleted first so a version moved back kept nothing of the newer one; but
+; a DLL deleted and then not written (the old till still closing, a virus
+; scanner holding the new file) left a till that could not start at all, as at
+; Pontardawe RFC with screen_retriever_windows_plugin.dll. Every file is now
+; overwritten in place (ignoreversion): one that cannot be written stops the
+; install and the old program stays whole. A newer DLL left beside an older
+; version is never loaded, so nothing is lost by keeping it.
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
+#if FileExists(AddBackslash(SourceDir) + "vesopa_start.exe")
+; The till starts through its launcher, which repairs it if a file is missing.
+Name: "{group}\{#AppName}"; Filename: "{app}\vesopa_start.exe"; IconFilename: "{app}\{#ExeName}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\vesopa_start.exe"; IconFilename: "{app}\{#ExeName}"; Tasks: desktopicon
+#else
 Name: "{group}\{#AppName}"; Filename: "{app}\{#ExeName}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#ExeName}"; Tasks: desktopicon
+#endif
 
 [Registry]
 ; The links the Store copy registers through its manifest (pubspec
@@ -146,8 +156,21 @@ end;
 // The app reads this to know it came from our installer (so it may update
 // itself; a Store copy never does) and which version it really is
 // (lib/data/app_update.dart).
+//
+// It also keeps a copy of this installer on the computer (2026-11-07), so the
+// till's launcher (vesopa_start.exe) can put every file back without a
+// download if one ever goes missing.
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Dir: String;
 begin
   if CurStep = ssPostInstall then
+  begin
     SaveStringToFile(ExpandConstant('{app}\vesopa-install.txt'), '{#AppVersion}', False);
+    Dir := ExpandConstant('{localappdata}\Vesopa\Repair\{#AppKey}');
+    ForceDirectories(Dir);
+    if CompareText(ExpandConstant('{srcexe}'), Dir + '\setup.exe') <> 0 then
+      FileCopy(ExpandConstant('{srcexe}'), Dir + '\setup.exe', False);
+    DeleteFile(Dir + '\repair-tried.txt');
+  end;
 end;

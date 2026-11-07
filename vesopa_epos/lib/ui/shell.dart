@@ -33,6 +33,7 @@ import '../data/terminal_service.dart';
 import '../data/till_seat.dart';
 import '../data/training_mode.dart';
 import '../main.dart';
+import '../data/update_prefs.dart';
 import 'layout.dart';
 import 'about_page.dart';
 import 'card_actions.dart';
@@ -138,6 +139,30 @@ class _PosShellState extends ConsumerState<PosShell> {
   @override
   void initState() {
     super.initState();
+    // Once, after an update: what is new, in a few plain lines (Settings,
+    // Updates turns it off).
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final notes = await whatsNewToShow();
+      if (notes == null || notes.isEmpty || !mounted || !ref.read(updatePrefsProvider).whatsNew) return;
+      await showDialog<void>(
+        context: context,
+        builder: (c) => AlertDialog(
+          icon: const Icon(Icons.auto_awesome, size: 36),
+          title: Text("What's new in ${VesopaBrand.appVersion}"),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            for (final n in notes)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Padding(padding: EdgeInsets.only(top: 2, right: 8), child: Icon(Icons.check_circle, size: 18)),
+                  Expanded(child: Text(n)),
+                ]),
+              ),
+          ]),
+          actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Got it'))],
+        ),
+      );
+    });
     // Start syncing only once the terminal knows which venue it belongs to —
     // before sign-in there is no catalogue to pull.
     ref.read(syncServiceProvider).start();
@@ -967,6 +992,7 @@ class _PosShellState extends ConsumerState<PosShell> {
         // Before an update restarts the till: every unsent sale goes to the
         // server. Open orders are kept on this computer either way.
         beforeRestart: () => ref.read(syncServiceProvider).flush(),
+        prefs: ref.read(updatePrefsProvider),
       ));
     });
 

@@ -39,6 +39,7 @@ import 'till_actions.dart';
 import 'widgets/pos_message.dart';
 import '../data/order_alerts.dart';
 import 'widgets/pos_text_field.dart';
+import '../data/update_prefs.dart';
 
 /// Terminal settings. Anything that belongs to the venue lives in the back
 /// office; what is here is specific to *this* screen — chiefly how it looks in
@@ -60,6 +61,54 @@ class SettingsPage extends ConsumerWidget {
         const Text(
           'Settings',
           style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 24),
+
+        const _SectionTitle('Updates'),
+        // How this till takes a new version (2026-11-07). admin.vesopa.com
+        // picks the version, and its Install now, at a time or force always win.
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.system_update_alt),
+                title: const Text('Updates'),
+                subtitle: const Text('Take new versions when Vesopa offers them', style: TextStyle(fontSize: 12.5)),
+                value: ref.watch(updatePrefsProvider).enabled,
+                onChanged: (on) => unawaited(ref.read(updatePrefsProvider.notifier).set(enabled: on)),
+              ),
+              if (ref.watch(updatePrefsProvider).enabled) ...[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.autorenew),
+                  title: const Text('Update automatically'),
+                  subtitle: const Text('Installs by itself between sales, after a short countdown', style: TextStyle(fontSize: 12.5)),
+                  value: ref.watch(updatePrefsProvider).automatic,
+                  onChanged: (on) => unawaited(ref.read(updatePrefsProvider.notifier).set(automatic: on)),
+                ),
+                if (!ref.watch(updatePrefsProvider).automatic)
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.help_outline),
+                    title: const Text('Ask before updating'),
+                    subtitle: const Text('Update now or On next start. Off: it goes in on the next start', style: TextStyle(fontSize: 12.5)),
+                    value: ref.watch(updatePrefsProvider).ask,
+                    onChanged: (on) => unawaited(ref.read(updatePrefsProvider.notifier).set(ask: on)),
+                  ),
+              ],
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.auto_awesome),
+                title: const Text("Show what's new after an update"),
+                value: ref.watch(updatePrefsProvider).whatsNew,
+                onChanged: (on) => unawaited(ref.read(updatePrefsProvider.notifier).set(whatsNew: on)),
+              ),
+              Text('This till: ${VesopaBrand.appVersion}', style: const TextStyle(fontSize: 12.5)),
+            ]),
+          ),
         ),
         const SizedBox(height: 24),
 

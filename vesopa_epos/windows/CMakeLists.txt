@@ -81,6 +81,8 @@ endif()
 
 # The network helper service, installed next to the runner (nethelper/).
 add_subdirectory("nethelper")
+# The till's icon: starts it, or repairs it from its kept installer (launcher/).
+add_subdirectory("launcher")
 
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")

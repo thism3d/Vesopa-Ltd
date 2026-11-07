@@ -174,6 +174,13 @@ foreach ($key in $Apps) {
     Select-Object -ExpandProperty FullName)
   if ($unsigned.Count) { Invoke-Sign $unsigned }
 
+  # Every file shipped, with its size, for the till's launcher to check before
+  # it starts the program (vesopa_epos/windows/launcher): a missing one is put
+  # back from the kept installer (2026-11-07).
+  $listed = Get-ChildItem $release -Recurse -File | Where-Object { $_.Name -ne 'vesopa-files.txt' } |
+    ForEach-Object { '{0}|{1}' -f $_.FullName.Substring($release.Length + 1), $_.Length }
+  [System.IO.File]::WriteAllLines((Join-Path $release 'vesopa-files.txt'), [string[]]$listed)
+
   $defines = @(
     "/DAppKey=$key", "/DAppName=$($a.Name)", "/DAppVersion=$version", "/DAppGuid=$($a.Guid)",
     "/DExeName=$($a.Exe)", "/DSourceDir=$release", "/DOutputDir=$out",
