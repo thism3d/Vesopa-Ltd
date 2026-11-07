@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/session.dart';
 import '../data/till_permissions.dart';
 import '../ui/adaptive.dart';
+import '../ui/app_version.dart';
 import 'device_mode.dart';
 
 /// A manager's PIN, as the till asks for one; true when it is right.
@@ -110,6 +111,7 @@ Future<void> showModeSettings(BuildContext context, WidgetRef ref, {List<Widget>
               },
             ),
           ),
+          const AppVersionLine(),
         ]),
       );
     }),

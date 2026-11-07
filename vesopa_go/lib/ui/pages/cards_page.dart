@@ -13,6 +13,7 @@ import '../../nfc/staff_card.dart';
 import '../theme.dart';
 import 'card_machine_page.dart';
 import 'more.dart';
+import '../gateway_mark.dart';
 
 class CardsPage extends ConsumerWidget {
   const CardsPage({super.key});
@@ -36,12 +37,14 @@ class CardsPage extends ConsumerWidget {
         );
     return ListView(padding: const EdgeInsets.only(bottom: 24), children: [
       group('Payment cards', [
-        ListTile(
-          leading: const Icon(Icons.point_of_sale_rounded),
-          title: const Text('Card machine'),
-          trailing: const Icon(Icons.chevron_right_rounded),
-          onTap: () => _open(context, 'Card machine', const CardMachinePage()),
-        ),
+        // Dojo's and Teya's machines: Stripe takes its cards on the device.
+        if (ref.watch(cardGatewayProvider) != CardGateway.stripe)
+          ListTile(
+            leading: const Icon(Icons.point_of_sale_rounded),
+            title: const Text('Card machine'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _open(context, 'Card machine', const CardMachinePage()),
+          ),
         ListTile(
           leading: const Icon(Icons.credit_card_rounded),
           title: const Text('Card payments and refunds'),

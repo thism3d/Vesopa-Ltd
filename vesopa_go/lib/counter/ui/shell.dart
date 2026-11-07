@@ -44,6 +44,8 @@ import 'reports_page.dart';
 import 'sales_page.dart';
 import 'sell_page.dart';
 import '../../ui/tap_to_pay_intro.dart';
+import '../../ui/app_version.dart';
+import '../../ui/gateway_mark.dart';
 
 class Shell extends ConsumerStatefulWidget {
   const Shell({super.key});
@@ -210,6 +212,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final t = Theme.of(context).textTheme;
     final tablet = MediaQuery.sizeOf(context).shortestSide >= 600;
     final via = cardVia(settings, s.config, tablet: tablet);
+    final stripe = ref.watch(cardGatewayProvider) == CardGateway.stripe;
+    final stripeStatus = ref.watch(stripeStatusProvider).value;
     final android = defaultTargetPlatform == TargetPlatform.android;
     return ListView(padding: const EdgeInsets.only(bottom: 24), children: [
       _group('Sale', [
@@ -225,7 +229,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ),
       ]),
       _group('Card payments', [
-        if (s.config.teya.enabled)
+        if (ref.watch(cardGatewayProvider) != null)
+          const ListTile(title: Text('Payment gateway'), trailing: GatewayBadge(label: '')),
+        if (stripe)
+          ListTile(
+            leading: const Icon(Icons.contactless_rounded),
+            title: const Text('Tap to Pay on this device'),
+            subtitle: Text(stripeStatus == null
+                ? 'Chosen by the venue in the back office'
+                : '${stripeStatus.live ? 'Live' : 'Sandbox, simulated reader'} · ${stripeStatus.ready ? 'account ready' : 'account not ready'}'),
+          )
+        else if (s.config.teya.enabled)
           const ListTile(leading: Icon(Icons.point_of_sale_rounded), title: Text('Teya card machine'), subtitle: Text('Chosen on the Card machine page'))
         else
           RadioGroup<String>(
@@ -242,21 +256,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ]),
           ),
         // Tap to Pay needs NFC: when it is off or missing, say so and why.
-        if (via == 'tap' && _nfc != null)
+        if (via == 'tap' && _nfc != null && !(stripe && stripeStatus?.live != true))
           ListTile(
             leading: const Icon(Icons.warning_amber_rounded, color: Tp.amber),
             title: const Text('Tap to Pay is unavailable'),
             subtitle: Text(_nfc!),
             trailing: android ? TextButton(onPressed: () => DevicePrefs.openNfcSettings().then((_) => _check()), child: const Text('NFC settings')) : null,
           ),
-        if (!s.config.teya.enabled && s.config.softwareHouseId.isNotEmpty)
+        if (!stripe && !s.config.teya.enabled && s.config.softwareHouseId.isNotEmpty)
           ListTile(
             dense: true,
             title: Text('Dojo · ${s.config.environment == 'live' ? 'Live' : 'Sandbox'}'),
             subtitle: Text('Software house ${s.config.softwareHouseId} · Reseller ${s.config.resellerId}'),
           ),
         // Dojo's accreditation cases, run from this device (owner, 2026-11-03).
-        if (!s.config.teya.enabled && (s.clerk?.can(TillPermission.refund) ?? false))
+        if (!stripe && !s.config.teya.enabled && (s.clerk?.can(TillPermission.refund) ?? false))
           ListTile(
             leading: const Icon(Icons.fact_check_rounded),
             title: const Text('Dojo checklist'),
@@ -469,6 +483,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ]),
       const SizedBox(height: 16),
       Center(child: Text('$appName · ${ref.read(tapProvider.notifier).terminalName}', style: t.bodySmall)),
+      const AppVersionLine(),
     ]);
   }
 }

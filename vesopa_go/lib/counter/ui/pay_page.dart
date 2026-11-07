@@ -41,6 +41,7 @@ import 'receipt_view.dart';
 import 'sale_panel.dart' show discountBill;
 import 'tender_dialogs.dart';
 import 'till_pay_board.dart';
+import '../../ui/gateway_mark.dart';
 
 class PayPage extends ConsumerStatefulWidget {
   const PayPage({super.key, required this.billId});
@@ -290,7 +291,8 @@ class _PayPageState extends ConsumerState<PayPage> {
         // A test venue (the Kitchen, a practice copy) may pretend, so the
         // whole sale can be tried on an iPad (owner, 2026-11-02).
         if (ref.read(tapProvider).config.testVenue) return _testTap(why, amount ?? bill.dueMinor);
-        if (mounted) setState(() => _problem = '$why Use the card machine or cash.');
+        final stripe = ref.read(cardGatewayProvider) == CardGateway.stripe;
+        if (mounted) setState(() => _problem = stripe ? '$why Use QR Pay or cash.' : '$why Use the card machine or cash.');
         return;
       }
     }
@@ -378,7 +380,8 @@ class _PayPageState extends ConsumerState<PayPage> {
   Future<void> _checkResult() async {
     final id = _result?.paymentId;
     if (id == null) return;
-    setState(() => _resultNote = 'Asking Dojo what happened to this payment…');
+    final gateway = ref.read(cardGatewayProvider)?.label ?? 'The bank';
+    setState(() => _resultNote = 'Asking $gateway what happened to this payment…');
     try {
       final p = await ref.read(apiProvider).payment(id);
       if (!mounted) return;
@@ -390,10 +393,10 @@ class _PayPageState extends ConsumerState<PayPage> {
         });
         _take(Tender(id: id, amountMinor: _cardAmount, tipMinor: _tip, kind: _via, at: DateTime.now(), clerk: ref.read(tapProvider).clerk?.name ?? '', reference: id));
       } else {
-        setState(() => _resultNote = state == 'failed' ? 'Dojo says it did not go through. Nothing was taken.' : 'Dojo is still waiting on it. Check again in a moment.');
+        setState(() => _resultNote = state == 'failed' ? '$gateway says it did not go through. Nothing was taken.' : '$gateway is still waiting on it. Check again in a moment.');
       }
     } catch (e) {
-      if (mounted) setState(() => _resultNote = 'Dojo could not be asked just now ($e).');
+      if (mounted) setState(() => _resultNote = '$gateway could not be asked just now ($e).');
     }
   }
 
@@ -406,6 +409,7 @@ class _PayPageState extends ConsumerState<PayPage> {
   List<CardResultAction> _resultActions(Bill bill) {
     final r = _result?.result;
     final other = _via == 'tap' ? 'machine' : 'tap';
+    final stripe = ref.read(cardGatewayProvider) == CardGateway.stripe;
     final again = _cardAmount.clamp(1, bill.dueMinor);
     void then(VoidCallback f) {
       _closeResult();
@@ -417,7 +421,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         (icon: Icons.manage_search_rounded, label: 'Check payment status', onPressed: _checkResult, primary: true),
       if (r != PayResult.uncertain) ...[
         (icon: Icons.refresh_rounded, label: 'Try again', onPressed: () => then(() => _card(_via, amount: again)), primary: true),
-        if (!(other == 'tap' && _isIpad(context) && !ref.read(tapProvider).config.testVenue))
+        if (!stripe && !(other == 'tap' && _isIpad(context) && !ref.read(tapProvider).config.testVenue))
         (
           icon: other == 'machine' ? Icons.point_of_sale_rounded : Icons.contactless_rounded,
           label: other == 'machine' ? 'Use the card machine' : 'Use Tap to Pay',
@@ -525,7 +529,7 @@ class _PayPageState extends ConsumerState<PayPage> {
       step: step,
       detail: _facing && step == CardStep.present ? 'Hold your card or phone flat against the top of this device' : words,
       device: _facing ? null : (machine ? "The venue's card machine" : ref.read(tapProvider.notifier).terminalName),
-      partner: _facing || config.softwareHouseId.isEmpty ? null : 'Software house ${config.softwareHouseId}${config.resellerId.isEmpty ? '' : ' · Reseller ${config.resellerId}'}',
+      partner: _facing || config.softwareHouseId.isEmpty || ref.read(cardGatewayProvider) == CardGateway.stripe ? null : 'Software house ${config.softwareHouseId}${config.resellerId.isEmpty ? '' : ' · Reseller ${config.resellerId}'}',
       result: _result,
       resultNote: _facing ? null : _resultNote,
       actions: bill == null || _facing ? const [] : _resultActions(bill),
@@ -730,7 +734,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         cardLabel: iPhoneTap ? 'Tap to Pay on iPhone' : 'Card',
         // Tap to Pay on iPhone is not in iPadOS (Apple's guidelines): an
         // iPad offers it only as a test venue's pretend payment.
-        otherCard: teya || (other == 'tap' && _isIpad(context) && !config.testVenue) ? null : (amount) => _card(other, amount: amount),
+        otherCard: teya || ref.watch(cardGatewayProvider) == CardGateway.stripe || (other == 'tap' && _isIpad(context) && !config.testVenue) ? null : (amount) => _card(other, amount: amount),
         otherCardLabel: other == 'machine' ? 'Card machine' : (_isIpad(context) ? 'Test payment' : 'Tap to Pay'),
         qrPay: _qr,
         googlePay: _googlePay != null || _debugShowGooglePay ? _takeGooglePay : null,
@@ -871,6 +875,12 @@ class _Approved extends ConsumerWidget {
                     style: t.displayMedium?.copyWith(fontWeight: FontWeight.w900, color: context.goLimeInk, fontFeatures: Tp.tabular)),
               ] else
                 Text('${money(sale.totalMinor)} · receipt ${sale.number}', textAlign: TextAlign.center, style: t.titleMedium),
+              // Only for a card this device or its machine read: a QR payment
+              // goes through its own provider.
+              if (sale.payments.any((p) => p.kind == 'tap' || p.kind == 'machine')) ...[
+                const SizedBox(height: 14),
+                const Center(child: GatewayBadge()),
+              ],
               // The customer's choice of receipt (back office: Customer
               // hand-over), as big keys they can press themselves.
               if (ref.watch(tapProvider.select((s) => s.config.go.customerReceiptChoice))) ...[

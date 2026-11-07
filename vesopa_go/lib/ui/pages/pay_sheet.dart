@@ -16,6 +16,7 @@ import '../../payments/payment_service.dart';
 import '../../counter/data/lite_state.dart';
 import '../pay_motion.dart';
 import '../theme.dart';
+import '../gateway_mark.dart';
 
 class PaySheet extends ConsumerStatefulWidget {
   const PaySheet({super.key, required this.bill, required this.amountMinor, this.items = const {}});
@@ -126,6 +127,7 @@ class _PaySheetState extends ConsumerState<PaySheet> {
         colour: Tp.lime,
         title: _cash ? 'Cash ${money(widget.amountMinor)}' : 'Paid ${money(total)}',
         body: tip > 0 ? 'Including a ${money(tip)} tip. Thank you!' : 'Thank you!',
+        badge: _cash ? null : const GatewayBadge(),
         action: FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Done')),
         secondary: _closesBill && config.receiptEmail
             ? OutlinedButton.icon(onPressed: _receipt, icon: const Icon(Icons.receipt_rounded), label: const Text('Email a receipt'))
@@ -249,13 +251,16 @@ class _PaySheetState extends ConsumerState<PaySheet> {
 }
 
 class _Result extends StatelessWidget {
-  const _Result({required this.icon, required this.colour, required this.title, required this.body, required this.action, this.secondary});
+  const _Result({required this.icon, required this.colour, required this.title, required this.body, required this.action, this.secondary, this.badge});
   final IconData icon;
   final Color colour;
   final String title;
   final String body;
   final Widget action;
   final Widget? secondary;
+
+  /// Which gateway took the card.
+  final Widget? badge;
 
   @override
   Widget build(BuildContext context) {
@@ -269,6 +274,7 @@ class _Result extends StatelessWidget {
           Text(title, textAlign: TextAlign.center, style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
           const SizedBox(height: 6),
           Text(body, textAlign: TextAlign.center, style: t.bodyLarge),
+          if (badge != null) ...[const SizedBox(height: 14), Center(child: badge!)],
           const SizedBox(height: 24),
           action,
           if (secondary != null) ...[const SizedBox(height: 10), secondary!],

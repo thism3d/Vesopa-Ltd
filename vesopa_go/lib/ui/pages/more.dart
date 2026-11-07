@@ -18,6 +18,8 @@ import '../theme.dart';
 import '../../data/recent_venues.dart';
 import '../go_frame.dart' show VenueMark;
 import 'connection_page.dart';
+import '../gateway_mark.dart';
+import '../app_version.dart';
 
 class MorePage extends ConsumerStatefulWidget {
   const MorePage({super.key});
@@ -224,6 +226,7 @@ class _MorePageState extends ConsumerState<MorePage> {
         },
         child: Text('Sign this phone out of ${s.venue?.name ?? 'the venue'}', style: t.bodyMedium?.copyWith(color: Tp.danger)),
       ),
+      const AppVersionLine(),
     ]);
   }
 }
@@ -306,9 +309,10 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
         child: ListTile(
           leading: Icon(Icons.contactless_rounded, color: context.goLimeInk),
           title: const Text('Tap to Pay'),
-          subtitle: Text(_iPhone
+          subtitle: Text(_iPhone && ref.watch(cardGatewayProvider) != CardGateway.stripe
               ? 'Tap to Pay on iPhone works on iPhone only, not iPad. Use the card machine or QR Pay here.'
               : (widget.status ?? 'Checking…')),
+          trailing: const GatewayBadge(label: ''),
         ),
       );
     }
@@ -322,6 +326,8 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
             Expanded(child: Text('Tap to Pay on iPhone', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
           ]),
           const SizedBox(height: 8),
+          const GatewayBadge(label: 'Card payments by'),
+          const SizedBox(height: 8),
           Text(
             _linked == true
                 ? 'Set up. Customers tap a contactless card, iPhone, Android phone or watch on the top of this iPhone.'
@@ -331,7 +337,8 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
             style: t.bodyMedium,
           ),
           if (_note != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_note!, style: t.bodySmall?.copyWith(color: context.goMuted))),
-          const SizedBox(height: 12),
+          if (ref.watch(paymentsProvider) is DojoTapToPay) ...[
+            const SizedBox(height: 12),
           Wrap(spacing: 10, runSpacing: 10, children: [
             // Always here (Apple 3.6): set up, or check it again, on the
             // same full-screen set-up as the introduction.
@@ -347,6 +354,7 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
               label: const Text('How to use Tap to Pay on iPhone'),
             ),
           ]),
+          ],
         ]),
       ),
     );

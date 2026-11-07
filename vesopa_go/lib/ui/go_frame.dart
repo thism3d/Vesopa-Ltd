@@ -31,6 +31,7 @@ import 'pages/card_machine_page.dart' show deviceMachine;
 import 'pages/connection_page.dart';
 import 'sounds.dart';
 import 'theme.dart';
+import 'gateway_mark.dart';
 
 /// The app's navigator, so the frame (which sits above it, in
 /// MaterialApp.builder, and so covers every pushed page too) can tell whether a
@@ -48,8 +49,11 @@ class StatusChips extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(tapProvider);
     final via = cardVia(ref.watch(liteSettingsProvider), s.config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600);
-    final teya = s.config.teya.enabled;
-    final sandbox = (teya ? s.config.teya.environment : s.config.environment) != 'live';
+    // The gateway that really takes the card, never an assumption of Dojo.
+    final stripe = ref.watch(cardGatewayProvider) == CardGateway.stripe;
+    final stripeStatus = ref.watch(stripeStatusProvider).value;
+    final teya = !stripe && s.config.teya.enabled;
+    final sandbox = stripe ? stripeStatus?.live != true : (teya ? s.config.teya.environment : s.config.environment) != 'live';
     final cardName = teya ? 'Teya card machine' : (via == 'tap' ? 'Tap to Pay on this device' : 'Dojo card machine');
     final lan = LanService.instance;
     // A phone's bar has room for one light: the link to the back office.
@@ -63,14 +67,16 @@ class StatusChips extends ConsumerWidget {
         tooltip: cardName,
         onTap: () async {
           final machine = teya ? await deviceTeyaMachine() ?? s.config.teya.machineId : await deviceMachine();
-          final nfc = via == 'tap' ? await nfcProblem() : null;
+          // Stripe's test mode uses a simulated reader: no NFC needed.
+          final nfc = via == 'tap' && !(stripe && sandbox) ? await nfcProblem() : null;
           if (!context.mounted) return;
           _info(context, 'Card payments', Icons.credit_card_rounded, [
             ('Takes cards', cardName),
-            ('Provider', teya ? 'Teya' : 'Dojo'),
-            ('Mode', sandbox ? 'Sandbox (test cards)' : 'Live'),
+            ('Provider', stripe ? 'Stripe' : (teya ? 'Teya' : 'Dojo')),
+            ('Mode', stripe && sandbox ? 'Sandbox (simulated reader)' : (sandbox ? 'Sandbox (test cards)' : 'Live')),
+            if (stripe && stripeStatus != null) ('Account', stripeStatus.ready ? 'Ready to take cards' : 'Not ready to take cards'),
             if (via == 'machine') ('Machine', machine ?? 'The venue\'s default'),
-            if (!teya && s.config.softwareHouseId.isNotEmpty) ('Software house ID', s.config.softwareHouseId),
+            if (!teya && !stripe && s.config.softwareHouseId.isNotEmpty) ('Software house ID', s.config.softwareHouseId),
             if (nfc != null) ('NFC', nfc),
           ]);
         },
