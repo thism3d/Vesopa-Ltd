@@ -102,6 +102,20 @@ List<ScreenButton> keysInOrder(TillScreen screen) {
   ];
 }
 
+/// On a phone the till's rows don't fit, so its keys are re-flowed; the page
+/// keys go together above the products rather than falling between them
+/// wherever the till's columns put them (testers, 2026-11-07). [fallback] is
+/// the home screen: a page with no page keys of its own keeps the navigation.
+({List<ScreenButton> nav, List<ScreenButton> rest}) navAndRest(TillScreen screen, {TillScreen? fallback}) {
+  final keys = keysInOrder(screen);
+  bool isPage(ScreenButton b) => b.kind == ScreenButtonKind.page;
+  final nav = keys.where(isPage).toList();
+  return (
+    nav: nav.isNotEmpty || fallback == null ? nav : keysInOrder(fallback).where(isPage).toList(),
+    rest: keys.where((b) => !isPage(b)).toList(),
+  );
+}
+
 /// What every layout needs to draw and work a key.
 class KeyActions {
   const KeyActions({
@@ -166,6 +180,7 @@ class ProgrammedGrid extends StatelessWidget {
     this.gap = 8,
     this.reflowColumns,
     this.bottomPad = 0,
+    this.navFallback,
   }) : actions = KeyActions(
           screens: screens,
           productsByPlu: productsByPlu,
@@ -187,6 +202,9 @@ class ProgrammedGrid extends StatelessWidget {
   final int? reflowColumns;
   final double bottomPad;
 
+  /// Whose page keys a re-flowed page with none of its own shows: the home screen.
+  final TillScreen? navFallback;
+
   /// Below this a key is too thin for its name (iPad portrait, Split View,
   /// Android): the same keys reflow, a few to a row (owner, 2026-10-30).
   static const minCell = 92.0;
@@ -198,25 +216,39 @@ class ProgrammedGrid extends StatelessWidget {
     return _geometry();
   }
 
+  /// The page keys in one block at the top, the same on every page, and that
+  /// page's products scrolling under them. A venue with many pages keeps its
+  /// products on screen: the block stops at three rows and scrolls by itself.
   Widget _reflow(int cols) {
-    {
-      final keys = keysInOrder(screen);
+    final split = navAndRest(screen, fallback: navFallback);
+    return LayoutBuilder(builder: (context, box) {
+      final cell = (box.maxWidth - gap * (cols - 1)) / cols;
+      const navHeight = 46.0;
+      final nav = Wrap(spacing: gap, runSpacing: gap, children: [
+        for (final b in split.nav) SizedBox(width: cell, height: navHeight, child: actions.key(b, inline: true)),
+      ]);
       // A key two columns wide on the till is two wide here too, up to a row.
-      return LayoutBuilder(builder: (context, box) {
-        final cell = (box.maxWidth - gap * (cols - 1)) / cols;
-        return SingleChildScrollView(
-          padding: EdgeInsets.only(bottom: bottomPad),
-          child: Wrap(spacing: gap, runSpacing: gap, children: [
-            for (final b in keys)
-              SizedBox(
-                width: cell * b.colSpan.clamp(1, cols) + gap * (b.colSpan.clamp(1, cols) - 1),
-                height: cell * 0.86,
-                child: actions.key(b),
-              ),
-          ]),
-        );
-      });
-    }
+      final products = SingleChildScrollView(
+        padding: EdgeInsets.only(bottom: bottomPad),
+        child: Wrap(spacing: gap, runSpacing: gap, children: [
+          for (final b in split.rest)
+            SizedBox(
+              width: cell * b.colSpan.clamp(1, cols) + gap * (b.colSpan.clamp(1, cols) - 1),
+              height: cell * 0.86,
+              child: actions.key(b),
+            ),
+        ]),
+      );
+      if (split.nav.isEmpty) return products;
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: navHeight * 3 + gap * 2),
+          child: SingleChildScrollView(child: nav),
+        ),
+        SizedBox(height: gap),
+        Expanded(child: products),
+      ]);
+    });
   }
 
   Widget _geometry() {

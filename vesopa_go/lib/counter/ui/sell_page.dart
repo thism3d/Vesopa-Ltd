@@ -376,6 +376,7 @@ class _SellPageState extends ConsumerState<SellPage> {
           payEnabled: hasLines,
           payLabel: payLabel,
           reflowColumns: phone ? 3 : null,
+          navFallback: home,
         ),
       ),
     );

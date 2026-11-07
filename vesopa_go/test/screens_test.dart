@@ -24,6 +24,64 @@ const _screens = [
 ];
 
 void main() {
+  group('a phone keeps the navigation together, at the top', () {
+    // Page keys down the till's right-hand column, as Pontardawe's are.
+    const sale = {
+      'id': 1, 'name': 'Draught', 'surface': 'sale', 'rows': 2, 'cols': 3,
+      'buttons': [
+        {'row': 0, 'col': 0, 'kind': 'product', 'pluId': 1, 'label': 'Madri'},
+        {'row': 0, 'col': 1, 'kind': 'product', 'pluId': 2, 'label': 'Guinness'},
+        {'row': 0, 'col': 2, 'kind': 'page', 'targetScreenId': 2, 'label': 'SPIRITS'},
+        {'row': 1, 'col': 0, 'kind': 'product', 'pluId': 3, 'label': 'Carling'},
+        {'row': 1, 'col': 2, 'kind': 'page', 'targetScreenId': 3, 'label': 'WINE'},
+      ],
+    };
+    const spirits = {
+      'id': 2, 'name': 'Spirits', 'surface': 'sale', 'rows': 1, 'cols': 1,
+      'buttons': [{'row': 0, 'col': 0, 'kind': 'product', 'pluId': 4, 'label': 'Gin'}],
+    };
+    final c = TapConfig.fromJson(const {'screens': [sale, spirits], 'till': {'home_screen_id': 1}});
+    final home = c.screens.byId(1)!;
+    final page = c.screens.byId(2)!;
+
+    test('page keys are parted from the products, in the till\u2019s order', () {
+      final split = navAndRest(home);
+      expect(split.nav.map((b) => b.label), ['SPIRITS', 'WINE']);
+      expect(split.rest.map((b) => b.label), ['Madri', 'Guinness', 'Carling']);
+    });
+
+    test('a page with no page keys of its own keeps the home screen\u2019s', () {
+      final split = navAndRest(page, fallback: home);
+      expect(split.nav.map((b) => b.label), ['SPIRITS', 'WINE']);
+      expect(split.rest.map((b) => b.label), ['Gin']);
+    });
+
+    testWidgets('drawn with every page key above every product', (tester) async {
+      TillScreen? opened;
+      await tester.binding.setSurfaceSize(const Size(390, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ProgrammedGrid(
+            screen: home,
+            screens: c.screens,
+            productsByPlu: const {},
+            onProduct: (_) {},
+            onPage: (t) => opened = t,
+            onFunction: (_) {},
+            reflowColumns: 3,
+          ),
+        ),
+      ));
+      final lowestNav = tester.getBottomLeft(find.text('WINE')).dy;
+      for (final name in ['Madri', 'Guinness', 'Carling']) {
+        expect(tester.getTopLeft(find.text(name)).dy, greaterThan(lowestNav), reason: name);
+      }
+      await tester.tap(find.text('SPIRITS'));
+      expect(opened?.id, 2);
+    });
+  });
+
   test('the till’s home screen is drawn only when the venue set one', () {
     expect(TapConfig.fromJson(const {'screens': _screens}).home, isNull);
     final c = TapConfig.fromJson(const {'screens': _screens, 'till': {'home_screen_id': 7}});
