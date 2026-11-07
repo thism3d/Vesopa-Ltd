@@ -14,6 +14,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../data/api.dart';
 import 'payment_service.dart';
+import '../ui/pages/stripe_reader_page.dart' show deviceStripeReader;
 
 /// The verdict the server gives on a Stripe payment.
 PayResult stripeResult(String? status) => switch (status) {
@@ -106,6 +107,9 @@ class StripeTapToPay implements PaymentService {
     void Function(PayStep step)? onStep,
     PayControl? control,
   }) async {
+    if (via == 'machine') {
+      return _onReader(amountMinor + tipMinor, billRef: billRef, onStep: onStep, control: control);
+    }
     String? id;
     CancelableFuture<PaymentIntent>? collecting;
     Timer? watch;
@@ -142,6 +146,49 @@ class StripeTapToPay implements PaymentService {
     } finally {
       watch?.cancel();
     }
+  }
+}
+
+/// The venue's Stripe card reader, driven from the server (an iPad: Apple has
+/// no Tap to Pay there). The same card-machine screen as a Dojo machine.
+extension on StripeTapToPay {
+  Future<PaymentOutcome> _onReader(int totalMinor, {String? billRef, void Function(PayStep step)? onStep, PayControl? control}) async {
+    onStep?.call(PayStep.preparing);
+    final Map<String, dynamic> listed;
+    try {
+      listed = await api.stripeReaders();
+    } on TapApiError catch (e) {
+      return PaymentOutcome(PayResult.unavailable, message: e.message);
+    }
+    final readers = [for (final r in (listed['readers'] as List? ?? const [])) Map<String, dynamic>.from(r as Map)];
+    final chosen = await deviceStripeReader();
+    final reader = readers.where((r) => r['id'] == chosen).firstOrNull
+        ?? readers.where((r) => r['status'] == 'online').firstOrNull
+        ?? readers.firstOrNull;
+    if (reader == null) {
+      return const PaymentOutcome(PayResult.unavailable,
+          message: 'This venue has no Stripe card reader yet. Add one under Cards, Card reader.');
+    }
+    final readerId = '${reader['id']}';
+    final String id;
+    try {
+      id = '${(await api.stripeReaderPayment(readerId, totalMinor, reference: billRef))['id']}';
+    } on TapApiError catch (e) {
+      return PaymentOutcome(PayResult.unavailable, message: e.message);
+    }
+    onStep?.call(PayStep.onMachine);
+    // The sandbox's simulated reader has no customer: hand it Stripe's test card.
+    if (reader['simulated'] == true) {
+      unawaited(Future<void>.delayed(const Duration(seconds: 2), () => api.stripeReaderPresent(readerId).catchError((Object _) => <String, dynamic>{})));
+    }
+    return followMachine(
+      id: id,
+      poll: () => api.stripeReaderPaymentState(id, readerId),
+      cancel: () => api.stripeReaderCancel(id, readerId),
+      answer: (_) async {},
+      onStep: onStep,
+      control: control,
+    );
   }
 }
 

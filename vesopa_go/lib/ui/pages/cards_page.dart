@@ -14,6 +14,7 @@ import '../theme.dart';
 import 'card_machine_page.dart';
 import 'more.dart';
 import '../gateway_mark.dart';
+import 'stripe_reader_page.dart';
 
 class CardsPage extends ConsumerWidget {
   const CardsPage({super.key});
@@ -37,8 +38,15 @@ class CardsPage extends ConsumerWidget {
         );
     return ListView(padding: const EdgeInsets.only(bottom: 24), children: [
       group('Payment cards', [
-        // Dojo's and Teya's machines: Stripe takes its cards on the device.
-        if (ref.watch(cardGatewayProvider) != CardGateway.stripe)
+        // Dojo's and Teya's machines, or a Stripe venue's readers.
+        if (ref.watch(cardGatewayProvider) == CardGateway.stripe)
+          ListTile(
+            leading: const Icon(Icons.point_of_sale_rounded),
+            title: const Text('Card reader'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _open(context, 'Card reader', const StripeReaderPage()),
+          )
+        else
           ListTile(
             leading: const Icon(Icons.point_of_sale_rounded),
             title: const Text('Card machine'),

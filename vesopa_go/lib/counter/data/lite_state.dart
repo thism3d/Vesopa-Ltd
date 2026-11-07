@@ -115,11 +115,10 @@ class LiteSettingsStore extends Notifier<LiteSettings> {
 /// An iPad has no Tap to Pay (Apple offers it on iPhone only), so an iPad on
 /// the venue's default goes to the card machine; [tablet] says which this is.
 String cardVia(LiteSettings settings, TapConfig config, {bool tablet = false}) {
-  // Stripe here means Tap to Pay on the device: Go drives no Stripe machine, so
-  // the venue's choice in the back office settles it (owner, 2026-11-07).
-  if (config.tapProvider == 'stripe') return 'tap';
-  // Teya's Tap to Pay is only in Teya's own app: a Teya venue pays on its machines.
-  if (config.teya.enabled) return 'machine';
+  // Teya's Tap to Pay is only in Teya's own app: a Teya venue pays on its
+  // machines. A Stripe venue chooses like a Dojo one, its reader standing in
+  // for the card machine (owner, 2026-11-07).
+  if (config.teya.enabled && config.tapProvider != 'stripe') return 'machine';
   if (settings.cardVia == 'tap' || settings.cardVia == 'machine') return settings.cardVia;
   if (tablet && defaultTargetPlatform == TargetPlatform.iOS) return 'machine';
   final venue = defaultTargetPlatform == TargetPlatform.iOS ? config.go.cardIos : config.go.cardAndroid;

@@ -278,6 +278,110 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
     } catch (e) { fail(res, e, next); }
   });
 
+  // ---- Card readers (an iPad, or any device the venue sends to a reader) -------
+
+  const readerView = (r) => ({
+    id: r.id,
+    label: r.label || r.serial_number || r.id,
+    device_type: r.device_type,
+    status: r.status,
+    simulated: String(r.device_type || '').startsWith('simulated'),
+  });
+
+  router.get('/till/stripe/readers', terminal, async (req, res, next) => {
+    try {
+      const row = await tapReady(req, res);
+      if (!row) return;
+      const list = await client.listReaders(row.account_id, row.location_id);
+      res.json({ environment: client.environment(), readers: (list.data || []).map(readerView) });
+    } catch (e) { fail(res, e, next); }
+  });
+
+  /**
+   * Add a reader at the venue's location: the code its screen shows, or, in a
+   * sandbox only, Stripe's simulated reader. Go asks a manager first.
+   */
+  router.post('/till/stripe/readers', terminal, async (req, res, next) => {
+    try {
+      const row = await tapReady(req, res);
+      if (!row) return;
+      const b = req.body || {};
+      const simulated = b.simulated === true;
+      if (simulated && client.environment() === 'live') {
+        return res.status(400).json({ error: 'A simulated reader is for the sandbox only.' });
+      }
+      const code = simulated ? 'simulated-wpe' : String(b.registration_code || '').trim();
+      if (!code) return res.status(400).json({ error: 'Type the code the reader shows.' });
+      const r = await client.registerReader(row.account_id, {
+        code,
+        label: String(b.label || (simulated ? 'Test reader' : '')).slice(0, 60),
+        location: row.location_id,
+      });
+      res.status(201).json(readerView(r));
+    } catch (e) { fail(res, e, next); }
+  });
+
+  router.post('/till/stripe/reader-payments', terminal, async (req, res, next) => {
+    try {
+      const row = await tapReady(req, res);
+      if (!row) return;
+      const b = req.body || {};
+      const reader = String(b.reader || '');
+      if (!reader.startsWith('tmr_')) return res.status(400).json({ error: 'Which reader?' });
+      const amount = Math.round(Number(b.amount_minor));
+      if (!Number.isInteger(amount) || amount < 30) return res.status(400).json({ error: 'At least 30p.' });
+      const pi = await client.createTerminalPayment(row.account_id, {
+        amountMinor: amount,
+        reference: b.reference ? String(b.reference).slice(0, 80) : undefined,
+        description: b.description ? String(b.description).slice(0, 200) : 'Vesopa Go, card reader',
+      });
+      try {
+        await client.processOnReader(row.account_id, reader, pi.id);
+      } catch (e) {
+        await client.cancelPayment(row.account_id, pi.id).catch(() => {});
+        throw e;
+      }
+      res.status(201).json({ id: pi.id, reader });
+    } catch (e) { fail(res, e, next); }
+  });
+
+  router.get('/till/stripe/reader-payments/:id', terminal, async (req, res, next) => {
+    try {
+      const row = await settingsFor(req.office);
+      if (!row || !row.account_id) return res.status(404).json({ error: 'No Stripe account.' });
+      const pi = await client.retrievePayment(row.account_id, req.params.id);
+      const reader = req.query.reader ? await client.retrieveReader(row.account_id, String(req.query.reader)).catch(() => null) : null;
+      res.json({ id: pi.id, ...client.readerState(pi, reader) });
+    } catch (e) { fail(res, e, next); }
+  });
+
+  /** Stop it on the reader, then the payment. Once the card is in, Stripe finishes it. */
+  router.post('/till/stripe/reader-payments/:id/cancel', terminal, async (req, res, next) => {
+    try {
+      const row = await settingsFor(req.office);
+      if (!row || !row.account_id) return res.status(404).json({ error: 'No Stripe account.' });
+      const reader = String((req.body && req.body.reader) || '');
+      if (reader) await client.cancelReaderAction(row.account_id, reader).catch(() => {});
+      try {
+        const pi = await client.cancelPayment(row.account_id, req.params.id);
+        res.json({ id: pi.id, state: pi.status === 'canceled' ? 'cancelled' : 'pending' });
+      } catch (e) {
+        res.json({ id: req.params.id, state: 'pending', cancel_refused: true });
+      }
+    } catch (e) { fail(res, e, next); }
+  });
+
+  /** Sandbox only: the simulated reader is handed Stripe's test card. */
+  router.post('/till/stripe/readers/:id/present', terminal, async (req, res, next) => {
+    try {
+      if (client.environment() === 'live') return res.status(400).json({ error: 'Sandbox only.' });
+      const row = await settingsFor(req.office);
+      if (!row || !row.account_id) return res.status(404).json({ error: 'No Stripe account.' });
+      await client.presentTestCard(row.account_id, req.params.id);
+      res.json({ ok: true });
+    } catch (e) { fail(res, e, next); }
+  });
+
   router.post('/till/stripe/refunds', terminal, async (req, res, next) => {
     try {
       const row = await settingsFor(req.office);

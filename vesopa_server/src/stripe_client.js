@@ -205,6 +205,69 @@ function createWalletPayment(account, { amountMinor, currency = 'gbp', token, re
   });
 }
 
+// ---- Terminal: the venue's card readers (internet readers: S700, WisePOS E) ----
+//
+// An iPad has no Tap to Pay (Apple offers it on iPhone only), so it takes cards
+// on one of these, driven from the server the way Dojo's machines are
+// (owner, 2026-11-07). In a sandbox, Stripe's simulated reader stands in.
+
+function listReaders(account, location, opts = {}) {
+  const q = new URLSearchParams({ limit: '50' });
+  if (location) q.set('location', location);
+  return call('GET', `/v1/terminal/readers?${q}`, { ...opts, account });
+}
+
+function registerReader(account, { code, label, location }, opts = {}) {
+  return call('POST', '/v1/terminal/readers', {
+    ...opts,
+    account,
+    body: { registration_code: code, label: label || undefined, location },
+  });
+}
+
+function retrieveReader(account, id, opts = {}) {
+  return call('GET', `/v1/terminal/readers/${encodeURIComponent(id)}`, { ...opts, account });
+}
+
+function processOnReader(account, reader, paymentIntent, opts = {}) {
+  return call('POST', `/v1/terminal/readers/${encodeURIComponent(reader)}/process_payment_intent`, {
+    ...opts,
+    account,
+    body: { payment_intent: paymentIntent },
+  });
+}
+
+function cancelReaderAction(account, reader, opts = {}) {
+  return call('POST', `/v1/terminal/readers/${encodeURIComponent(reader)}/cancel_action`, { ...opts, account, body: {} });
+}
+
+/** Sandbox only: the simulated reader is handed Stripe's test card. */
+function presentTestCard(account, reader, opts = {}) {
+  return call('POST', `/v1/test_helpers/terminal/readers/${encodeURIComponent(reader)}/present_payment_method`, {
+    ...opts,
+    account,
+    body: {},
+  });
+}
+
+/**
+ * A reader payment in the words Go's card-machine screen follows
+ * (lib/payments/payment_service.dart followMachine): paid, failed, cancelled,
+ * or still going with a prompt. The payment's own status decides a sale; the
+ * reader's action only says what the customer is being asked.
+ */
+function readerState(pi, reader) {
+  const action = (reader && reader.action) || null;
+  const mine = action && action.process_payment_intent && action.process_payment_intent.payment_intent === pi.id;
+  if (pi.status === 'succeeded') return { state: 'paid' };
+  if (pi.status === 'canceled') return { state: 'cancelled' };
+  if (mine && action.status === 'failed') {
+    return { state: 'failed', message: action.failure_message || 'Declined' };
+  }
+  if (pi.status === 'processing' || pi.status === 'requires_capture') return { state: 'pending', prompt: 'processing' };
+  return { state: 'pending', prompt: 'present card' };
+}
+
 function retrievePayment(account, id, opts = {}) {
   return call('GET', `/v1/payment_intents/${encodeURIComponent(id)}`, { ...opts, account });
 }
@@ -240,6 +303,13 @@ function verifyWebhook(rawBody, header, secret, tolerance = 300, now = Date.now(
 }
 
 module.exports = {
+  listReaders,
+  registerReader,
+  retrieveReader,
+  processOnReader,
+  cancelReaderAction,
+  presentTestCard,
+  readerState,
   StripeError,
   PREVIEW,
   V1,

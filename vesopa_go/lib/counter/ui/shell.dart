@@ -233,13 +233,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           const ListTile(title: Text('Payment gateway'), trailing: GatewayBadge(label: '')),
         if (stripe)
           ListTile(
-            leading: const Icon(Icons.contactless_rounded),
-            title: const Text('Tap to Pay on this device'),
-            subtitle: Text(stripeStatus == null
-                ? 'Chosen by the venue in the back office'
-                : '${stripeStatus.live ? 'Live' : 'Sandbox, simulated reader'} · ${stripeStatus.ready ? 'account ready' : 'account not ready'}'),
-          )
-        else if (s.config.teya.enabled)
+            dense: true,
+            title: Text('Stripe · ${stripeStatus == null ? 'checking' : stripeStatus.live ? 'Live' : 'Sandbox'}'),
+            subtitle: Text(stripeStatus == null ? 'Chosen by the venue in the back office' : (stripeStatus.ready ? 'Account ready to take cards' : 'Account not ready to take cards')),
+          ),
+        if (s.config.teya.enabled && !stripe)
           const ListTile(leading: Icon(Icons.point_of_sale_rounded), title: Text('Teya card machine'), subtitle: Text('Chosen on the Card machine page'))
         else
           RadioGroup<String>(
@@ -252,7 +250,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 subtitle: Text(cardVia(const LiteSettings(), s.config, tablet: tablet) == 'tap' ? 'Tap to Pay' : 'Card machine'),
               ),
               const RadioListTile(value: 'tap', title: Text('Tap to Pay on this device')),
-              const RadioListTile(value: 'machine', title: Text('The card machine')),
+              RadioListTile(value: 'machine', title: Text(stripe ? 'The Stripe card reader' : 'The card machine')),
             ]),
           ),
         // Tap to Pay needs NFC: when it is off or missing, say so and why.

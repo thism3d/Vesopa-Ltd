@@ -39,9 +39,9 @@ void main() {
     expect(find.text('Paid with'), findsNothing);
   });
 
-  test('a Stripe venue always takes Tap to Pay on the device', () {
+  test('a Stripe venue chooses like a Dojo one: its reader stands in for the machine', () {
     const stripe = TapConfig(tapProvider: 'stripe');
-    expect(cardVia(const LiteSettings(cardVia: 'machine'), stripe, tablet: true), 'tap');
-    expect(cardVia(const LiteSettings(cardVia: 'machine'), const TapConfig()), 'machine');
+    expect(cardVia(const LiteSettings(cardVia: 'machine'), stripe), 'machine');
+    expect(cardVia(const LiteSettings(cardVia: 'tap'), stripe), 'tap');
   });
 }

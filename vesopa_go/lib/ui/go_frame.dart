@@ -32,6 +32,7 @@ import 'pages/connection_page.dart';
 import 'sounds.dart';
 import 'theme.dart';
 import 'gateway_mark.dart';
+import 'pages/stripe_reader_page.dart' show deviceStripeReader;
 
 /// The app's navigator, so the frame (which sits above it, in
 /// MaterialApp.builder, and so covers every pushed page too) can tell whether a
@@ -54,7 +55,9 @@ class StatusChips extends ConsumerWidget {
     final stripeStatus = ref.watch(stripeStatusProvider).value;
     final teya = !stripe && s.config.teya.enabled;
     final sandbox = stripe ? stripeStatus?.live != true : (teya ? s.config.teya.environment : s.config.environment) != 'live';
-    final cardName = teya ? 'Teya card machine' : (via == 'tap' ? 'Tap to Pay on this device' : 'Dojo card machine');
+    final cardName = teya
+        ? 'Teya card machine'
+        : (via == 'tap' ? 'Tap to Pay on this device' : (stripe ? 'Stripe card reader' : 'Dojo card machine'));
     final lan = LanService.instance;
     // A phone's bar has room for one light: the link to the back office.
     final phone = MediaQuery.sizeOf(context).width < 600;
@@ -66,7 +69,9 @@ class StatusChips extends ConsumerWidget {
         warn: sandbox,
         tooltip: cardName,
         onTap: () async {
-          final machine = teya ? await deviceTeyaMachine() ?? s.config.teya.machineId : await deviceMachine();
+          final machine = teya
+              ? await deviceTeyaMachine() ?? s.config.teya.machineId
+              : (stripe ? await deviceStripeReader() : await deviceMachine());
           // Stripe's test mode uses a simulated reader: no NFC needed.
           final nfc = via == 'tap' && !(stripe && sandbox) ? await nfcProblem() : null;
           if (!context.mounted) return;
@@ -75,7 +80,7 @@ class StatusChips extends ConsumerWidget {
             ('Provider', stripe ? 'Stripe' : (teya ? 'Teya' : 'Dojo')),
             ('Mode', stripe && sandbox ? 'Sandbox (simulated reader)' : (sandbox ? 'Sandbox (test cards)' : 'Live')),
             if (stripe && stripeStatus != null) ('Account', stripeStatus.ready ? 'Ready to take cards' : 'Not ready to take cards'),
-            if (via == 'machine') ('Machine', machine ?? 'The venue\'s default'),
+            if (via == 'machine') (stripe ? 'Reader' : 'Machine', machine ?? 'The venue\'s default'),
             if (!teya && !stripe && s.config.softwareHouseId.isNotEmpty) ('Software house ID', s.config.softwareHouseId),
             if (nfc != null) ('NFC', nfc),
           ]);

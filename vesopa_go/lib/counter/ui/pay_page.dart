@@ -291,8 +291,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         // A test venue (the Kitchen, a practice copy) may pretend, so the
         // whole sale can be tried on an iPad (owner, 2026-11-02).
         if (ref.read(tapProvider).config.testVenue) return _testTap(why, amount ?? bill.dueMinor);
-        final stripe = ref.read(cardGatewayProvider) == CardGateway.stripe;
-        if (mounted) setState(() => _problem = stripe ? '$why Use QR Pay or cash.' : '$why Use the card machine or cash.');
+        if (mounted) setState(() => _problem = '$why Use the card machine or cash.');
         return;
       }
     }
@@ -409,7 +408,6 @@ class _PayPageState extends ConsumerState<PayPage> {
   List<CardResultAction> _resultActions(Bill bill) {
     final r = _result?.result;
     final other = _via == 'tap' ? 'machine' : 'tap';
-    final stripe = ref.read(cardGatewayProvider) == CardGateway.stripe;
     final again = _cardAmount.clamp(1, bill.dueMinor);
     void then(VoidCallback f) {
       _closeResult();
@@ -421,7 +419,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         (icon: Icons.manage_search_rounded, label: 'Check payment status', onPressed: _checkResult, primary: true),
       if (r != PayResult.uncertain) ...[
         (icon: Icons.refresh_rounded, label: 'Try again', onPressed: () => then(() => _card(_via, amount: again)), primary: true),
-        if (!stripe && !(other == 'tap' && _isIpad(context) && !ref.read(tapProvider).config.testVenue))
+        if (!(other == 'tap' && _isIpad(context) && !ref.read(tapProvider).config.testVenue))
         (
           icon: other == 'machine' ? Icons.point_of_sale_rounded : Icons.contactless_rounded,
           label: other == 'machine' ? 'Use the card machine' : 'Use Tap to Pay',
@@ -734,7 +732,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         cardLabel: iPhoneTap ? 'Tap to Pay on iPhone' : 'Card',
         // Tap to Pay on iPhone is not in iPadOS (Apple's guidelines): an
         // iPad offers it only as a test venue's pretend payment.
-        otherCard: teya || ref.watch(cardGatewayProvider) == CardGateway.stripe || (other == 'tap' && _isIpad(context) && !config.testVenue) ? null : (amount) => _card(other, amount: amount),
+        otherCard: teya || (other == 'tap' && _isIpad(context) && !config.testVenue) ? null : (amount) => _card(other, amount: amount),
         otherCardLabel: other == 'machine' ? 'Card machine' : (_isIpad(context) ? 'Test payment' : 'Tap to Pay'),
         qrPay: _qr,
         googlePay: _googlePay != null || _debugShowGooglePay ? _takeGooglePay : null,
