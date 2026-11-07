@@ -658,8 +658,11 @@ router.post('/account/linked/add', csrf.verify, async (req, res, next) => {
     const taken = await identity.findIdentity(type, normalised);
     const linked = type === 'email' ? await identity.providerConfirmedEmail(session.user_id) : null;
     if (linked && linked.normalised === normalised) {
-      await identity.adoptProviderEmail(session.user_id, { email: linked.email, normalised, via: 'provider' });
-      const message = 'That address is already confirmed by your linked account. There is no need to add it.';
+      const outcome = await identity.adoptProviderEmail(session.user_id, { email: linked.email, normalised, via: 'provider' });
+      // 'held': another Vesopa account has it, and only joining the two
+      // (scripts/merge-users.js) makes it this one's. Say so, not "done".
+      if (outcome !== 'held') return res.redirect(303, '/account/linked?saved=1');
+      const message = 'That address is on another Vesopa account of yours. Contact info@vesopasoftware.com and we will join the two.';
       return res.redirect(303, `/account/linked?error=${encodeURIComponent(message)}`);
     }
     if (taken) {
