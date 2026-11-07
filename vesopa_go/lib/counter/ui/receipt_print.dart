@@ -267,6 +267,59 @@ List<PrintLine> billLines(Bill bill, TapState s) {
   ];
 }
 
+/// One share of a split bill: its own items (or its part of the bill), its
+/// total, and a QR code to pay just that share when QR Pay is on (2026-11-07).
+/// The code's id starts `bill-`, so a QR payment comes back to this bill as
+/// any QR bill payment does (session.dart _qrBillPaid).
+Future<void> printShareBill(
+  BuildContext context,
+  WidgetRef ref,
+  Bill bill, {
+  required String title,
+  required List<(String, int)> rows,
+  required int amountMinor,
+  required String shareKey,
+}) async {
+  final s = ref.read(tapProvider);
+  const rule = PrintLine('------------------------------------------');
+  final now = DateTime.now();
+  final lines = <PrintLine>[
+    PrintLine(s.venue?.name ?? '', '', true, true),
+    const PrintLine('BILL', '', true, true),
+    PrintLine('${bill.name} · $title', '', true),
+    PrintLine('${ddmmyy(now)} ${hhmm(now)}', bill.clerk),
+    rule,
+    for (final (name, minor) in rows) PrintLine(name, minor == 0 ? '' : money(minor)),
+    rule,
+    PrintLine('TO PAY', money(amountMinor), false, true),
+    rule,
+  ];
+  if (s.config.qrPay.available && amountMinor >= 30) {
+    try {
+      final safe = bill.id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
+      final p = await ref.read(apiProvider).qrCreate(
+            id: 'bill-$safe-$shareKey-$amountMinor',
+            amountMinor: amountMinor,
+            billRef: bill.id,
+            billName: '${bill.name} · $title',
+            customerName: bill.member?.name,
+            bill: bill,
+          );
+      final url = p['url'] as String?;
+      if (url != null) {
+        lines.addAll([
+          const PrintLine('SCAN TO PAY THIS SHARE', '', true, true),
+          PrintLine.qr(url),
+          const PrintLine('Card, Apple Pay or Google Pay', '', true),
+        ]);
+      }
+    } catch (_) {}
+  }
+  lines.add(const PrintLine('This is not a receipt', '', true));
+  if (!context.mounted) return;
+  await _print(context, ref, lines, 'Bill ${bill.name} $title');
+}
+
 /// The bill, with a "Scan to pay" QR Pay code for what is left when the venue
 /// prints one (back office, QR Pay). No code when it cannot be made: the bill
 /// still prints.

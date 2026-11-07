@@ -30,7 +30,6 @@ import 'package:vesopa_go/ui/theme.dart';
 
 import '../data/journal.dart';
 import '../data/lite_state.dart';
-import 'package:vesopa_go/data/bill_math.dart';
 import 'package:vesopa_go/ui/pages/member_sheet.dart';
 
 import 'card_pay_screen.dart';
@@ -39,6 +38,7 @@ import 'qr_pay_page.dart';
 import 'receipt_print.dart';
 import 'receipt_view.dart';
 import 'sale_panel.dart' show discountBill;
+import 'split_sheet.dart';
 import 'tender_dialogs.dart';
 import 'till_pay_board.dart';
 import '../../ui/gateway_mark.dart';
@@ -265,6 +265,7 @@ class _PayPageState extends ConsumerState<PayPage> {
     } else {
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${money(tender.amountMinor)} taken. ${money(_bill!.dueMinor)} left to pay.')));
+      if (_planShare != null) WidgetsBinding.instance.addPostFrameCallback((_) => _afterShare());
     }
   }
 
@@ -651,17 +652,113 @@ class _PayPageState extends ConsumerState<PayPage> {
   /// Items picked with Split bill by item: the next tender pays for them.
   Map<String, int> _splitItems = const {};
 
-  /// Split bill, as the till's: by item (pick what this person is paying
-  /// for; the next payment settles those items) or equally. The share goes
-  /// on the pad.
+  /// The split as built on the split screen, kept while it is being paid so
+  /// the next share is ready (split_sheet.dart, owner 2026-11-07).
+  GoSplitPlan? _plan;
+
+  /// Which share of [_plan] the next payment is for.
+  int? _planShare;
+
+  /// The amount the pad shows next (the next share).
+  final _padPreset = ValueNotifier<int>(0);
+
+  /// Split bill, as the till's: by item, equally or by amount, with names,
+  /// one item moved at a time, a bill (and QR code) per share and Pay now.
+  /// The share being paid goes on the pad.
   Future<int?> _split() async {
     final bill = _bill;
     if (bill == null) return null;
-    final picked = await showDialog<(int, Map<String, int>)>(context: context, builder: (_) => _SplitDialog(bill: bill));
-    if (picked == null) return null;
-    final (amount, items) = picked;
-    setState(() => _splitItems = items);
-    return amount;
+    final go = ref.read(tapProvider).config.go;
+    final plan = _plan ??= GoSplitPlan(
+      method: switch (go.splitDefault) {
+        'equally' => GoSplitMethod.equally,
+        'amount' when go.splitByAmount => GoSplitMethod.amount,
+        _ => GoSplitMethod.items,
+      },
+    );
+    final r = await Navigator.of(context).push<GoSplitResult>(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => GoSplitSheet(bill: bill, options: go, plan: plan),
+    ));
+    if (r == null || !mounted) return null;
+    if (r.print != null) {
+      final amounts = plan.amounts(bill);
+      final which = r.print == -1 ? [for (var i = 0; i < amounts.length; i++) i] : [r.print!];
+      for (final i in which) {
+        if (!mounted) break;
+        await printShareBill(
+          context,
+          ref,
+          bill,
+          title: plan.labelOf(i),
+          rows: _shareRows(bill, plan, i, amounts.length),
+          amountMinor: amounts[i],
+          shareKey: 's${i + 1}',
+        );
+      }
+      return null;
+    }
+    final pay = r.pay;
+    if (pay == null) return null;
+    return _readyShare(bill, plan, pay);
+  }
+
+  /// Put share [index] on the pad: its amount, and the items it pays for.
+  int _readyShare(Bill bill, GoSplitPlan plan, int index) {
+    final amounts = plan.amounts(bill);
+    setState(() {
+      _planShare = index;
+      _splitItems = plan.itemsOf(index);
+    });
+    return amounts[index].clamp(1, bill.dueMinor);
+  }
+
+  List<(String, int)> _shareRows(Bill bill, GoSplitPlan plan, int index, int count) {
+    if (plan.method == GoSplitMethod.items && index < plan.shares.length) {
+      return [
+        for (final e in plan.shares[index].items.entries)
+          for (final l in bill.lines)
+            if (l.id == e.key) ('${e.value} x ${l.product.name}', l.unitMinor * e.value),
+      ];
+    }
+    if (plan.method == GoSplitMethod.equally) {
+      return [for (final l in bill.lines) if (l.unpaidQuantity > 0) ('[1/$count] ${l.product.name}', 0)];
+    }
+    return [('Part of ${bill.name}', 0)];
+  }
+
+  /// After a share is paid: Newbridge's "Process payment for the next bill of
+  /// the split?", by name and amount (back office: Splitting a bill).
+  Future<void> _afterShare() async {
+    final bill = _bill;
+    final plan = _plan;
+    final done = _planShare;
+    if (bill == null || plan == null || done == null) return;
+    plan.paid.add(done);
+    _planShare = null;
+    final amounts = plan.amounts(bill);
+    final next = [for (var i = 0; i < amounts.length; i++) i].where((i) => !plan.paid.contains(i)).firstOrNull;
+    if (next == null || !ref.read(tapProvider).config.go.splitNextPrompt || !mounted) return;
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        icon: const Icon(Icons.call_split_rounded, size: 36),
+        title: const Text('Pay the next share?'),
+        content: Text('${plan.labelOf(next)}: ${money(amounts[next])}\n${money(bill.dueMinor)} still to pay on this bill.',
+            textAlign: TextAlign.center, style: const TextStyle(fontSize: 18)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Not now')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Yes, take it')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (yes == true) {
+      _padPreset.value = 0;
+      _padPreset.value = _readyShare(bill, plan, next);
+    } else {
+      Navigator.of(context).maybePop();
+    }
   }
 
   Future<void> _gratuity() async {
@@ -738,6 +835,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         googlePay: _googlePay != null || _debugShowGooglePay ? _takeGooglePay : null,
         manualCard: _manualCard,
         split: _split,
+        preset: _padPreset,
         voucher: () => askVoucher(context, ref, bill),
         giftCard: () => _codeTender('giftcard'),
         deposit: () => _codeTender('deposit'),
@@ -956,99 +1054,3 @@ class _Approved extends ConsumerWidget {
   }
 }
 
-/// The till's Split the bill: by item (tick what is being paid for, how many
-/// of each) or equally (how many ways). Answers the amount and the items.
-class _SplitDialog extends StatefulWidget {
-  const _SplitDialog({required this.bill});
-  final Bill bill;
-  @override
-  State<_SplitDialog> createState() => _SplitDialogState();
-}
-
-class _SplitDialogState extends State<_SplitDialog> {
-  bool _byItem = true;
-  final _picked = <String, int>{};
-  int _ways = 2;
-
-  List<BillLine> get _open => [for (final l in widget.bill.lines) if (l.unpaidQuantity > 0) l];
-
-  int get _itemsTotal => _open.fold<int>(0, (s, l) => s + l.unitMinor * (_picked[l.id] ?? 0));
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    final due = widget.bill.dueMinor;
-    final share = splitEqually(due, _ways);
-    return AlertDialog(
-      title: Row(children: [
-        const Expanded(child: Text('Split the bill')),
-        Text('${money(due)} left', style: t.bodyMedium),
-      ]),
-      content: SizedBox(
-        width: 480,
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(value: true, icon: Icon(Icons.checklist_rounded), label: Text('By item')),
-              ButtonSegment(value: false, icon: Icon(Icons.pie_chart_outline_rounded), label: Text('Equally')),
-            ],
-            selected: {_byItem},
-            onSelectionChanged: (v) => setState(() => _byItem = v.first),
-          ),
-          const SizedBox(height: 12),
-          if (_byItem)
-            Flexible(
-              child: ListView(shrinkWrap: true, children: [
-                for (final l in _open)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Checkbox(
-                      value: (_picked[l.id] ?? 0) > 0,
-                      onChanged: (v) => setState(() => v == true ? _picked[l.id] = l.unpaidQuantity : _picked.remove(l.id)),
-                    ),
-                    title: Text(l.product.name),
-                    subtitle: Text('${money(l.unitMinor)} each'),
-                    trailing: l.unpaidQuantity > 1
-                        ? Row(mainAxisSize: MainAxisSize.min, children: [
-                            IconButton(
-                              onPressed: (_picked[l.id] ?? 0) > 0 ? () => setState(() => _picked[l.id] = _picked[l.id]! - 1) : null,
-                              icon: const Icon(Icons.remove_circle_outline),
-                            ),
-                            Text('${_picked[l.id] ?? 0}/${l.unpaidQuantity}'),
-                            IconButton(
-                              onPressed: (_picked[l.id] ?? 0) < l.unpaidQuantity ? () => setState(() => _picked[l.id] = (_picked[l.id] ?? 0) + 1) : null,
-                              icon: const Icon(Icons.add_circle_outline),
-                            ),
-                          ])
-                        : Text(money(l.unitMinor)),
-                  ),
-              ]),
-            )
-          else
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (var n = 2; n <= 10; n++) ChoiceChip(label: Text('$n ways'), selected: _ways == n, onSelected: (_) => setState(() => _ways = n)),
-            ]),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: context.goRaised, borderRadius: BorderRadius.circular(12)),
-            child: Row(children: [
-              Expanded(child: Text(_byItem ? 'This person pays' : 'Each pays', style: t.bodyMedium)),
-              Text(_byItem ? money(_itemsTotal) : share.map(money).toSet().join(' or '),
-                  style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: Tp.tabular)),
-            ]),
-          ),
-        ]),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(
-          onPressed: _byItem && _itemsTotal <= 0
-              ? null
-              : () => Navigator.pop(context, _byItem ? (_itemsTotal.clamp(1, due), Map<String, int>.of(_picked)) : (share.first, const <String, int>{})),
-          child: const Text('Done'),
-        ),
-      ],
-    );
-  }
-}

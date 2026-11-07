@@ -54,7 +54,11 @@ class PayActions {
     this.otherCardLabel,
     this.qrPay,
     this.googlePay,
+    this.preset,
   });
+
+  /// The page puts an amount on the pad (the next share of a split, 2026-11-07).
+  final ValueNotifier<int>? preset;
 
   final void Function(int tenderedMinor) cash;
   final void Function(int amountMinor) card;
@@ -113,6 +117,23 @@ class _TillPayBoardState extends State<TillPayBoard> {
 
   int get _due => widget.bill.dueMinor;
   int get _amount => _entered > 0 ? _entered : _due;
+
+  void _fromPreset() {
+    final v = widget.actions.preset?.value ?? 0;
+    if (v > 0 && mounted) setState(() => _entered = v);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.actions.preset?.addListener(_fromPreset);
+  }
+
+  @override
+  void dispose() {
+    widget.actions.preset?.removeListener(_fromPreset);
+    super.dispose();
+  }
 
   void _digit(String d) => setState(() {
         if (d == '.') return;

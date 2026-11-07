@@ -70,6 +70,13 @@ class GoOptions {
   bool get customerLoyalty => _flag('customer_loyalty', true);
   bool get customerHandover => _flag('customer_handover', true);
 
+  // Splitting a bill (back office: Splitting a bill), on the till and on Go.
+  String get splitDefault => _str('split_default', 'items');
+  bool get splitNextPrompt => _flag('split_next_prompt', true);
+  bool get splitPrintAll => _flag('split_print_all', true);
+  bool get splitNames => _flag('split_names', true);
+  bool get splitByAmount => _flag('split_by_amount', true);
+
   bool get printReceiptAuto => _flag('print_receipt_auto', false);
   bool get printAirprintFallback => _flag('print_airprint_fallback', true);
   bool get printKitchen => _flag('print_kitchen', true);
