@@ -38,6 +38,8 @@ function world(rows) {
   identity.attachIdentity = async (userId, fields) => { calls.attached.push({ userId, ...fields }); return 1; };
   identity.createUser = async (fields) => { calls.created.push(fields); return { userId: 99, publicId: 'NEW' }; };
   identity.touchIdentity = async () => {};
+  db.execute = async () => ({ insertId: 1 });
+  db.transaction = async (work) => work({ execute: async () => ({ insertId: 1 }), one: async () => null });
   return calls;
 }
 
@@ -111,4 +113,117 @@ test('an app is told about a passkey, never given its key', () => {
     ['aaguid', 'backup_state', 'created_at', 'device_type', 'id', 'last_used_at', 'name']);
   assert.equal(row.name, 'Passkey');
   assert.equal(row.backup_state, 1);
+});
+
+// ---------------------------------------------------------------------------
+// A provider's proof becomes a confirmed address (owner, 2026-11-07).
+// ---------------------------------------------------------------------------
+
+const google = { key: 'google', name: 'Google', trustsEmail: true };
+
+/** identity.js as it really is, over a world of rows; only attachIdentity's write is watched. */
+function adoption(rows, { placeholder = false } = {}) {
+  const log = { verified: [], attached: [], asserted: [] };
+  world(rows);
+  const before = db.one;
+  db.one = async (sql, params) => (/AS used/.test(sql)
+    ? { identities: placeholder ? 1 : 2, used: placeholder ? 0 : 1, passwords: 0, passkeys: 0 }
+    : before(sql, params));
+  db.execute = async (sql, params) => {
+    if (/SET verified_at/.test(sql)) log.verified.push(params[1]);
+    if (/asserted_email = \?/.test(sql)) log.asserted.push(params);
+    return { insertId: 1 };
+  };
+  db.transaction = async (work) => work({
+    one: async () => null,
+    execute: async (sql, params) => {
+      if (/INSERT INTO user_identities/.test(sql)) log.attached.push({ userId: params[0], type: params[1], verified: Boolean(params[5]) });
+      return { insertId: 1 };
+    },
+  });
+  return log;
+}
+
+const adopt = (userId, email) => identity.adoptProviderEmail(userId, { email, normalised: email, via: 'google' });
+
+test('signing in again with Google confirms an address the account held unconfirmed', async () => {
+  const log = adoption([{ id: 5, type: 'email', identifier_norm: 'sam@example.com', user_id: 7, verified_at: null }]);
+  assert.equal(await adopt(7, 'sam@example.com'), 'confirmed');
+  assert.deepEqual(log.verified, [5]);
+});
+
+test('a free address becomes a confirmed row', async () => {
+  const log = adoption([]);
+  assert.equal(await adopt(7, 'sam@example.com'), 'added');
+  assert.equal(log.attached[0].verified, true);
+  assert.equal(log.attached[0].type, 'email');
+});
+
+test('an address on another account is left alone', async () => {
+  const log = adoption([{ id: 5, type: 'email', identifier_norm: 'sam@example.com', user_id: 8, verified_at: new Date() }]);
+  assert.equal(await adopt(7, 'sam@example.com'), 'held');
+  assert.equal(log.attached.length + log.verified.length, 0);
+});
+
+test('an Apple relay address is never adopted', async () => {
+  const log = adoption([]);
+  assert.equal(await adopt(7, 'abc@privaterelay.appleid.com'), 'skipped');
+  assert.equal(log.attached.length, 0);
+});
+
+test('a losing race for the address is not an error', async () => {
+  adoption([]);
+  db.transaction = async () => { throw Object.assign(new Error('dup'), { code: 'ER_DUP_ENTRY' }); };
+  assert.equal(await adopt(7, 'sam@example.com'), 'held');
+});
+
+test('Google claims a silent venue placeholder rather than making a second account', async () => {
+  const rows = [{ id: 5, type: 'email', identifier_norm: 'sam@example.com', user_id: 7, verified_at: null }];
+  adoption(rows, { placeholder: true });
+  assert.equal((await identity.findLinkCandidate('sam@example.com', 'sam@example.com', true)).user_id, 7);
+});
+
+test('an unconfirmed address on an account somebody uses still cannot be claimed', async () => {
+  const rows = [{ id: 5, type: 'email', identifier_norm: 'sam@example.com', user_id: 7, verified_at: null }];
+  adoption(rows);
+  assert.equal(await identity.findLinkCandidate('sam@example.com', 'sam@example.com', true), null);
+});
+
+test('an unproved provider address claims nothing, placeholder or not', async () => {
+  const rows = [{ id: 5, type: 'email', identifier_norm: 'sam@example.com', user_id: 7, verified_at: null }];
+  adoption(rows, { placeholder: true });
+  assert.equal(await identity.findLinkCandidate('sam@example.com', 'sam@example.com', false), null);
+});
+
+test('an existing Google sign-in records the assertion and adopts the address', async () => {
+  const log = adoption([]);
+  identity.touchIdentity = async () => {};
+  const found = await accountFor(req, {
+    provider: google, profile: profile('sam@example.com'), subject: 'g-1', assertedEmail: 'sam@example.com',
+    relay: false, existing: { id: 3, user_id: 7, user_status: 'active' },
+  });
+  assert.deepEqual(found, { userId: 7 });
+  assert.equal(log.asserted.length, 1);
+  assert.equal(log.attached[0].userId, 7);
+});
+
+test('an unverified Google address changes nothing on the account', async () => {
+  const log = adoption([]);
+  identity.touchIdentity = async () => {};
+  await accountFor(req, {
+    provider: google, profile: profile('sam@example.com', false), subject: 'g-1', assertedEmail: 'sam@example.com',
+    relay: false, existing: { id: 3, user_id: 7, user_status: 'active' },
+  });
+  assert.equal(log.attached.length + log.asserted.length, 0);
+});
+
+test('the claims fall back on a provider-confirmed address', async () => {
+  world([]);
+  db.one = async (sql) => (/asserted_email_verified = 1/.test(sql)
+    ? { asserted_email: 'Sam@example.com', asserted_email_norm: 'sam@example.com' }
+    : null);
+  const { claimsFor } = require('../src/oauth/tokens');
+  const claims = await claimsFor({ id: 7, public_id: 'P', updated_at: new Date() }, 'openid email');
+  assert.equal(claims.email, 'Sam@example.com');
+  assert.equal(claims.email_verified, true);
 });

@@ -221,6 +221,35 @@ async function handleCallback(req, res, next) {
 }
 
 /**
+ * The provider has proved the address: the account now holds it, confirmed.
+ *
+ * Never stops a sign-in. The provider has already said who this is, and the
+ * claims fall back on its assertion (identity.providerConfirmedEmail).
+ */
+async function adoptAddress(req, userId, { provider, profile, assertedEmail }) {
+  try {
+    const outcome = await identity.adoptProviderEmail(userId, {
+      email: profile.email,
+      normalised: assertedEmail,
+      via: provider.key,
+    });
+    if (outcome === 'confirmed' || outcome === 'added') {
+      await events.recordAudit({
+        actorUserId: userId,
+        action: 'identity.adopted',
+        targetType: 'identity',
+        targetId: 'email',
+        detail: { why: `${provider.key} confirmed this address`, outcome },
+        ip: req.clientIp,
+        userAgent: req.userAgent,
+      });
+    }
+  } catch (error) {
+    console.error('[social] could not adopt the address:', error.message);
+  }
+}
+
+/**
  * The Vesopa account a provider sign-in belongs to: the one already holding
  * this provider account, else the verified-address match (linked here), else
  * a new one. `{ unavailable: true }` for an account that is not active.
@@ -229,9 +258,16 @@ async function handleCallback(req, res, next) {
  * arrives from a venue's own app instead of through this site's callback.
  */
 async function accountFor(req, { provider, profile, tokenSet, subject, assertedEmail, relay, existing }) {
+  const proved = provider.trustsEmail && profile.emailVerified && Boolean(assertedEmail) && !relay;
   if (existing) {
     if (existing.user_status !== 'active') return { unavailable: true };
     await identity.touchIdentity(existing.id);
+    if (proved) {
+      // Rows made before the assertion was stored, and an address changed at
+      // the provider, catch up here.
+      await identity.recordAssertion(existing.id, { email: profile.email, normalised: assertedEmail, verified: true });
+      await adoptAddress(req, existing.user_id, { provider, profile, assertedEmail });
+    }
     return { userId: existing.user_id };
   }
 
@@ -294,6 +330,7 @@ async function accountFor(req, { provider, profile, tokenSet, subject, assertedE
       userAgent: req.userAgent,
     });
 
+    await adoptAddress(req, candidate.user_id, { provider, profile, assertedEmail });
     return { userId: candidate.user_id };
   }
 
@@ -316,28 +353,9 @@ async function accountFor(req, { provider, profile, tokenSet, subject, assertedE
     });
     userId = created.userId;
 
-    /*
-     * The address becomes a real identity of its own — so the person can
-     * later sign in with a code to it, or set a password — but ONLY when the
-     * provider is one we trust to have verified it, and never for an Apple
-     * relay address, which can be switched off and stop existing.
-     *
-     * A duplicate here is not fatal: it means somebody else already holds
-     * that address, and the account still works through the provider.
-     */
-    if (assertedEmail && profile.emailVerified && provider.trustsEmail && !relay) {
-      try {
-        await identity.attachIdentity(userId, {
-          type: 'email',
-          identifier: profile.email,
-          normalised: assertedEmail,
-          verified: true,
-          verifiedVia: provider.key,
-        });
-      } catch (error) {
-        if (!db.isDuplicate(error)) throw error;
-      }
-    }
+    // Only when the provider is one we trust to have verified it, and never
+    // for an Apple relay address, which can be switched off and stop existing.
+    if (proved) await adoptAddress(req, userId, { provider, profile, assertedEmail });
 
     await captureAvatar({ provider, userId, publicId: created.publicId, profile, tokenSet });
 
@@ -401,6 +419,10 @@ async function finishLink(req, res, { provider, flow, existing, subject, profile
       );
     }
     throw error;
+  }
+
+  if (provider.trustsEmail && profile.emailVerified && assertedEmail && !relay) {
+    await adoptAddress(req, session.user_id, { provider, profile, assertedEmail });
   }
 
   /*

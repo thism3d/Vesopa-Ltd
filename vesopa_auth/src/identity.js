@@ -321,8 +321,12 @@ async function findLinkCandidate(assertedEmail, normalised, providerTrustsEmail)
   if (isPrivateRelay(assertedEmail)) return null;
   const existing = await findIdentity('email', normalised);
   // An address we have never proved ourselves is not a safe thing to match on
-  // from either direction.
-  if (existing) return existing.verified_at ? existing : null;
+  // from either direction, unless nobody has ever used the account that names
+  // it: then this proof is what it was made to wait for.
+  if (existing) {
+    if (existing.verified_at) return existing;
+    return (await isUnclaimedPlaceholder(existing.user_id)) ? existing : null;
+  }
   /*
    * No email row — but another PROVIDER may already hold this address for
    * somebody. Google first, GitHub second, each asserting the same verified
@@ -384,21 +388,20 @@ async function findByAssertedEmail(normalised) {
 }
 
 /**
- * The address a linked Google or Apple account confirmed for this person, when
- * they have no email identity of their own (owner, 2026-11-07: "account linked
- * with that mail means mail confirmed").
+ * The address a linked provider confirmed for this person (owner, 2026-11-07:
+ * "account linked with that mail means mail confirmed").
  *
- * That happens when the address's email row could not be attached at sign-up,
- * and the person still proved the mailbox to Google. Only these two: they say
- * per sign-in that they checked the address. Microsoft sends no such flag, and
- * an Apple relay address is not evidence about a person.
+ * The same bar as findByAssertedEmail: a provider's verified assertion, never
+ * an Apple relay address. It answers for the moment before adoptProviderEmail
+ * has run, or where another account holds the row; every other reader of
+ * confirmed addresses reads the email row adoption makes.
  */
 async function providerConfirmedEmail(userId) {
   const row = await db.one(
     `SELECT asserted_email, asserted_email_norm
        FROM user_identities
       WHERE user_id = ?
-        AND type IN ('google', 'apple')
+        AND type NOT IN ('email', 'phone')
         AND asserted_email_verified = 1
         AND asserted_email_norm <> ''
         AND revoked_at IS NULL
@@ -408,6 +411,74 @@ async function providerConfirmedEmail(userId) {
   );
   if (!row || isPrivateRelay(row.asserted_email_norm)) return null;
   return { email: row.asserted_email, normalised: row.asserted_email_norm };
+}
+
+/**
+ * A provider has just proved this address for this person: make it theirs.
+ *
+ * Sign-in checks, recovery, invitations and step-up all read a confirmed email
+ * ROW, so the proof has to end up as one. Otherwise an account made through
+ * Google works until the first thing asks for its address, and is then told it
+ * has none. Safe to call on every sign-in, and from a repair script.
+ *
+ *   'confirmed'  the person's own row, already confirmed or now so
+ *   'added'      a new confirmed row
+ *   'held'       another account has the address; nothing changed
+ *   'skipped'    no address, or an Apple relay address
+ */
+async function adoptProviderEmail(userId, { email, normalised, via }) {
+  if (!normalised || isPrivateRelay(normalised)) return 'skipped';
+  const row = await findIdentity('email', normalised);
+  if (row && row.user_id !== userId) return 'held';
+  if (row) {
+    if (!row.verified_at) await markVerified(row.id, via);
+    await ensurePrimary(userId);
+    return 'confirmed';
+  }
+  try {
+    await attachIdentity(userId, { type: 'email', identifier: email, normalised, verified: true, verifiedVia: via });
+    return 'added';
+  } catch (error) {
+    if (db.isDuplicate(error)) return 'held';
+    throw error;
+  }
+}
+
+/** Keep what a provider says about an identity current, for rows made before it was stored. */
+async function recordAssertion(identityId, { email, normalised, verified }) {
+  await db.execute(
+    `UPDATE user_identities
+        SET asserted_email = ?, asserted_email_norm = ?, asserted_email_verified = ?
+      WHERE id = ?`,
+    [email, normalised, verified ? 1 : 0, identityId],
+  );
+}
+
+/**
+ * Is this account a silent placeholder nobody has ever used?
+ *
+ * Venue provisioning makes accounts from an address in a database, unverified
+ * and with no way in, until the person first proves the address. One that has
+ * only that row, never used, has no owner to protect: a provider's proof of the
+ * address is the proof the placeholder was waiting for. An account with a
+ * password or anything else is NOT this, which is what keeps the attack in
+ * findLinkCandidate's comment closed.
+ */
+async function isUnclaimedPlaceholder(userId) {
+  const row = await db.one(
+    `SELECT
+       (SELECT COUNT(*) FROM user_identities
+         WHERE user_id = ? AND revoked_at IS NULL) AS identities,
+       (SELECT COUNT(*) FROM user_identities
+         WHERE user_id = ? AND revoked_at IS NULL AND (verified_at IS NOT NULL OR last_used_at IS NOT NULL)) AS used,
+       (SELECT COUNT(*) FROM user_passwords
+         WHERE user_id = ? AND retired_at IS NULL) AS passwords,
+       (SELECT COUNT(*) FROM user_passkeys
+         WHERE user_id = ? AND revoked_at IS NULL) AS passkeys`,
+    [userId, userId, userId, userId],
+  );
+  return Boolean(row) && Number(row.identities) === 1 && Number(row.used) === 0
+    && Number(row.passwords) === 0 && Number(row.passkeys) === 0;
 }
 
 /** The person, by internal id. */
@@ -433,6 +504,9 @@ module.exports = {
   findLinkCandidate,
   findByAssertedEmail,
   providerConfirmedEmail,
+  adoptProviderEmail,
+  recordAssertion,
+  isUnclaimedPlaceholder,
   getUser,
   getUserByPublicId,
 };
