@@ -15164,6 +15164,10 @@ function dojoTabs(which) {
  * server makes; no Stripe key reaches this page but the publishable one.
  */
 let stripeConnect = null;
+// Whether Stripe says the venue can take cards: then the page shows the account,
+// not the sign-up steps again (owner, 2026-11-07: "asking to provide the accept
+// requirement every time").
+let stripeReady = false;
 async function loadStripe() {
   const say = (t, ok) => { const el = $('stripe-msg'); el.textContent = t || ''; el.style.color = ok ? '#06784f' : '#b42318'; };
   const render = (s) => {
@@ -15178,7 +15182,7 @@ async function loadStripe() {
         : '<span class="pill">' + esc(s.environment) + '</span> ' + esc(s.account) + ' · ' +
           (s.ready ? '<b style="color:#06784f">Ready to take payments</b>'
             : '<b style="color:#b54708">Finish setting up below</b>' + (s.requirements_due ? ' · ' + s.requirements_due + ' things to provide' : ''));
-    if (s.account && s.publishable_key) mountStripe(s.publishable_key).catch((e) => say(e.message, false));
+    if (s.account && s.publishable_key) mountStripe(s.publishable_key, s.ready).catch((e) => say(e.message, false));
   };
   let s;
   // The saved state first, at once; Stripe's own check follows and replaces it.
@@ -15205,8 +15209,9 @@ async function loadStripe() {
 }
 
 /** Connect.js from Stripe, then the embedded components into the tab. */
-async function mountStripe(publishableKey) {
+async function mountStripe(publishableKey, ready = false) {
   if (stripeConnect) return;
+  stripeReady = ready;
   const card = $('stripe-embedded-card');
   const loading = $('stripe-loading');
   const showError = (text) => {
@@ -15220,7 +15225,7 @@ async function mountStripe(publishableKey) {
   $('stripe-retry-btn').onclick = () => {
     stripeConnect = null;
     for (const id of ['stripe-banner', 'stripe-onboarding', 'stripe-payments', 'stripe-payouts']) $(id).innerHTML = '';
-    mountStripe(publishableKey).catch((e) => showError(e.message));
+    mountStripe(publishableKey, stripeReady).catch((e) => showError(e.message));
   };
   // Grey placeholders where the panels will be, so the page does not jump.
   for (const id of ['stripe-onboarding', 'stripe-payments']) $(id).innerHTML = '<div class="stripe-skeleton"></div>';
@@ -15271,7 +15276,10 @@ async function mountStripeInner(publishableKey, loading, showError) {
     box.appendChild(panel);
   };
   put('stripe-banner', 'notification-banner');
-  put('stripe-onboarding', 'account-onboarding');
+  // Sign-up only while something is still owed to Stripe; once the account
+  // can take cards, its details instead (the banner still says if Stripe ever
+  // asks for more).
+  put('stripe-onboarding', stripeReady ? 'account-management' : 'account-onboarding');
   put('stripe-payments', 'payments');
   put('stripe-payouts', 'payouts');
   // Never a spinner for ever: if Stripe has said nothing in 20 seconds, say so.

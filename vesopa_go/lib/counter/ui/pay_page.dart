@@ -24,6 +24,7 @@ import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/payments/google_pay.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/payments/payment_service.dart';
+import 'package:vesopa_go/payments/stripe_tap.dart';
 import 'package:vesopa_go/ui/pay_motion.dart';
 import 'package:vesopa_go/ui/sounds.dart';
 import 'package:vesopa_go/ui/theme.dart';
@@ -289,6 +290,14 @@ class _PayPageState extends ConsumerState<PayPage> {
     if (via == 'tap') {
       final why = await payments.whyUnavailable();
       if (why != null) {
+        // A Stripe venue never pretends (owner, 2026-11-07: the sales were
+        // test:… tenders that never reached Stripe). Stripe's sandbox is the
+        // real test: on a device without Tap to Pay (an iPad), the payment
+        // goes to the venue's Stripe reader instead, simulated or real.
+        if (payments is StripeTapToPay) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$why Taking it on the Stripe card reader.')));
+          return _card('machine', amount: amount);
+        }
         // A test venue (the Kitchen, a practice copy) may pretend, so the
         // whole sale can be tried on an iPad (owner, 2026-11-02).
         if (ref.read(tapProvider).config.testVenue) return _testTap(why, amount ?? bill.dueMinor);
