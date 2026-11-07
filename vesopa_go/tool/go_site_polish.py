@@ -53,7 +53,7 @@ def polish(html, theme):
     b = html.index("      </div>\n    </div>\n  </section>", a) + len("      </div>")
     html = html[:a] + BENTO + html[b:]
     rep('<link rel="stylesheet" href="/style.css?v=6">',
-        '<link rel="stylesheet" href="/style.css?v=6">\n<link rel="stylesheet" href="/css/premium.css?v=5">')
+        '<link rel="stylesheet" href="/style.css?v=6">\n<link rel="stylesheet" href="/css/premium.css?v=6">')
     rep('<body>', f'<body{" class=\"theme-mix\"" if theme == "b" else ""}>\n<div class="progress" aria-hidden="true"></div>')
     rep('<canvas id="stage" aria-hidden="true"></canvas>', '<canvas id="stage" aria-hidden="true"></canvas>\n    <div class="aura" aria-hidden="true"></div>')
     rep('<p class="eyebrow"><span class="pulse"></span>', '<p class="eyebrow pill"><span class="pulse"></span>')
