@@ -76,9 +76,15 @@ class CardPayScreen extends StatefulWidget {
     this.onCancel,
     this.cancelling = false,
     this.onTurnToCustomer,
+    this.topInset = 0,
   });
 
   final int amountMinor;
+
+  /// Room above the amount band. Turned round to the customer, the top of
+  /// this screen is the clerk's edge, where the Turn back key sits; without
+  /// this the key covered the amount (owner, 2026-11-07).
+  final double topInset;
 
   /// The clerk's Cancel while the payment runs (Dojo: cancel from the till);
   /// null hides it, e.g. once the bank is deciding.
@@ -183,6 +189,7 @@ class _CardPayScreenState extends State<CardPayScreen> {
         child: SafeArea(
           child: Column(
             children: [
+              if (w.topInset > 0) SizedBox(height: w.topInset),
               _AmountBand(
                 heading: w.heading,
                 amountMinor: w.amountMinor,

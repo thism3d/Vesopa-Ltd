@@ -337,6 +337,11 @@ class TapState {
     return null;
   }
 
+  /// Every order open at a table: one per person or group when they asked for
+  /// their own (owner, 2026-11-07: "A's order, B's order"), oldest first.
+  List<Bill> billsForTable(String tableId) =>
+      [for (final b in bills.values) if (b.tableId == tableId) b]..sort((a, b) => a.id.compareTo(b.id));
+
   TableState tableState(String tableId) {
     final b = billForTable(tableId);
     if (b == null) return TableState.free;
@@ -406,6 +411,17 @@ final paymentsProvider = Provider<PaymentService>((ref) {
 });
 
 final tapProvider = NotifierProvider<TapSession, TapState>(TapSession.new);
+
+/// A bill id to offer the clerk who has just signed on: their own sale, open
+/// elsewhere. Null when there is nothing to offer.
+final clerkSaleOfferProvider = NotifierProvider<ClerkSaleOffer, String?>(ClerkSaleOffer.new);
+
+class ClerkSaleOffer extends Notifier<String?> {
+  @override
+  String? build() => null;
+  void offer(String? billId) => state = billId;
+  void clear() => state = null;
+}
 
 /// A QR Pay payment made from a printed bill's code, waiting to go on its
 /// bill (the pay page takes it as a tender the next time the bill is open,
@@ -714,6 +730,28 @@ class TapSession extends Notifier<TapState> {
   void signOn(Clerk clerk) {
     state = state.copyWith(phase: Phase.ready, clerk: clerk, lastClerk: clerk);
     _startTimers();
+    // The clerk's own sale follows them (owner, 2026-11-07: "my same clerk
+    // opening the till should show the same data always"): an unpaid sale of
+    // theirs open on another till or device is offered here at once.
+    final theirs = clerkSaleElsewhere(clerk);
+    ref.read(clerkSaleOfferProvider.notifier).offer(theirs?.id);
+  }
+
+  /// [clerk]'s newest unpaid sale (not a table: a table is on the plan for
+  /// everyone) that is open on another till or device, if any.
+  Bill? clerkSaleElsewhere(Clerk clerk) {
+    final mine = [
+      for (final b in state.bills.values)
+        if (b.heldBy != null &&
+            b.tableId == null &&
+            b.lines.isNotEmpty &&
+            b.paidMinor == 0 &&
+            (b.staffId == clerk.id || (b.staffId == null && b.clerk == clerk.name)))
+          b,
+    ];
+    if (mine.isEmpty) return null;
+    mine.sort((a, b) => (b.openedAt ?? DateTime(0)).compareTo(a.openedAt ?? DateTime(0)));
+    return mine.first;
   }
 
   void lock() {
@@ -886,6 +924,7 @@ class TapSession extends Notifier<TapState> {
       for (final b in feed['bills'] as List? ?? const []) {
         final row = Map<String, dynamic>.from(b as Map);
         if (row['terminal'] == terminalName) continue;
+        if (_staleForUs(row)) continue;
         final mirrored = _billFromFeed(row);
         if (mirrored != null) bills[mirrored.id] = mirrored;
       }
@@ -943,11 +982,29 @@ class TapSession extends Notifier<TapState> {
     } else if (d is Map) {
       final row = {...Map<String, dynamic>.from(d), 'id': id};
       if (row['terminal'] == terminalName) return;
+      if (_staleForUs(row)) return;
       final mirrored = _billFromFeed(row);
       if (mirrored == null) return;
       bills[id] = mirrored;
     }
     state = state.copyWith(bills: bills, sharing: true);
+  }
+
+  /// When this device took each bill over.
+  final Map<String, DateTime> _claimedAt = {};
+
+  /// A copy of a bill this device has taken over, from the till that had it
+  /// before: older than the takeover, so it must not replace what has been
+  /// added here since (owner, 2026-11-07: "taking over an order ... adding
+  /// items to that specific order is not working"). A later takeover by
+  /// somebody else (claimed_at after ours) does replace it.
+  bool _staleForUs(Map<String, dynamic> row) {
+    final id = '${row['id'] ?? ''}';
+    final ours = _claimedAt[id];
+    final local = state.bills[id];
+    if (ours == null || local == null || local.heldBy != null) return false;
+    final theirs = DateTime.tryParse('${row['claimed_at'] ?? ''}');
+    return theirs == null || !theirs.isAfter(ours.add(const Duration(seconds: 2)));
   }
 
   Bill? _billFromFeed(Map<String, dynamic> row) {
@@ -996,6 +1053,7 @@ class TapSession extends Notifier<TapState> {
     }
     try {
       await ref.read(apiProvider).claimBill(billId, terminalName);
+      _claimedAt[billId] = DateTime.now().toUtc();
       _put(bill.copyWith(clearHeldBy: true));
       return true;
     } on TapApiError catch (e) {
@@ -1037,12 +1095,13 @@ class TapSession extends Notifier<TapState> {
 
   // ---- Bills -------------------------------------------------------------------------
 
-  Bill openTable(TableInfo table, {int covers = 0}) {
+  Bill openTable(TableInfo table, {int covers = 0, bool another = false, String who = ''}) {
     final had = state.billForTable(table.id);
-    if (had != null) return had;
+    if (had != null && !another) return had;
     final bill = Bill(
       id: _uuid.v4(),
-      name: table.name,
+      // A second order at a table is named for whose it is: "Table 3 · Carys".
+      name: another && who.trim().isNotEmpty ? '${table.name} · ${who.trim()}' : table.name,
       tableId: table.id,
       tableNumber: table.number,
       roomId: table.roomId,

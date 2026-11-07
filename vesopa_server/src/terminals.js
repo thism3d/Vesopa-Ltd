@@ -339,11 +339,16 @@ function terminalRoutes({ pool, broadcast, secret }) {
       await conn.beginTransaction();
       const rev = await nextRev(conn, office);
 
+      // The takeover is a change of its own, stamped now: a copy the old holder
+      // saves afterwards carries an older changed_at and is refused by the
+      // check in POST /till/open-bills, rather than putting the table back on
+      // that till and wiping what the new holder added (Vesopa Go, 2026-11-07).
       const [result] = await conn.execute(
         `UPDATE epos_open_bills
-            SET terminal = ?, claimed_at = NOW(), rev = ?
+            SET terminal = ?, claimed_at = NOW(), rev = ?,
+                client_changed_at = GREATEST(COALESCE(client_changed_at, 0), ?)
           WHERE id = ? AND office = ?`,
-        [req.body?.terminal ?? null, rev, req.params.id, office]
+        [req.body?.terminal ?? null, rev, Date.now(), req.params.id, office]
       );
       if (result.affectedRows === 0) {
         await conn.rollback();

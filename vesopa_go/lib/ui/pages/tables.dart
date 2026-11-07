@@ -70,6 +70,21 @@ class _TablesPageState extends ConsumerState<TablesPage> {
         return;
       }
     }
+    // Several orders at one table (one each, or per group), all seen by every
+    // device: choose one to open or take over, or start another (owner,
+    // 2026-11-07: "take over A's order, take over B's order").
+    final all = s.billsForTable(table.id);
+    if (all.isNotEmpty) {
+      final chosen = await _chooseOrder(table, all);
+      if (chosen == null || !mounted) return;
+      if (chosen.isEmpty) {
+        final who = await _askWho(table);
+        if (who == null || !mounted) return;
+        bill = ref.read(tapProvider.notifier).openTable(table, covers: 0, another: true, who: who);
+      } else {
+        bill = ref.read(tapProvider).bills[chosen] ?? bill;
+      }
+    }
     if (bill == null) {
       final covers = await _askCovers(table);
       if (covers == null || !mounted) return;
@@ -117,6 +132,70 @@ class _TablesPageState extends ConsumerState<TablesPage> {
     }
     setState(() => _area = table.area);
     await _open(table);
+  }
+
+  /// Which order at [table]: a bill's id, '' for a new one, null to cancel.
+  Future<String?> _chooseOrder(TableInfo table, List<Bill> bills) => showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (c) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('${table.name}: ${bills.length} order${bills.length == 1 ? '' : 's'}', style: Theme.of(c).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              for (final b in bills)
+                Card(
+                  child: ListTile(
+                    key: ValueKey('order-${b.id}'),
+                    leading: Icon(b.heldBy == null ? Icons.receipt_long_rounded : Icons.lock_outline_rounded),
+                    title: Text(b.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text([
+                      if (b.clerk.isNotEmpty) b.clerk,
+                      '${b.lines.fold<int>(0, (a, l) => a + l.quantity)} items',
+                      if (b.heldBy != null) 'open on ${b.heldBy}',
+                    ].join(' · ')),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Money(b.dueMinor),
+                      const SizedBox(width: 8),
+                      Text(b.heldBy == null ? 'Open' : 'Take over',
+                          style: TextStyle(color: Theme.of(c).colorScheme.primary, fontWeight: FontWeight.w700)),
+                    ]),
+                    onTap: () => Navigator.pop(c, b.id),
+                  ),
+                ),
+              const SizedBox(height: 6),
+              OutlinedButton.icon(
+                key: const ValueKey('order-new'),
+                onPressed: () => Navigator.pop(c, ''),
+                icon: const Icon(Icons.person_add_alt_1_rounded),
+                label: const Text('Another order at this table'),
+              ),
+            ]),
+          ),
+        ),
+      );
+
+  Future<String?> _askWho(TableInfo table) {
+    final field = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('Whose order at ${table.name}?'),
+        content: TextField(
+          controller: field,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(hintText: 'A name, or leave it blank'),
+          onSubmitted: (v) => Navigator.pop(c, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, field.text), child: const Text('Start it')),
+        ],
+      ),
+    );
   }
 
   Future<int?> _askCovers(TableInfo table) => showModalBottomSheet<int>(

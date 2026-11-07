@@ -63,6 +63,7 @@ import 'connected_devices_page.dart' show testPrinter, tillEquipment;
 import 'printers_page.dart' show printerSettingsProvider;
 import '../payments/dojo_config.dart' show dojoConfigProvider;
 import '../printing/printer_transport.dart' show PrinterConfig;
+import 'package:intl/intl.dart';
 
 /// The till frame: fixed nav rail on the left, the selected page beside it.
 class PosShell extends ConsumerStatefulWidget {
@@ -758,6 +759,40 @@ class _PosShellState extends ConsumerState<PosShell> {
       await _switchToOrder(target);
     } else if (move.leave) {
       await _newOrder();
+    }
+
+    // Nothing held here for them: a sale of theirs open on another till or on
+    // Vesopa Go follows them to this one, offered and then taken over, so the
+    // same clerk sees the same sale wherever they sign on (owner, 2026-11-07).
+    // Never anyone else's: only their own staff id.
+    if (target == null && next != null && mounted) {
+      final elsewhere = await orders.saleHeldElsewhereFor(next);
+      if (elsewhere != null && mounted) {
+        final take = await showDialog<bool>(
+          context: context,
+          builder: (c) => AlertDialog(
+            icon: const Icon(Icons.devices_rounded, size: 36),
+            title: const Text('Carry on your sale here?'),
+            content: Text(
+              'You have a sale open on ${elsewhere.heldBy}: '
+              '${NumberFormat.currency(locale: 'en_GB', symbol: '£').format(elsewhere.totalMinor / 100)}.',
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Not now')),
+              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Bring it here')),
+            ],
+          ),
+        );
+        if (take == true && mounted) {
+          try {
+            await ref.read(billSyncProvider).claim(elsewhere.id);
+            if (mounted) await _switchToOrder(elsewhere.id);
+          } catch (e) {
+            if (mounted) PosMessenger.error(context, 'Could not bring the sale over: $e');
+          }
+        }
+      }
     }
 
     // The screen this person starts on, from the back office, else the

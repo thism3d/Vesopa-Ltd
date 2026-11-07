@@ -1486,6 +1486,25 @@ class OrderRepository {
       (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
           .getSingleOrNull();
 
+  /// [staffId]'s newest sale held on another till or on Vesopa Go (mirrored
+  /// here by bill_sync.dart with heldBy set), not a table's (a table is on the
+  /// plan for everyone), with something on it. What follows a clerk from one
+  /// device to the next (owner, 2026-11-07).
+  Future<Order?> saleHeldElsewhereFor(int staffId) async {
+    final rows = await (_db.select(_db.orders)
+          ..where((o) =>
+              o.staffId.equals(staffId) &
+              o.heldBy.isNotNull() &
+              o.tableNumber.isNull() &
+              o.status.isIn(['open', 'parked']))
+          ..orderBy([(o) => OrderingTerm.desc(o.createdAt)]))
+        .get();
+    for (final o in rows) {
+      if ((await linesOnce(o.id)).isNotEmpty) return o;
+    }
+    return null;
+  }
+
   Stream<Order> watchOrder(String orderId) =>
       (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
           .watchSingle();

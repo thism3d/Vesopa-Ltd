@@ -112,11 +112,39 @@ class _ShellState extends ConsumerState<Shell> {
         (Icons.settings_rounded, 'Settings', () => const SettingsPage()),
       ];
 
+  Future<void> _offerClerkSale(String id) async {
+    ref.read(clerkSaleOfferProvider.notifier).clear();
+    final bill = ref.read(tapProvider).bills[id];
+    if (bill == null || !mounted) return;
+    final take = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        icon: const Icon(Icons.devices_rounded, size: 36),
+        title: const Text('Carry on your sale here?'),
+        content: Text('You have a sale open on ${bill.heldBy}: ${money(bill.dueMinor)}.', textAlign: TextAlign.center),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Not now')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Bring it here')),
+        ],
+      ),
+    );
+    if (take != true || !mounted) return;
+    if (await ref.read(tapProvider.notifier).claim(id)) {
+      ref.read(currentSaleProvider.notifier).show(id);
+      ref.read(shellPageProvider.notifier).go(0);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ref.read(tapProvider).message ?? 'Could not bring the sale over.')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(tapProvider);
     // New menu from the back office: its photos into the cache now.
     ref.listen(tapProvider.select((s) => s.products), (_, products) => warmPhotos(context, products));
+    // The clerk's own sale, open on another till or device: offered here at
+    // sign-on, then taken over (owner, 2026-11-07). Only ever their own.
+    ref.listen(clerkSaleOfferProvider, (_, id) => id == null ? null : _offerClerkSale(id));
     final pages = _pagesFor(s);
     final i = ref.watch(shellPageProvider).clamp(0, pages.length - 1);
     final body = pages[i].$3();

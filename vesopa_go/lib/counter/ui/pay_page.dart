@@ -532,6 +532,7 @@ class _PayPageState extends ConsumerState<PayPage> {
     final turnable = !machine && (_result != null || _testing || _step == PayStep.waitingForCard || _step == PayStep.confirming || _cardStep != null);
     if (!turnable && _facing) _facing = false;
     final screen = CardPayScreen(
+      topInset: _facing ? 84 : 0,
       amountMinor: _cardAmount + _tip,
       heading: _facing ? (ref.read(tapProvider).venue?.name ?? 'Pay by card') : (machine ? 'Card machine' : 'Tap to Pay'),
       step: step,
