@@ -15,9 +15,9 @@
       <key>metadata</key>
       <dict>
         <key>bundle-identifier</key><string>com.vesopa.go</string>
-        <key>bundle-version</key><string>1.2.42</string>
+        <key>bundle-version</key><string>1.2.53</string>
         <key>kind</key><string>software</string>
-        <key>title</key><string>Vesopa Go (test)</string>
+        <key>title</key><string>Vesopa Go 1.2.53 (test)</string>
       </dict>
     </dict>
   </array>

@@ -16,6 +16,8 @@ import zipfile
 sys.argv.append("--local")
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import go_site  # noqa: E402
+sys.path.insert(0, str(go_site.REPO / "tool"))
+import deploy_pontardawe_app as app  # noqa: E402  (the server login, from a worktree too)
 
 INSTALL = go_site.SITE / "install"
 
@@ -50,6 +52,7 @@ def main():
         (r"(<key>bundle-version</key><string>)[^<]*", rf"\g<1>{version}"),
         (r"(<key>title</key><string>)[^<]*", rf"\g<1>Vesopa Go {version} (test)"),
     ])
+    go_site._client = app.vesopa_ssh.connect()
     user, folder = go_site.where()
     target = f"{folder}/install"
     go_site.sh(f"mkdir -p {target} && cat > {target}/VesopaGo.ipa.new && mv {target}/VesopaGo.ipa.new {target}/VesopaGo.ipa", data=ipa.read_bytes())
