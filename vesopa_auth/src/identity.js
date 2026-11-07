@@ -383,6 +383,33 @@ async function findByAssertedEmail(normalised) {
   );
 }
 
+/**
+ * The address a linked Google or Apple account confirmed for this person, when
+ * they have no email identity of their own (owner, 2026-11-07: "account linked
+ * with that mail means mail confirmed").
+ *
+ * That happens when the address's email row could not be attached at sign-up,
+ * and the person still proved the mailbox to Google. Only these two: they say
+ * per sign-in that they checked the address. Microsoft sends no such flag, and
+ * an Apple relay address is not evidence about a person.
+ */
+async function providerConfirmedEmail(userId) {
+  const row = await db.one(
+    `SELECT asserted_email, asserted_email_norm
+       FROM user_identities
+      WHERE user_id = ?
+        AND type IN ('google', 'apple')
+        AND asserted_email_verified = 1
+        AND asserted_email_norm <> ''
+        AND revoked_at IS NULL
+      ORDER BY id
+      LIMIT 1`,
+    [userId],
+  );
+  if (!row || isPrivateRelay(row.asserted_email_norm)) return null;
+  return { email: row.asserted_email, normalised: row.asserted_email_norm };
+}
+
 /** The person, by internal id. */
 async function getUser(userId) {
   return db.one('SELECT * FROM users WHERE id = ?', [userId]);
@@ -405,6 +432,7 @@ module.exports = {
   revokeIdentity,
   findLinkCandidate,
   findByAssertedEmail,
+  providerConfirmedEmail,
   getUser,
   getUserByPublicId,
 };

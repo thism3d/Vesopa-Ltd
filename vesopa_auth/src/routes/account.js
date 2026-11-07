@@ -656,6 +656,11 @@ router.post('/account/linked/add', csrf.verify, async (req, res, next) => {
     // Already somebody's? The index would refuse it anyway; saying so plainly
     // is better than a duplicate-key error page.
     const taken = await identity.findIdentity(type, normalised);
+    const linked = type === 'email' ? await identity.providerConfirmedEmail(session.user_id) : null;
+    if (linked && linked.normalised === normalised) {
+      const message = 'That address is already confirmed by your linked account. There is no need to add it.';
+      return res.redirect(303, `/account/linked?error=${encodeURIComponent(message)}`);
+    }
     if (taken) {
       const message =
         taken.user_id === session.user_id

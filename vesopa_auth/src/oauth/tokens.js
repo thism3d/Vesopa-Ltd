@@ -27,6 +27,7 @@ const config = require('../config');
 const keys = require('../keys');
 const clients = require('./clients');
 const { newId, newToken, hashToken, pairwiseSubject } = require('../crypto');
+const { providerConfirmedEmail } = require('../identity');
 
 /**
  * The `sub` this application sees for this person.
@@ -270,6 +271,14 @@ async function claimsFor(user, scope) {
     if (email) {
       claims.email = email.identifier;
       claims.email_verified = Boolean(email.verified_at);
+    }
+    // No confirmed address of their own: the one Google or Apple confirmed.
+    if (!email || !email.verified_at) {
+      const confirmed = await providerConfirmedEmail(user.id);
+      if (confirmed) {
+        claims.email = confirmed.email;
+        claims.email_verified = true;
+      }
     }
   }
 
