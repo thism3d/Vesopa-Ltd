@@ -38,6 +38,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../data/bill_rounds.dart';
+import '../data/split_options.dart';
 import '../data/modifier_layout.dart';
 import '../data/pricing_engine.dart';
 import '../data/split_portions.dart';
@@ -57,11 +58,19 @@ class SplitChoice {
     this.groups,
     this.payShare,
     this.payAndKeep,
+    this.names = const [],
+    this.amounts = const [],
   });
 
   final SplitMode mode;
   final int ways;
   final List<List<String>>? groups;
+
+  /// Who each share is, in share order; blank where nobody was named.
+  final List<String> names;
+
+  /// For a split by amount: the amounts the clerk typed, the rest a last share.
+  final List<int> amounts;
 
   /// The share the clerk pressed Pay Now on, if they did.
   ///
@@ -77,7 +86,7 @@ class SplitChoice {
 }
 
 /// Which way of dividing the bill is on screen.
-enum SplitMethod { items, equally }
+enum SplitMethod { items, equally, amount }
 
 /// Choose how to split a bill.
 Future<SplitChoice?> showSplitDialog(
@@ -99,18 +108,28 @@ Future<SplitChoice?> showSplitDialog(
   /// Whether "pay these, keep the rest on the table" is offered: a bill on a
   /// table with nothing paid on it yet.
   bool canKeepRest = false,
+  SplitOptions options = const SplitOptions(),
 }) =>
     showDialog<SplitChoice>(
       context: context,
-      builder: (_) => SplitBillSheet(state: state, onPrintShare: onPrintShare, canKeepRest: canKeepRest),
+      builder: (_) => SplitBillSheet(state: state, onPrintShare: onPrintShare, canKeepRest: canKeepRest, options: options),
     );
 
 /// The screen itself. Public so a widget test can drive it directly.
 class SplitBillSheet extends StatefulWidget {
-  const SplitBillSheet({super.key, required this.state, this.onPrintShare, this.canKeepRest = false});
+  const SplitBillSheet({
+    super.key,
+    required this.state,
+    this.onPrintShare,
+    this.canKeepRest = false,
+    this.options = const SplitOptions(),
+  });
 
   final TenderState state;
   final bool canKeepRest;
+
+  /// The venue's choices from the back office (data/split_options.dart).
+  final SplitOptions options;
   final Future<void> Function(
     Set<String> lineIds,
     String title,
@@ -134,6 +153,14 @@ class SplitBillSheetState extends State<SplitBillSheet> {
 
   SplitMethod _method = SplitMethod.items;
   int _ways = 2;
+
+  /// Names, by share, for each way of splitting (blank: "Share 2").
+  final List<String> _names = [];
+  final Map<int, String> _equalNames = {};
+  final Map<int, String> _amountNames = {};
+
+  /// Split by amount: what each named share pays; the rest is a last share.
+  final List<int> _amounts = [];
 
   /// The shares, in the order they were made. Each is a set of line ids, and
   /// an id in one may name a whole line or one unit of a divided one.
@@ -162,6 +189,19 @@ class SplitBillSheetState extends State<SplitBillSheet> {
     // was ordered together, and dividing a line afterwards does not change what
     // was ordered together.
     _rounds = roundsOf(_lines);
+    _method = switch (widget.options.defaultMethod) {
+      'equally' => SplitMethod.equally,
+      'amount' when widget.options.byAmount => SplitMethod.amount,
+      _ => SplitMethod.items,
+    };
+  }
+
+  /// Keep a name per share as shares come and go.
+  void _syncNames() {
+    while (_names.length < _shares.length) {
+      _names.add('');
+    }
+    if (_names.length > _shares.length) _names.removeRange(_shares.length, _names.length);
   }
 
   // ---------------------------------------------------------------------
@@ -322,12 +362,82 @@ class SplitBillSheetState extends State<SplitBillSheet> {
         ),
       );
       _picked.clear();
+      _syncNames();
     });
   }
 
   /// Send a share's items back to the pool.
   void _returnShare(int index) {
-    setState(() => _shares.removeAt(index));
+    setState(() {
+      _shares.removeAt(index);
+      if (index < _names.length) _names.removeAt(index);
+    });
+  }
+
+  /// Newbridge's minus: one item off a share and back into the pool, its
+  /// modifiers with it. A share left with nothing goes too.
+  void _removeFromShare(int index, String lineId) {
+    setState(() {
+      final share = _shares[index];
+      share.remove(lineId);
+      for (final l in _lines) {
+        if (l.parentLineId == baseLineId(lineId) || l.parentLineId == lineId) share.remove(l.id);
+      }
+      if (share.isEmpty) {
+        _shares.removeAt(index);
+        if (index < _names.length) _names.removeAt(index);
+      }
+    });
+  }
+
+  /// Newbridge's plus: the items picked in the pool go onto this share.
+  void _addPickedTo(int index) {
+    if (_picked.isEmpty) return;
+    setState(() {
+      _shares[index].addAll(withModifiersOf(
+        {..._picked},
+        _lines,
+        idOf: (l) => l.id,
+        parentOf: (l) => l.parentLineId,
+      ));
+      _picked.clear();
+    });
+  }
+
+  Future<void> _rename(int index, Map<int, String>? into) async {
+    final current = into == null ? (index < _names.length ? _names[index] : '') : (into[index] ?? '');
+    final field = TextEditingController(text: current);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('Who is share ${index + 1}?'),
+        content: TextField(
+          controller: field,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(hintText: 'A name, such as Carys'),
+          onSubmitted: (v) => Navigator.pop(c, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, field.text), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (name == null || !mounted) return;
+    setState(() {
+      if (into == null) {
+        _syncNames();
+        _names[index] = name.trim();
+      } else {
+        into[index] = name.trim();
+      }
+    });
+  }
+
+  String _labelOf(int index, Map<int, String>? names) {
+    final n = names == null ? (index < _names.length ? _names[index] : '') : (names[index] ?? '');
+    return n.trim().isEmpty ? 'Share ${index + 1}' : n.trim();
   }
 
   /// Fill the shares from the rounds the bill was rung in, in one press.
@@ -350,12 +460,17 @@ class SplitBillSheetState extends State<SplitBillSheet> {
             lineIdsOfRounds([round], _lines),
         ]);
       _picked.clear();
+      _names.clear();
+      _syncNames();
     });
   }
 
   void _undo() {
     setState(() {
       _shares.clear();
+      _names.clear();
+      _amounts.clear();
+      _amountNames.clear();
       _picked.clear();
       // The divisions go back as well. "Undo split" means the bill as it was,
       // and a screen that returned every share but left three separate glasses
@@ -395,6 +510,9 @@ class SplitBillSheetState extends State<SplitBillSheet> {
     if (_method == SplitMethod.equally) {
       return widget.state.splitEqually(_ways).shares;
     }
+    if (_method == SplitMethod.amount) {
+      return widget.state.splitByAmounts(_amounts).shares;
+    }
     final picked = groups;
     if (picked.length < 2) return const [];
     return widget.state.splitByItems(picked).shares;
@@ -415,16 +533,29 @@ class SplitBillSheetState extends State<SplitBillSheet> {
         mode: SplitMode.equally,
         ways: _ways,
         payShare: payShare,
+        names: [for (var i = 0; i < _ways; i++) _equalNames[i] ?? ''],
+      );
+    }
+    if (_method == SplitMethod.amount) {
+      final shares = preview;
+      if (shares.length < 2) return const SplitChoice(mode: SplitMode.none);
+      return SplitChoice(
+        mode: SplitMode.byAmount,
+        amounts: [..._amounts],
+        payShare: payShare,
+        names: [for (var i = 0; i < shares.length; i++) _amountNames[i] ?? ''],
       );
     }
     final picked = groups;
     // Everything on one share is not a split — it is the bill, paid whole.
     // This is also how "select both to pay" is expressed.
     if (picked.length < 2) return const SplitChoice(mode: SplitMode.none);
+    _syncNames();
     return SplitChoice(
       mode: SplitMode.byItem,
       groups: picked,
       payShare: payShare,
+      names: [..._names, ''],
     );
   }
 
@@ -470,15 +601,88 @@ class SplitBillSheetState extends State<SplitBillSheet> {
   Future<void> _printShare(int index) async {
     final print = widget.onPrintShare;
     if (print == null) return;
+    // A share past the cards is the pool, settled together.
+    final ids = index < _shares.length ? _shares[index] : {for (final l in _pool) l.id};
     await print(
       // The real line ids, because that is what the order holds. Two portions
       // of one line collapse to one id, and the quantity map below is what
       // says there were two.
-      {for (final id in _shares[index]) baseLineId(id)},
-      'Share ${index + 1} of ${groups.length}',
+      {for (final id in ids) baseLineId(id)},
+      '${_labelOf(index, null)} · ${index + 1} of ${groups.length}',
       _shareTotal(index),
-      shareQuantities(index),
+      index < _shares.length ? shareQuantities(index) : const {},
     );
+  }
+
+  /// An equal share's bill: every line, at 1/N of its quantity.
+  Future<void> _printEqualShare(int index) async {
+    final print = widget.onPrintShare;
+    if (print == null) return;
+    final whole = widget.state.totals.lines;
+    await print(
+      {for (final l in whole) l.id},
+      '${_labelOf(index, _equalNames)} · ${index + 1} of $_ways',
+      _shareTotal(index),
+      {for (final l in whole) l.id: l.quantity / _ways},
+    );
+  }
+
+  /// An amount share's bill: the whole bill, with what this person pays.
+  Future<void> _printAmountShare(int index) async {
+    final print = widget.onPrintShare;
+    if (print == null) return;
+    await print(
+      {for (final l in widget.state.totals.lines) l.id},
+      '${_labelOf(index, _amountNames)} · ${index + 1} of ${preview.length}',
+      _shareTotal(index),
+      const {},
+    );
+  }
+
+  /// Every share's bill, one after another (Newbridge's Print All).
+  Future<void> _printAll() async {
+    final count = preview.length;
+    for (var i = 0; i < count; i++) {
+      if (!mounted) return;
+      switch (_method) {
+        case SplitMethod.equally:
+          await _printEqualShare(i);
+        case SplitMethod.amount:
+          await _printAmountShare(i);
+        case SplitMethod.items:
+          await _printShare(i);
+      }
+    }
+  }
+
+  Future<void> _askAmount() async {
+    final field = TextEditingController();
+    final typed = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('How much does this person pay?'),
+        content: TextField(
+          controller: field,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(prefixText: '£ ', hintText: _money(widget.state.outstandingMinor).replaceAll('£', '')),
+          onSubmitted: (v) => Navigator.pop(c, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, field.text), child: const Text('Add')),
+        ],
+      ),
+    );
+    if (typed == null || !mounted) return;
+    // Pence exactly: 12.5 is £12.50, never a rounding of a double.
+    final m = RegExp(r'^\s*(\d+)(?:\.(\d{1,2}))?\s*$').firstMatch(typed.replaceAll('£', ''));
+    if (m == null) return;
+    final minor = int.parse(m.group(1)!) * 100 + int.parse((m.group(2) ?? '0').padRight(2, '0'));
+    if (minor <= 0) return;
+    final committed = _amounts.fold<int>(0, (s, v) => s + v);
+    if (committed + minor >= widget.state.outstandingMinor) return;
+    setState(() => _amounts.add(minor));
   }
 
   // ---------------------------------------------------------------------
@@ -503,9 +707,11 @@ class SplitBillSheetState extends State<SplitBillSheet> {
           children: [
             _title(scheme),
             Flexible(
-              child: _method == SplitMethod.equally
-                  ? _equally(scheme)
-                  : _workspace(scheme),
+              child: switch (_method) {
+                SplitMethod.equally => _equally(scheme),
+                SplitMethod.amount => _byAmount(scheme),
+                SplitMethod.items => _workspace(scheme),
+              },
             ),
             _actions(scheme),
           ],
@@ -688,11 +894,16 @@ class SplitBillSheetState extends State<SplitBillSheet> {
           for (var i = 0; i < _shares.length; i++)
             _ShareCard(
               index: i,
+              title: _labelOf(i, null),
+              onRename: widget.options.names ? () => _rename(i, null) : null,
               lines: [
                 for (final line in _lines)
                   if (_shares[i].contains(line.id)) line,
               ],
               totalMinor: _shareTotal(i),
+              onRemoveLine: _locked ? null : (id) => _removeFromShare(i, id),
+              onAddPicked: _locked || _picked.isEmpty ? null : () => _addPickedTo(i),
+              pickedCount: _picked.length,
               onReturn: _locked ? null : () => _returnShare(i),
               // Something must be left for the table: other items still in the
               // pool or on other shares.
@@ -714,62 +925,89 @@ class SplitBillSheetState extends State<SplitBillSheet> {
     );
   }
 
-  Widget _equally(ColorScheme scheme) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '${_money(widget.state.outstandingMinor)} between $_ways',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Text('Ways'),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final ways in const [2, 3, 4, 5, 6, 8])
-                        ChoiceChip(
-                          label: Text('$ways'),
-                          selected: _ways == ways,
-                          onSelected: (_) => setState(() => _ways = ways),
-                        ),
-                    ],
-                  ),
+  /// Equal shares as cards: each person's [1/N] of every item, to the penny,
+  /// with their own bill and their own Pay now (Newbridge's equal split).
+  Widget _equally(ColorScheme scheme) {
+    final shares = preview;
+    final items = widget.state.totals.lines;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Text('Ways', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final ways in const [2, 3, 4, 5, 6, 8, 10])
+                ChoiceChip(
+                  label: Text('$ways'),
+                  selected: _ways == ways,
+                  onSelected: _locked ? null : (_) => setState(() => _ways = ways),
                 ),
-              ],
+            ]),
+          ),
+          Text('${_money(widget.state.outstandingMinor)} between $_ways',
+              style: TextStyle(color: scheme.onSurfaceVariant)),
+        ]),
+        const SizedBox(height: 12),
+        Wrap(spacing: 12, runSpacing: 12, children: [
+          for (var i = 0; i < shares.length; i++)
+            _EqualCard(
+              title: _labelOf(i, _equalNames),
+              ways: _ways,
+              index: i,
+              items: items,
+              totalMinor: shares[i].amountMinor,
+              onRename: widget.options.names ? () => _rename(i, _equalNames) : null,
+              onPrint: widget.onPrintShare == null ? null : () => _printEqualShare(i),
+              onPay: () => _payShare(i),
             ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(9),
+        ]),
+      ]),
+    );
+  }
+
+  /// Split by amount: "this one pays £20", the rest left for the others.
+  Widget _byAmount(ColorScheme scheme) {
+    final shares = preview;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Expanded(
+            child: Text('Add an amount for each person who pays a set sum. What is left is the last share.',
+                style: TextStyle(color: scheme.onSurfaceVariant)),
+          ),
+          FilledButton.icon(
+            onPressed: _locked ? null : _askAmount,
+            icon: const Icon(Icons.add),
+            label: const Text('Add an amount'),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        if (shares.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(border: Border.all(color: scheme.outlineVariant), borderRadius: BorderRadius.circular(10)),
+            child: Text('${_money(widget.state.outstandingMinor)} to share out. Add the first amount.',
+                textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant)),
+          )
+        else
+          Wrap(spacing: 12, runSpacing: 12, children: [
+            for (var i = 0; i < shares.length; i++)
+              _AmountCard(
+                title: _labelOf(i, _amountNames),
+                totalMinor: shares[i].amountMinor,
+                rest: i == shares.length - 1 && i >= _amounts.length,
+                onRename: widget.options.names ? () => _rename(i, _amountNames) : null,
+                onRemove: _locked || i >= _amounts.length ? null : () => setState(() => _amounts.removeAt(i)),
+                onPrint: widget.onPrintShare == null ? null : () => _printAmountShare(i),
+                onPay: () => _payShare(i),
               ),
-              child: Row(
-                children: [
-                  const Expanded(child: Text('Each pays')),
-                  Text(
-                    _money(
-                      preview.isEmpty ? 0 : preview.first.amountMinor,
-                    ),
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
+          ]),
+      ]),
+    );
+  }
 
   Widget _actions(ColorScheme scheme) => Container(
         decoration: BoxDecoration(
@@ -790,26 +1028,38 @@ class SplitBillSheetState extends State<SplitBillSheet> {
                 label: const Text('By round'),
               ),
             SegmentedButton<SplitMethod>(
-              segments: const [
-                ButtonSegment(
+              segments: [
+                const ButtonSegment(
                   value: SplitMethod.items,
                   icon: Icon(Icons.checklist),
                   label: Text('By item'),
                 ),
-                ButtonSegment(
+                const ButtonSegment(
                   value: SplitMethod.equally,
                   icon: Icon(Icons.pie_chart_outline),
                   label: Text('Equally'),
                 ),
+                if (widget.options.byAmount)
+                  const ButtonSegment(
+                    value: SplitMethod.amount,
+                    icon: Icon(Icons.payments_outlined),
+                    label: Text('By amount'),
+                  ),
               ],
               selected: {_method},
               onSelectionChanged: _locked ? null : (s) => setState(() => _method = s.first),
             ),
-            if (_method == SplitMethod.items && _shares.isNotEmpty && !_locked)
+            if (_method != SplitMethod.equally && (_shares.isNotEmpty || _amounts.isNotEmpty) && !_locked)
               TextButton.icon(
                 onPressed: _undo,
                 icon: const Icon(Icons.undo),
                 label: const Text('Undo split'),
+              ),
+            if (widget.options.printAll && widget.onPrintShare != null && preview.length >= 2)
+              OutlinedButton.icon(
+                onPressed: _printAll,
+                icon: const Icon(Icons.print_outlined),
+                label: Text('Print all ${preview.length}'),
               ),
             FilledButton(onPressed: _done, child: const Text('Done')),
           ],
@@ -941,12 +1191,26 @@ class _ShareCard extends StatelessWidget {
     required this.lines,
     required this.totalMinor,
     required this.onReturn,
+    this.title,
+    this.onRename,
+    this.onRemoveLine,
+    this.onAddPicked,
+    this.pickedCount = 0,
     this.onPrint,
     this.onPay,
     this.onPayAndKeep,
   });
 
   final int index;
+  final String? title;
+  final VoidCallback? onRename;
+
+  /// Newbridge's minus on an item: back to the pool. Null once anything is paid.
+  final void Function(String lineId)? onRemoveLine;
+
+  /// Newbridge's plus: the picked pool items onto this share.
+  final VoidCallback? onAddPicked;
+  final int pickedCount;
   final List<PricedLine> lines;
   final int totalMinor;
   final VoidCallback? onReturn;
@@ -971,14 +1235,32 @@ class _ShareCard extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      'Share ${index + 1}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
+                    child: InkWell(
+                      onTap: onRename,
+                      borderRadius: BorderRadius.circular(6),
+                      child: Row(children: [
+                        Flexible(
+                          child: Text(
+                            title ?? 'Share ${index + 1}',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                          ),
+                        ),
+                        if (onRename != null) ...[
+                          const SizedBox(width: 6),
+                          Icon(Icons.edit_outlined, size: 16, color: scheme.onSurfaceVariant),
+                        ],
+                      ]),
                     ),
                   ),
+                  if (onAddPicked != null)
+                    IconButton(
+                      onPressed: onAddPicked,
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 22,
+                      tooltip: 'Add the $pickedCount picked here',
+                      icon: Icon(Icons.add_circle, color: scheme.primary),
+                    ),
                   if (onReturn != null)
                     IconButton(
                       onPressed: onReturn,
@@ -1020,6 +1302,15 @@ class _ShareCard extends StatelessWidget {
                             Text(
                               _money(line.netMinor),
                               style: const TextStyle(fontSize: 14),
+                            ),
+                          if (line.parentLineId == null && onRemoveLine != null)
+                            InkWell(
+                              onTap: () => onRemoveLine!(line.id),
+                              customBorder: const CircleBorder(),
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 6),
+                                child: Icon(Icons.remove_circle_outline, size: 20, color: scheme.error),
+                              ),
                             ),
                         ],
                       ),
@@ -1076,6 +1367,160 @@ class _ShareCard extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// One person's equal share: [1/N] of every item, to the penny.
+///
+/// Each line's share is that line split N ways with the odd penny on the
+/// first share (split_portions.dart portionValue), so the lines on a card add
+/// up exactly; anything the bill carries beyond its lines (service, an offer)
+/// shows as its own row, so the card always adds to what is charged.
+class _EqualCard extends StatelessWidget {
+  const _EqualCard({
+    required this.title,
+    required this.ways,
+    required this.index,
+    required this.items,
+    required this.totalMinor,
+    this.onRename,
+    this.onPrint,
+    this.onPay,
+  });
+
+  final String title;
+  final int ways;
+  final int index;
+  final List<PricedLine> items;
+  final int totalMinor;
+  final VoidCallback? onRename;
+  final VoidCallback? onPrint;
+  final VoidCallback? onPay;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final rows = [
+      for (final l in items)
+        if (l.parentLineId == null) (l, portionValue(l.netMinor, ways, index + 1)),
+    ];
+    final modifiers = <String, int>{
+      for (final l in items)
+        if (l.parentLineId != null) l.id: portionValue(l.netMinor, ways, index + 1),
+    };
+    final linesSum = rows.fold<int>(0, (s, r) => s + r.$2) + modifiers.values.fold<int>(0, (s, v) => s + v);
+    final other = totalMinor - linesSum;
+    return SizedBox(
+      width: 280,
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            dense: true,
+            title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+            trailing: onRename == null ? null : Icon(Icons.edit_outlined, size: 18, color: scheme.onSurfaceVariant),
+            onTap: onRename,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              for (final (line, value) in rows)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Row(children: [
+                    Text('[1/$ways] ', style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w700, fontSize: 12.5)),
+                    Expanded(child: Text(line.name, style: const TextStyle(fontSize: 14))),
+                    Text(_money(value + [
+                      for (final m in items)
+                        if (m.parentLineId == line.id) modifiers[m.id] ?? 0,
+                    ].fold<int>(0, (s, v) => s + v)), style: const TextStyle(fontSize: 14)),
+                  ]),
+                ),
+              if (other != 0)
+                Row(children: [
+                  Expanded(child: Text(other < 0 ? 'Offers' : 'Service and extras', style: TextStyle(color: scheme.onSurfaceVariant))),
+                  Text(_money(other), style: TextStyle(color: scheme.onSurfaceVariant)),
+                ]),
+            ]),
+          ),
+          Container(
+            color: scheme.surfaceContainerHighest,
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+            child: Row(children: [
+              const Expanded(child: Text('Total')),
+              Text(_money(totalMinor), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            child: Row(children: [
+              Expanded(child: OutlinedButton.icon(onPressed: onPrint, icon: const Icon(Icons.print, size: 18), label: const Text('Bill'))),
+              const SizedBox(width: 8),
+              Expanded(child: FilledButton.icon(onPressed: onPay, icon: const Icon(Icons.payments_outlined, size: 18), label: const Text('Pay now'))),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// One person's set amount, or the rest of the bill.
+class _AmountCard extends StatelessWidget {
+  const _AmountCard({
+    required this.title,
+    required this.totalMinor,
+    required this.rest,
+    this.onRename,
+    this.onRemove,
+    this.onPrint,
+    this.onPay,
+  });
+
+  final String title;
+  final int totalMinor;
+  final bool rest;
+  final VoidCallback? onRename;
+  final VoidCallback? onRemove;
+  final VoidCallback? onPrint;
+  final VoidCallback? onPay;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 240,
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            dense: true,
+            title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+            subtitle: Text(rest ? 'The rest of the bill' : 'A set amount'),
+            onTap: onRename,
+            trailing: onRemove == null
+                ? null
+                : IconButton(icon: Icon(Icons.remove_circle_outline, color: scheme.error), tooltip: 'Take this off', onPressed: onRemove),
+          ),
+          Container(
+            color: scheme.surfaceContainerHighest,
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+            child: Row(children: [
+              const Expanded(child: Text('Pays')),
+              Text(_money(totalMinor), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            child: Row(children: [
+              Expanded(child: OutlinedButton.icon(onPressed: onPrint, icon: const Icon(Icons.print, size: 18), label: const Text('Bill'))),
+              const SizedBox(width: 8),
+              Expanded(child: FilledButton.icon(onPressed: onPay, icon: const Icon(Icons.payments_outlined, size: 18), label: const Text('Pay now'))),
+            ]),
+          ),
+        ]),
       ),
     );
   }

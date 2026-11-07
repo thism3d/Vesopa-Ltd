@@ -11706,6 +11706,13 @@ const GO_FIELDS = [
     ['card_android', 'Android takes cards by', [['machine', 'The Dojo card machine'], ['pocket', 'A Dojo Pocket'], ['tap', 'Tap to Pay on the device']]],
     ['google_pay_gateway', 'Google Pay button on the pay page (Android)', [['off', 'Off'], ['stripe', 'Through Stripe'], ['dojo', 'Through Dojo (not ready: needs a gateway ID from Dojo)']]],
   ]],
+  ['Splitting a bill (till and Go)', [
+    ['split_default', 'The split screen opens on', [['items', 'By item'], ['equally', 'Equally'], ['amount', 'By amount']]],
+    ['split_next_prompt', 'After a share is paid, ask "Pay the next share?"'],
+    ['split_print_all', 'A Print All key for every share\'s bill'],
+    ['split_names', 'Shares can be given a name, such as Carys'],
+    ['split_by_amount', 'Offer split by amount ("this one pays £20")'],
+  ]],
   ['Customer hand-over', [
     ['customer_handover', 'Pass the device from person to person to pay a split'],
     ['customer_tip', 'The customer chooses the tip'],

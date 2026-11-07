@@ -20,6 +20,14 @@ void main() {
     }
   });
 
+  test('a code wrapped by a scanner is still found, and nothing else is', () {
+    expect(isStaffDrinkCode('{BSDK7Q2M9XA'), isTrue);
+    expect(cleanStaffDrinkCode(']C0SDK7Q2M9XA'), 'SDK7Q2M9XA');
+    expect(cleanStaffDrinkCode('sd k7q2 m9xa\n'), 'SDK7Q2M9XA');
+    expect(isStaffDrinkCode('5012345678900'), isFalse, reason: 'a product barcode');
+    expect(isStaffDrinkCode('SDK7Q2M9X'), isFalse, reason: 'one short');
+  });
+
   test('a code typed with dashes, spaces or lower case is the same code', () {
     expect(isStaffDrinkCode('sd-k7q2-m9xa'), isTrue);
     expect(cleanStaffDrinkCode('sd k7q2 m9xa'), 'SDK7Q2M9XA');

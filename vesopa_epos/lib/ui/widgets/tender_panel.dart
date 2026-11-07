@@ -350,8 +350,8 @@ class TenderColumn extends StatelessWidget {
           for (final share in state.shares)
             _ShareChip(
               label: share.settled
-                  ? '${share.index + 1} ✓'
-                  : '${share.index + 1}  ${_money(share.outstandingMinor)}',
+                  ? '${share.name.isEmpty ? share.index + 1 : share.name} ✓'
+                  : '${share.name.isEmpty ? share.index + 1 : share.name}  ${_money(share.outstandingMinor)}',
               scale: v,
               active: share.index == state.activeShare,
               settled: share.settled,

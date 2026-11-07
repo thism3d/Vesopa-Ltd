@@ -20,7 +20,9 @@ Future<void> redeemStaffDrink(BuildContext context, WidgetRef ref, {String? code
       await askTillField(
         context,
         'Staff drink',
-        hint: 'The code on the slip, SD and eight letters and numbers',
+        // SD is already there: only the eight after it are typed.
+        initial: 'SD',
+        hint: 'The code on the slip: SD and eight letters and numbers',
       );
   if (typed == null || typed.trim().isEmpty || !context.mounted) return;
 
@@ -56,7 +58,13 @@ Future<void> redeemStaffDrink(BuildContext context, WidgetRef ref, {String? code
           'Do not pour it.',
         ].join('\n'),
       ),
-    StaffDrinkRefused(:final message) => (Icons.error_outline_rounded, scheme.error, 'Not redeemed', message),
+    StaffDrinkRefused(:final message) => (
+        Icons.error_outline_rounded,
+        scheme.error,
+        'Not redeemed',
+        // Say what was read, so a misread is plain to see.
+        '$message\n\nRead as ${formatStaffDrinkCode(typed)}',
+      ),
   };
 
   await showDialog<void>(

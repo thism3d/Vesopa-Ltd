@@ -35,6 +35,7 @@ import '../data/lite_state.dart';
 import 'brand.dart';
 import 'cash_page.dart';
 import 'dojo_checklist_page.dart';
+import 'stripe_checklist_page.dart';
 import '../../modes/device_mode.dart';
 import '../../display/data/display_hub.dart';
 import 'quick_sale_page.dart';
@@ -266,6 +267,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             dense: true,
             title: Text('Dojo · ${s.config.environment == 'live' ? 'Live' : 'Sandbox'}'),
             subtitle: Text('Software house ${s.config.softwareHouseId} · Reseller ${s.config.resellerId}'),
+          ),
+        // Stripe's cases on the sandbox's test reader (2026-11-07).
+        if (stripe && stripeStatus?.live != true && (s.clerk?.can(TillPermission.refund) ?? false))
+          ListTile(
+            leading: const Icon(Icons.fact_check_rounded),
+            title: const Text('Stripe checklist'),
+            subtitle: const Text('Approved, declined, no funds, expired, cancelled: run each on the test reader'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const StripeChecklistPage())),
           ),
         // Dojo's accreditation cases, run from this device (owner, 2026-11-03).
         if (!stripe && !s.config.teya.enabled && (s.clerk?.can(TillPermission.refund) ?? false))

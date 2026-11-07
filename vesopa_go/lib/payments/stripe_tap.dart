@@ -106,9 +106,12 @@ class StripeTapToPay implements PaymentService {
     String via = 'tap',
     void Function(PayStep step)? onStep,
     PayControl? control,
+    // The Stripe checklist: which test card the sandbox's reader is handed,
+    // 'none' for nothing (the clerk cancels). Real sales leave it null.
+    String? testCard,
   }) async {
     if (via == 'machine') {
-      return _onReader(amountMinor + tipMinor, billRef: billRef, onStep: onStep, control: control);
+      return _onReader(amountMinor + tipMinor, billRef: billRef, onStep: onStep, control: control, testCard: testCard);
     }
     String? id;
     CancelableFuture<PaymentIntent>? collecting;
@@ -152,7 +155,8 @@ class StripeTapToPay implements PaymentService {
 /// The venue's Stripe card reader, driven from the server (an iPad: Apple has
 /// no Tap to Pay there). The same card-machine screen as a Dojo machine.
 extension on StripeTapToPay {
-  Future<PaymentOutcome> _onReader(int totalMinor, {String? billRef, void Function(PayStep step)? onStep, PayControl? control}) async {
+  Future<PaymentOutcome> _onReader(int totalMinor,
+      {String? billRef, void Function(PayStep step)? onStep, PayControl? control, String? testCard}) async {
     onStep?.call(PayStep.preparing);
     final Map<String, dynamic> listed;
     try {
@@ -178,8 +182,9 @@ extension on StripeTapToPay {
     }
     onStep?.call(PayStep.onMachine);
     // The sandbox's simulated reader has no customer: hand it Stripe's test card.
-    if (reader['simulated'] == true) {
-      unawaited(Future<void>.delayed(const Duration(seconds: 2), () => api.stripeReaderPresent(readerId).catchError((Object _) => <String, dynamic>{})));
+    if (reader['simulated'] == true && testCard != 'none') {
+      unawaited(Future<void>.delayed(const Duration(seconds: 2),
+          () => api.stripeReaderPresent(readerId, card: testCard ?? 'approved').catchError((Object _) => <String, dynamic>{})));
     }
     return followMachine(
       id: id,

@@ -111,11 +111,19 @@ class SplitShare {
     required this.amountMinor,
     this.paidMinor = 0,
     this.lineIds = const [],
+    this.name = '',
   });
 
   final int index;
   final int amountMinor;
   final int paidMinor;
+
+  /// Who this share is, as the clerk typed it ("Carys"): on the share's bill
+  /// and its key on the payment screen. Empty means "Share 2".
+  final String name;
+
+  /// "Carys", or "Share 2" when nobody named it.
+  String get label => name.trim().isEmpty ? 'Share ${index + 1}' : name.trim();
 
   /// For [SplitMode.byItem], which basket lines this share covers.
   final List<String> lineIds;
@@ -128,6 +136,15 @@ class SplitShare {
         amountMinor: amountMinor,
         paidMinor: paidMinor + minor,
         lineIds: lineIds,
+        name: name,
+      );
+
+  SplitShare withName(String value) => SplitShare(
+        index: index,
+        amountMinor: amountMinor,
+        paidMinor: paidMinor,
+        lineIds: lineIds,
+        name: value.trim(),
       );
 }
 
@@ -296,6 +313,48 @@ class TenderState {
           SplitShare(index: i, amountMinor: base + (i == 0 ? remainder : 0)),
       ],
     );
+  }
+
+  /// Named amounts, one share each, and whatever is left as a last share
+  /// ("put £20 on this card", Newbridge's split by amount; owner, 2026-11-07).
+  ///
+  /// An amount that would take the shares past what is owed is cut to what is
+  /// left, and an amount of nothing is skipped: the shares always add up to
+  /// exactly what the bill still owes.
+  TenderState splitByAmounts(List<int> amounts) {
+    final out = <int>[];
+    var left = outstandingMinor;
+    for (final a in amounts) {
+      if (a <= 0 || left <= 0) continue;
+      final take = a < left ? a : left;
+      out.add(take);
+      left -= take;
+    }
+    if (left > 0) out.add(left);
+    if (out.length < 2) return copyWith(splitMode: SplitMode.none, shares: const []);
+    return copyWith(
+      splitMode: SplitMode.byAmount,
+      activeShare: 0,
+      shares: [for (var i = 0; i < out.length; i++) SplitShare(index: i, amountMinor: out[i])],
+    );
+  }
+
+  /// The shares, named as the clerk typed them; a missing name stays blank.
+  TenderState namedShares(List<String> names) {
+    if (names.every((n) => n.trim().isEmpty)) return this;
+    return copyWith(shares: [
+      for (final s in shares) s.withName(s.index < names.length ? names[s.index] : ''),
+    ]);
+  }
+
+  /// The next share still to pay after the active one, or null.
+  SplitShare? get nextUnpaidShare {
+    if (!isSplit) return null;
+    for (var i = 1; i <= shares.length; i++) {
+      final s = shares[(activeShare + i) % shares.length];
+      if (!s.settled) return s;
+    }
+    return null;
   }
 
   /// What one id on a share is worth.

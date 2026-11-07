@@ -759,7 +759,7 @@ class _SplitStrip extends StatelessWidget {
                       size: 13, color: scheme.onPrimaryContainer),
                 if (share.settled) const SizedBox(width: 4),
                 Text(
-                  '${share.index + 1}: ${_money(share.outstandingMinor)}',
+                  '${share.name.isEmpty ? share.index + 1 : share.name}: ${_money(share.outstandingMinor)}',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,

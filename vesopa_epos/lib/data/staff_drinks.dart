@@ -32,14 +32,27 @@ const _alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 final _shape = RegExp(r'^SD[A-Z0-9]{8}$');
 
+/// A code inside whatever a scanner sent: some add a symbology prefix, a
+/// stray character or a suffix, and a person types `sd k7q2 m9xa`
+/// (Pontardawe RFC, 2026-11-07: "struggling to redeem the voucher").
+final _within = RegExp(r'SD[A-HJ-NP-Z2-9]{8}');
+
 /// A new code, as the barcode carries it: `SDK7Q2M9XA`.
 String newStaffDrinkCode([Random? random]) {
   final r = random ?? Random.secure();
   return staffDrinkPrefix + List.generate(8, (_) => _alphabet[r.nextInt(_alphabet.length)]).join();
 }
 
-/// What was scanned or typed, as stored: upper case, no spaces or dashes.
-String cleanStaffDrinkCode(String v) => v.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+/// What was scanned or typed, as stored: upper case, no spaces or dashes,
+/// and only the code itself when a scanner wrapped it in anything else.
+String cleanStaffDrinkCode(String v) {
+  final plain = v.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+  // Only a short read can hold a slip's code: a product barcode never has
+  // letters, but a long string that happens to contain SD is not a slip.
+  if (plain.length > 16) return plain;
+  final found = _within.allMatches(plain).toList();
+  return found.isEmpty ? plain : found.last.group(0)!;
+}
 
 /// Whether this scan or entry is a staff drink slip's code.
 bool isStaffDrinkCode(String v) => _shape.hasMatch(cleanStaffDrinkCode(v));

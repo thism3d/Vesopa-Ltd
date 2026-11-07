@@ -228,7 +228,10 @@ class TapApi {
       _send('GET', '/api/till/stripe/reader-payments/$id?reader=${Uri.encodeQueryComponent(reader)}');
   Future<Map<String, dynamic>> stripeReaderCancel(String id, String reader) =>
       _send('POST', '/api/till/stripe/reader-payments/$id/cancel', {'reader': reader});
-  Future<Map<String, dynamic>> stripeReaderPresent(String reader) => _send('POST', '/api/till/stripe/readers/$reader/present', const {});
+  /// Sandbox only: hand the simulated reader a test card (approved, declined,
+  /// insufficient_funds, expired: the Stripe checklist's cases).
+  Future<Map<String, dynamic>> stripeReaderPresent(String reader, {String card = 'approved'}) =>
+      _send('POST', '/api/till/stripe/readers/$reader/present', {'card': card});
 
   Future<Map<String, dynamic>> tapConfig() => _send('GET', '/api/tap/config');
 

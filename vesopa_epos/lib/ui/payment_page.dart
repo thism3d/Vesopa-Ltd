@@ -49,6 +49,7 @@ import 'widgets/cash_notes_panel.dart';
 import '../data/screens.dart';
 import 'sale_page.dart' show productsProvider, dealsProvider, askTillField;
 import '../data/product_extras.dart';
+import '../data/split_options.dart';
 import '../data/staff_drinks.dart';
 import '../data/terminal_identity.dart' show terminalNameProvider;
 import 'widgets/pay_check_panel.dart';
@@ -1732,6 +1733,42 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       );
     }
     await _saveSettledShare();
+    await _offerNextShare();
+  }
+
+  /// Newbridge's "Process payment for the next bill of the split?": after a
+  /// share is paid, the next one is offered by name and amount. Yes stays here
+  /// with it ready; Not now goes back with the rest still on the bill
+  /// (owner, 2026-11-07; back office: Splitting a bill).
+  Future<void> _offerNextShare() async {
+    if (!mounted || !_tender.isSplit || _tender.settled) return;
+    if (!(await _loadSplitOptions()).nextPrompt || !mounted) return;
+    final next = _tender.nextUnpaidShare;
+    if (next == null) return;
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        icon: const Icon(Icons.call_split, size: 36),
+        title: const Text('Pay the next share?'),
+        content: Text(
+          '${next.label}: ${_money(next.outstandingMinor)}\n'
+          '${_money(_tender.outstandingMinor)} still to pay on this bill.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 18),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Not now')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Yes, take it')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (yes == true) {
+      setState(() => _tender = _tender.selectShare(next.index));
+    } else {
+      // The paid shares are already on the bill; the rest waits on the table.
+      Navigator.of(context).maybePop();
+    }
   }
 
   /// Write the payments of the share just paid to the bill.
@@ -2384,12 +2421,22 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     PosMessenger.success(context, 'Check cancelled.');
   }
 
+  /// The venue's split choices from the back office, read once per screen.
+  SplitOptions? _splitOptions;
+
+  Future<SplitOptions> _loadSplitOptions() async => _splitOptions ??= await SplitOptions.fetch(
+        ref.read(apiBaseProvider),
+        ref.read(sessionProvider).terminalToken,
+      );
+
   Future<void> _chooseSplit() async {
     final order = await ref.read(orderRepositoryProvider).orderOnce(widget.orderId);
+    final options = await _loadSplitOptions();
     if (!mounted) return;
     final choice = await showSplitDialog(
       context,
       state: _tender,
+      options: options,
       // One person leaving a table early pays for their items, and the rest
       // stays on the table. Only on a table, and only before money is taken.
       canKeepRest: order?.tableNumber != null && _tender.paidMinor == 0,
@@ -2423,8 +2470,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       final split = switch (choice.mode) {
         SplitMode.equally => _tender.splitEqually(choice.ways),
         SplitMode.byItem => _tender.splitByItems(choice.groups ?? const []),
+        SplitMode.byAmount => _tender.splitByAmounts(choice.amounts),
         _ => _tender.clearSplit(),
-      };
+      }.namedShares(choice.names);
       // Pay Now on a card means "this one, now" — so the board comes back
       // already asking for that share rather than for share one.
       final wanted = choice.payShare;

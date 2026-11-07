@@ -252,6 +252,9 @@ void main() {
       await _splitOff(tester, ['Veggie Breakfast Wrap']);
       await _splitOff(tester, ['Avocado Eggs']);
 
+      // The cards carry more now (name, plus and minus): bring the second into view.
+      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Pay now').at(1));
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, 'Pay now').at(1));
       await tester.pumpAndSettle();
 

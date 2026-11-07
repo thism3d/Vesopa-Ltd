@@ -79,6 +79,14 @@ const GO_DEFAULTS = Object.freeze({
   // 2026-10-28), or photo buttons by section.
   screens_phone: 'till', // till | photos
   screens_tablet: 'till', // till | photos
+  // Splitting a bill, on the till and on Go (2026-11-07, as Newbridge does it
+  // and more): what the split screen opens on, the next-share question after a
+  // share is paid, Print All, names on shares, and split by amount.
+  split_default: 'items', // items | equally | amount
+  split_next_prompt: true,
+  split_print_all: true,
+  split_names: true,
+  split_by_amount: true,
 });
 
 const CHOICES = {
@@ -93,6 +101,7 @@ const CHOICES = {
   events_access: ['staff', 'managers', 'off'],
   screens_phone: ['till', 'photos'],
   screens_tablet: ['till', 'photos'],
+  split_default: ['items', 'equally', 'amount'],
 };
 
 /** body's known keys, typed and bounded like the defaults; unknown keys dropped. */

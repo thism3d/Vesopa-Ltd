@@ -1198,6 +1198,14 @@ class ReceiptBuilder {
       styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2, width: PosTextSize.size2),
     ));
     bytes.addAll(_generator.feed(1));
+    // A QR code too (2026-11-07): most bar scanners read one more readily than
+    // a barcode, and a phone camera reads it as well.
+    try {
+      bytes.addAll(_generator.qrcode(code, size: QRSize.size6, align: PosAlign.center));
+      bytes.addAll(_generator.feed(1));
+    } catch (_) {
+      // A printer without QR: the barcode and the printed code remain.
+    }
     bytes.addAll(_text('Scan or type this code at the', styles: const PosStyles(align: PosAlign.center)));
     bytes.addAll(_text('till to have your drink.', styles: const PosStyles(align: PosAlign.center)));
     bytes.addAll(_text('It can be used once.', styles: const PosStyles(align: PosAlign.center, bold: true)));
