@@ -334,18 +334,25 @@ class _PayPageState extends ConsumerState<PayPage> {
       };
     _control = control;
     _cancelling = false;
-    final outcome = await payments.take(
-      amountMinor: _cardAmount,
-      tipMinor: tip,
-      billRef: bill.id,
-      clerk: ref.read(tapProvider).clerk?.name,
-      via: via,
-      onStep: (st) {
-        _toDisplay(st, via);
-        if (mounted) setState(() => _step = st);
-      },
-      control: control,
-    );
+    PaymentOutcome outcome;
+    try {
+      outcome = await payments.take(
+        amountMinor: _cardAmount,
+        tipMinor: tip,
+        billRef: bill.id,
+        clerk: ref.read(tapProvider).clerk?.name,
+        via: via,
+        onStep: (st) {
+          _toDisplay(st, via);
+          if (mounted) setState(() => _step = st);
+        },
+        control: control,
+      );
+    } catch (e) {
+      // Never left on the payment screen (2026-11-08): whatever went wrong,
+      // the clerk gets the result screen with Try again and other ways to pay.
+      outcome = PaymentOutcome(PayResult.uncertain, message: 'The payment stopped unexpectedly ($e). Check it before taking it again.');
+    }
     _control = null;
     _cancelling = false;
     _toDisplay(null, via, result: outcome);
@@ -530,7 +537,7 @@ class _PayPageState extends ConsumerState<PayPage> {
     final stripeTap = !machine && ref.read(cardGatewayProvider) == CardGateway.stripe;
     final cancellable = running && _control != null &&
         ((machine && const {PayStep.onMachine, PayStep.pin, PayStep.cancelling}.contains(_step)) ||
-            (stripeTap && const {PayStep.preparing, PayStep.activating, PayStep.waitingForCard}.contains(_step)));
+            (stripeTap && const {PayStep.preparing, PayStep.activating, PayStep.waitingForCard, PayStep.pin}.contains(_step)));
     // Turn to the customer while Tap to Pay waits for their card, as Dojo's
     // and Apple's guides show the merchant turning the iPhone round.
     final turnable = !machine && (_result != null || _testing || _step == PayStep.waitingForCard || _step == PayStep.confirming || _cardStep != null);

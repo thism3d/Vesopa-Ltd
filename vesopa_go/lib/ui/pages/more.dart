@@ -11,6 +11,7 @@ import '../../data/models.dart';
 import '../../data/session.dart';
 import '../../nfc/staff_card.dart';
 import '../../payments/payment_service.dart';
+import '../../payments/stripe_tap.dart' show StripeTapToPay;
 import '../add_printers_tile.dart';
 import '../tap_to_pay_intro.dart';
 import '../tap_to_pay_mark.dart';
@@ -354,6 +355,30 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
               label: const Text('How to use Tap to Pay on iPhone'),
             ),
           ]),
+          ],
+          // Stripe (2026-11-08): Apple's terms and this iPhone's set-up done here,
+          // by a manager, before the first sale rather than in front of a customer.
+          if (ref.watch(paymentsProvider) case final StripeTapToPay stripe when _iPhone) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const ValueKey('ttp-stripe-setup'),
+              onPressed: _busy
+                  ? null
+                  : () async {
+                      setState(() {
+                        _busy = true;
+                        _note = 'Getting Tap to Pay ready on this iPhone. The first time, Apple asks to accept its terms; it can take a minute or two.';
+                      });
+                      final why = await stripe.prepare();
+                      if (!mounted) return;
+                      setState(() {
+                        _busy = false;
+                        _note = why ?? 'Ready. Take a payment: the customer taps on the top of this iPhone.';
+                      });
+                    },
+              icon: const TapToPayMark(size: 20),
+              label: const Text('Set up Tap to Pay on this iPhone'),
+            ),
           ],
         ]),
       ),

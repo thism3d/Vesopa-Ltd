@@ -157,7 +157,7 @@ class _CardPayScreenState extends State<CardPayScreen> {
     final (title, words, colour) = switch (r) {
       PayResult.declined => ('Payment declined', w.result?.message ?? 'The bank said no. No money has been taken. Try again, or pay another way.', Tp.danger),
       PayResult.cancelled => ('Payment cancelled', 'Nothing was taken.', _amber),
-      PayResult.uncertain => ('Payment not confirmed', w.result?.message ?? 'Dojo has not answered yet. Check the payment before taking it again.', _amber),
+      PayResult.uncertain => ('Payment not confirmed', w.result?.message ?? 'The payment provider has not answered yet. Check the payment before taking it again.', _amber),
       PayResult.unavailable => ('Payment failed', w.result?.message ?? 'Card payments are not available on this device.', Tp.danger),
       PayResult.paid => ('Payment approved', 'Thank you.', Tp.lime),
       null => (w.step.label, w.detail ?? '', w.step == CardStep.done ? Tp.lime : Colors.white),

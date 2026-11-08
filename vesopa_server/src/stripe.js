@@ -276,7 +276,14 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
       const row = await settingsFor(req.office);
       if (!row || !row.account_id) return res.status(404).json({ error: 'No Stripe account.' });
       const pi = await client.retrievePayment(row.account_id, req.params.id, client.optsFor(row));
-      res.json({ id: pi.id, status: pi.status, amount_minor: pi.amount, amount_received: pi.amount_received });
+      // The bank's answer, so Go shows a decline even when the phone's own
+      // Stripe software never reports it (2026-11-08, Kitchen iPhone 12).
+      const e = pi.last_payment_error || null;
+      res.json({
+        id: pi.id, status: pi.status, amount_minor: pi.amount, amount_received: pi.amount_received,
+        charge: typeof pi.latest_charge === 'string' ? pi.latest_charge : (pi.latest_charge && pi.latest_charge.id) || null,
+        error: e ? { code: e.code || null, decline_code: e.decline_code || null, message: e.message || null, charge: e.charge || null } : null,
+      });
     } catch (e) { fail(res, e, next); }
   });
 
