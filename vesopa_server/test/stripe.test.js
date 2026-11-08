@@ -155,7 +155,7 @@ async function check(name, fn) {
     assert.strictEqual(JSON.stringify(view.body).includes('sk_test'), false, 'never a secret key');
     assert.strictEqual(tok.body.secret, 'pst_test');
     assert.strictEqual(pay.status, 201);
-    assert.deepStrictEqual(client.calls.find((c) => c[0] === 'pay').slice(1), ['acct_test1', { amountMinor: 500, reference: 'bill-1', description: undefined }]);
+    assert.deepStrictEqual(client.calls.find((c) => c[0] === 'pay').slice(1), ['acct_test1', { amountMinor: 500, reference: 'bill-1', description: undefined, attempt: undefined }]);
     assert.strictEqual(small.status, 400);
   });
 

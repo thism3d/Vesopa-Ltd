@@ -15179,10 +15179,14 @@ async function loadStripe() {
       ? '<span class="pill">Not set up on the server</span> Vesopa adds the Stripe keys; nothing here takes payments until then.'
       : !s.account
         ? '<span class="pill">' + esc(s.environment) + '</span> No Stripe account for this venue yet.'
+      : s.platform
+        ? '<span class="pill">' + esc(s.environment) + '</span> Payments go to Vesopa Software Ltd’s own Stripe account · ' +
+          (s.ready ? '<b style="color:#06784f">Ready to take payments</b>' : '<b style="color:#b54708">Stripe has paused it</b>')
         : '<span class="pill">' + esc(s.environment) + '</span> ' + esc(s.account) + ' · ' +
           (s.ready ? '<b style="color:#06784f">Ready to take payments</b>'
             : '<b style="color:#b54708">Finish setting up below</b>' + (s.requirements_due ? ' · ' + s.requirements_due + ' things to provide' : ''));
-    if (s.account && s.publishable_key) mountStripe(s.publishable_key, s.ready).catch((e) => say(e.message, false));
+    $('stripe-login-btn').textContent = s.platform ? 'Open Stripe dashboard' : $('stripe-login-btn').textContent;
+    if (s.account && s.publishable_key && !s.platform) mountStripe(s.publishable_key, s.ready).catch((e) => say(e.message, false));
   };
   let s;
   // The saved state first, at once; Stripe's own check follows and replaces it.

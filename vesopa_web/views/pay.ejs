@@ -1,0 +1,134 @@
+<%- include('partials/header') %>
+<%#
+  vesopaepos.com's own payment page (2026-11-08): Apple Pay and Google Pay
+  first (Stripe's Express Checkout Element shows whichever this browser has),
+  then card or Link (Payment Element). The customer never leaves the site;
+  only a bank's own check (3-D Secure) may open its page for a moment.
+  Paid, the page goes to the order's or the trial's own return page, which
+  reads the result from Stripe with our key.
+%>
+<style>
+  .pay { padding: 56px 0 72px; }
+  .pay-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: 28px; align-items: start; }
+  .pay-card { background: #13171a; border: 1px solid rgba(255,255,255,.08); border-radius: 18px; padding: 26px; color: #eef2e6; }
+  .pay-sum h1 { font-size: 30px; margin: 6px 0 4px; color: #fff; }
+  .pay-amount { font-size: 44px; font-weight: 800; letter-spacing: -.02em; color: #c7e34a; margin: 14px 0 4px; font-variant-numeric: tabular-nums; }
+  .pay-desc { color: #c8cdc0; margin: 0 0 18px; }
+  .pay-or { display: flex; align-items: center; gap: 12px; color: #8d958a; font-size: 13px; margin: 18px 0; }
+  .pay-or::before, .pay-or::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,.12); }
+  .pay-btn { width: 100%; margin-top: 18px; border: 0; border-radius: 12px; padding: 15px 18px; font-size: 17px; font-weight: 700; background: #a5c715; color: #0b0e0a; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .pay-btn[disabled] { opacity: .6; cursor: progress; }
+  .pay-msg { margin-top: 12px; min-height: 20px; color: #ffb4a8; font-size: 14px; }
+  .pay-trust { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-top: 18px; color: #9aa293; font-size: 13px; }
+  .pay-trust svg { flex: none; }
+  .pay-marks { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .pay-marks span { background: #fff; color: #111; border-radius: 6px; padding: 4px 8px; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
+  .pay-legal { margin-top: 18px; font-size: 12.5px; line-height: 1.55; color: #8d958a; }
+  .pay-legal a { color: #c9d39f; }
+  .pay-test { display: inline-block; background: #3b2f00; color: #ffd75e; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; margin-left: 8px; }
+  .pay-points { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 10px; color: #c8cdc0; font-size: 14.5px; }
+  .pay-points li { display: flex; gap: 10px; align-items: flex-start; }
+  .pay-points svg { flex: none; margin-top: 2px; }
+  @media (max-width: 860px) { .pay-grid { grid-template-columns: 1fr; } .pay { padding: 28px 0 48px; } .pay-amount { font-size: 38px; } }
+</style>
+<section class="pay">
+  <div class="v2-wrap" style="max-width:1080px">
+    <div class="pay-grid">
+      <div class="pay-card pay-sum">
+        <p class="vh-eyebrow">Secure payment<% if (!live) { %><span class="pay-test">Test mode</span><% } %></p>
+        <h1>Pay Vesopa Software Ltd</h1>
+        <div class="pay-amount"><%= gbp(pi.amount) %></div>
+        <p class="pay-desc"><%= pi.description %></p>
+        <ul class="pay-points">
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a5c715" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Your card details go straight to Stripe, our payment provider. Vesopa never sees or stores your card number.</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a5c715" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Your bank may ask you to confirm (3-D Secure, Strong Customer Authentication).</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a5c715" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>A receipt and your VAT invoice come by email as soon as the payment is confirmed.</li>
+        </ul>
+        <div class="pay-marks" aria-label="Ways to pay"><span>Apple Pay</span><span>Google Pay</span><span>Visa</span><span>Mastercard</span><span>Amex</span><span>Link</span></div>
+        <p class="pay-legal">Vesopa Software Ltd, company number 17362206, Baglan Innovation Centre, Central Avenue, Baglan, Port Talbot, SA12 7AX, United Kingdom.
+          By paying you agree to our <a href="/terms">terms</a>, <a href="/refund">refund and cancellation policy</a> and <a href="/privacy">privacy policy</a>. Questions: <a href="mailto:info@vesopa.com">info@vesopa.com</a>.</p>
+      </div>
+
+      <div class="pay-card">
+        <% if (!pi.clientSecret) { %>
+          <h2 style="color:#fff;font-size:22px;margin:0 0 8px">This payment was cancelled</h2>
+          <p class="pay-desc">Nothing was taken. Go back and start again.</p>
+          <a class="vc-btn" href="<%= back %>">Back</a>
+        <% } else { %>
+          <div id="express"></div>
+          <div class="pay-or" id="or" hidden>or pay by card</div>
+          <form id="pay-form">
+            <div id="element"></div>
+            <button class="pay-btn" id="pay-btn" type="submit" disabled>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              <span id="pay-label">Pay <%= gbp(pi.amount) %></span>
+            </button>
+            <div class="pay-msg" id="pay-msg" role="alert"></div>
+          </form>
+          <div class="pay-trust">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            <span>Encrypted and processed by Stripe</span>
+            <span>PCI DSS Level 1</span>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</section>
+<% if (pi.clientSecret) { %>
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+(function () {
+  var stripe = Stripe(<%- JSON.stringify(publishableKey) %>);
+  var secret = <%- JSON.stringify(pi.clientSecret) %>;
+  var back = <%- JSON.stringify(back) %>;
+  var appearance = {
+    theme: 'night',
+    variables: { colorPrimary: '#a5c715', colorBackground: '#1b2024', colorText: '#eef2e6', colorDanger: '#ff8a7a', borderRadius: '10px', fontFamily: 'Archivo, system-ui, sans-serif' },
+  };
+  var elements = stripe.elements({ clientSecret: secret, appearance: appearance, loader: 'auto' });
+  var msg = document.getElementById('pay-msg');
+  var btn = document.getElementById('pay-btn');
+  var label = document.getElementById('pay-label');
+  var busy = false;
+  function done() { location.replace(back); }
+  function failed(e) { busy = false; btn.disabled = false; label.textContent = 'Pay <%= gbp(pi.amount) %>'; msg.textContent = (e && e.message) || 'The payment did not go through. Nothing was taken. Try again.'; }
+
+  // Apple Pay and Google Pay, when this browser has them.
+  var express = elements.create('expressCheckout', {
+    buttonType: { applePay: 'buy', googlePay: 'buy' },
+    buttonTheme: { applePay: 'white-outline', googlePay: 'white' },
+    buttonHeight: 50,
+    paymentMethods: { applePay: 'always', googlePay: 'always', link: 'auto', amazonPay: 'never', paypal: 'never', klarna: 'never' },
+  });
+  express.on('ready', function (ev) {
+    var any = ev.availablePaymentMethods && Object.keys(ev.availablePaymentMethods).some(function (k) { return ev.availablePaymentMethods[k]; });
+    document.getElementById('or').hidden = !any;
+    if (!any) document.getElementById('express').style.display = 'none';
+  });
+  express.on('confirm', function () {
+    msg.textContent = '';
+    stripe.confirmPayment({ elements: elements, clientSecret: secret, confirmParams: { return_url: back }, redirect: 'if_required' })
+      .then(function (r) { if (r.error) { msg.textContent = r.error.message; } else { done(); } });
+  });
+  express.mount('#express');
+
+  var card = elements.create('payment', {
+    layout: { type: 'tabs', defaultCollapsed: false },
+    wallets: { applePay: 'never', googlePay: 'never' },
+    defaultValues: { billingDetails: { email: <%- JSON.stringify(pi.email) %> } },
+  });
+  card.on('ready', function () { btn.disabled = false; });
+  card.mount('#element');
+
+  document.getElementById('pay-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (busy) return;
+    busy = true; btn.disabled = true; msg.textContent = ''; label.textContent = 'Paying…';
+    stripe.confirmPayment({ elements: elements, confirmParams: { return_url: back }, redirect: 'if_required' })
+      .then(function (r) { if (r.error) failed(r.error); else done(); }, failed);
+  });
+})();
+</script>
+<% } %>
+<%- include('partials/footer') %>

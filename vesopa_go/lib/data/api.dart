@@ -212,8 +212,11 @@ class TapApi {
 
   Future<Map<String, dynamic>> stripeConfig() => _send('GET', '/api/till/stripe/config');
   Future<Map<String, dynamic>> stripeConnectionToken() => _send('POST', '/api/till/stripe/connection-token', const {});
-  Future<Map<String, dynamic>> stripePayment(int amountMinor, {String? reference}) =>
-      _send('POST', '/api/till/stripe/payments', {'amount_minor': amountMinor, 'reference': ?reference});
+  /// [attempt] is new for every try, so a second try on the same bill is a
+  /// new payment, not the first one handed back (2026-11-08).
+  Future<Map<String, dynamic>> stripePayment(int amountMinor, {String? reference, String? attempt}) =>
+      _send('POST', '/api/till/stripe/payments', {'amount_minor': amountMinor, 'reference': ?reference, 'attempt': ?attempt});
+  Future<Map<String, dynamic>> stripeCancel(String id) => _send('POST', '/api/till/stripe/payments/$id/cancel', const {});
   Future<Map<String, dynamic>> googlePayCharge(int amountMinor, String token, {String? reference}) =>
       _send('POST', '/api/till/stripe/google-pay', {'amount_minor': amountMinor, 'token': token, 'reference': ?reference});
   Future<Map<String, dynamic>> stripePaymentState(String id) => _send('GET', '/api/till/stripe/payments/$id');

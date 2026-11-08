@@ -26,6 +26,8 @@ const { attachAccess, requirePermission } = require('./permissions');
 const USES = ['tap', 'online', 'memberships'];
 
 function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
+  // Helpers a stand-in client (tests) leaves out come from the real one.
+  client = { ...stripe, ...client };
   const router = express.Router();
   const auth = requireAuth(secret);
   const attach = attachAccess({ pool });
@@ -77,10 +79,13 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
   function view(row) {
     const r = row || {};
     const live = r.card_payments === 'active' && r.payouts === 'active';
+    const on = client.configuredFor(r.environment);
     return {
-      configured: client.configured(),
-      environment: client.configured() ? client.environment() : null,
-      publishable_key: client.configured() ? process.env.STRIPE_PUBLISHABLE_KEY || null : null,
+      configured: on,
+      environment: on ? client.environmentOf(r.environment) : null,
+      publishable_key: on ? client.publishableFor(r.environment) : null,
+      // Vesopa Software Ltd's own account takes this venue's payments.
+      platform: r.account_id === client.PLATFORM,
       google_pay_environment: process.env.GOOGLE_PAY_ENV === 'PRODUCTION' ? 'PRODUCTION' : 'TEST',
       google_pay_merchant_id: process.env.GOOGLE_PAY_MERCHANT_ID || null,
       enabled: Boolean(Number(r.enabled)),
@@ -97,8 +102,9 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
   /** Re-read the venue's capabilities from Stripe and keep them. */
   async function refresh(office, row) {
     if (!row || !row.account_id) return row;
-    const acct = await client.retrieveAccount(row.account_id);
-    const s = client.readiness(acct);
+    const s = row.account_id === client.PLATFORM
+      ? await client.platformReadiness(client.optsFor(row))
+      : client.readiness(await client.retrieveAccount(row.account_id, client.optsFor(row)));
     const fields = { card_payments: s.card_payments, payouts: s.payouts, requirements_due: s.requirements_due };
     await save(office, fields);
     return { ...row, ...fields };
@@ -156,8 +162,11 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
     try {
       const row = await settingsFor(await tenantEmail(req));
       if (!row || !row.account_id) return res.status(409).json({ error: 'Set up the venue\'s Stripe account first.' });
-      const s = await client.accountSession(row.account_id);
-      res.json({ client_secret: s.client_secret, publishable_key: process.env.STRIPE_PUBLISHABLE_KEY || null });
+      if (row.account_id === client.PLATFORM) {
+        return res.status(409).json({ error: 'This venue takes payments into Vesopa Software Ltd\'s own Stripe account. See them at dashboard.stripe.com.', platform: true });
+      }
+      const s = await client.accountSession(row.account_id, client.optsFor(row));
+      res.json({ client_secret: s.client_secret, publishable_key: client.publishableFor(row.environment) });
     } catch (e) { fail(res, e, next); }
   });
 
@@ -165,7 +174,8 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
     try {
       const row = await settingsFor(await tenantEmail(req));
       if (!row || !row.account_id) return res.status(409).json({ error: 'Set up the venue\'s Stripe account first.' });
-      const l = await client.loginLink(row.account_id);
+      if (row.account_id === client.PLATFORM) return res.json({ url: 'https://dashboard.stripe.com/' });
+      const l = await client.loginLink(row.account_id, client.optsFor(row));
       res.json({ url: l.url });
     } catch (e) { fail(res, e, next); }
   });
@@ -179,7 +189,7 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
       const b = req.body || {};
       if (!b.line1 || !b.city || !b.postcode) return res.status(400).json({ error: 'The venue\'s address, town and postcode are needed.' });
       const [[venue]] = await pool.query('SELECT name FROM offices WHERE contact_email = ?', [office]);
-      const loc = await client.createLocation(row.account_id, { name: b.name || (venue && venue.name) || 'Venue', line1: b.line1, city: b.city, postcode: b.postcode });
+      const loc = await client.createLocation(row.account_id, { name: b.name || (venue && venue.name) || 'Venue', line1: b.line1, city: b.city, postcode: b.postcode }, client.optsFor(row));
       await save(office, { location_id: loc.id });
       res.json(view(await settingsFor(office)));
     } catch (e) { fail(res, e, next); }
@@ -212,7 +222,7 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
     try {
       const row = await tapReady(req, res);
       if (!row) return;
-      const t = await client.connectionToken(row.account_id, row.location_id);
+      const t = await client.connectionToken(row.account_id, row.location_id, client.optsFor(row));
       res.json({ secret: t.secret, location: row.location_id, account: row.account_id });
     } catch (e) { fail(res, e, next); }
   });
@@ -227,7 +237,8 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
         amountMinor: amount,
         reference: req.body.reference ? String(req.body.reference).slice(0, 80) : undefined,
         description: req.body.description ? String(req.body.description).slice(0, 200) : undefined,
-      });
+        attempt: req.body.attempt ? String(req.body.attempt).replace(/[^\w-]/g, '').slice(0, 40) || undefined : undefined,
+      }, client.optsFor(row));
       res.status(201).json({ id: pi.id, client_secret: pi.client_secret, status: pi.status, account: row.account_id });
     } catch (e) { fail(res, e, next); }
   });
@@ -253,9 +264,9 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
         token,
         reference: req.body.reference ? String(req.body.reference).slice(0, 80) : undefined,
         description: 'Vesopa Go, Google Pay',
-      });
+      }, client.optsFor(row));
       if (pi.status === 'succeeded') return res.status(201).json({ id: pi.id, status: pi.status });
-      await client.cancelPayment(row.account_id, pi.id).catch(() => {});
+      await client.cancelPayment(row.account_id, pi.id, client.optsFor(row)).catch(() => {});
       res.status(402).json({ error: 'The bank wants a check Go cannot show. Nothing was taken. Use another way to pay.' });
     } catch (e) { fail(res, e, next); }
   });
@@ -264,7 +275,7 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
     try {
       const row = await settingsFor(req.office);
       if (!row || !row.account_id) return res.status(404).json({ error: 'No Stripe account.' });
-      const pi = await client.retrievePayment(row.account_id, req.params.id);
+      const pi = await client.retrievePayment(row.account_id, req.params.id, client.optsFor(row));
       res.json({ id: pi.id, status: pi.status, amount_minor: pi.amount, amount_received: pi.amount_received });
     } catch (e) { fail(res, e, next); }
   });
@@ -273,7 +284,7 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
     try {
       const row = await settingsFor(req.office);
       if (!row || !row.account_id) return res.status(404).json({ error: 'No Stripe account.' });
-      const pi = await client.cancelPayment(row.account_id, req.params.id);
+      const pi = await client.cancelPayment(row.account_id, req.params.id, client.optsFor(row));
       res.json({ id: pi.id, status: pi.status });
     } catch (e) { fail(res, e, next); }
   });
@@ -292,8 +303,8 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
     try {
       const row = await tapReady(req, res);
       if (!row) return;
-      const list = await client.listReaders(row.account_id, row.location_id);
-      res.json({ environment: client.environment(), readers: (list.data || []).map(readerView) });
+      const list = await client.listReaders(row.account_id, row.location_id, client.optsFor(row));
+      res.json({ environment: client.environmentOf(row.environment), readers: (list.data || []).map(readerView) });
     } catch (e) { fail(res, e, next); }
   });
 
@@ -307,7 +318,7 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
       if (!row) return;
       const b = req.body || {};
       const simulated = b.simulated === true;
-      if (simulated && client.environment() === 'live') {
+      if (simulated && client.environmentOf(row.environment) === 'live') {
         return res.status(400).json({ error: 'A simulated reader is for the sandbox only.' });
       }
       const code = simulated ? 'simulated-wpe' : String(b.registration_code || '').trim();
@@ -316,7 +327,7 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
         code,
         label: String(b.label || (simulated ? 'Test reader' : '')).slice(0, 60),
         location: row.location_id,
-      });
+      }, client.optsFor(row));
       res.status(201).json(readerView(r));
     } catch (e) { fail(res, e, next); }
   });
@@ -334,11 +345,11 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
         amountMinor: amount,
         reference: b.reference ? String(b.reference).slice(0, 80) : undefined,
         description: b.description ? String(b.description).slice(0, 200) : 'Vesopa Go, card reader',
-      });
+      }, client.optsFor(row));
       try {
-        await client.processOnReader(row.account_id, reader, pi.id);
+        await client.processOnReader(row.account_id, reader, pi.id, client.optsFor(row));
       } catch (e) {
-        await client.cancelPayment(row.account_id, pi.id).catch(() => {});
+        await client.cancelPayment(row.account_id, pi.id, client.optsFor(row)).catch(() => {});
         throw e;
       }
       res.status(201).json({ id: pi.id, reader });
@@ -349,8 +360,8 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
     try {
       const row = await settingsFor(req.office);
       if (!row || !row.account_id) return res.status(404).json({ error: 'No Stripe account.' });
-      const pi = await client.retrievePayment(row.account_id, req.params.id);
-      const reader = req.query.reader ? await client.retrieveReader(row.account_id, String(req.query.reader)).catch(() => null) : null;
+      const pi = await client.retrievePayment(row.account_id, req.params.id, client.optsFor(row));
+      const reader = req.query.reader ? await client.retrieveReader(row.account_id, String(req.query.reader), client.optsFor(row)).catch(() => null) : null;
       res.json({ id: pi.id, ...client.readerState(pi, reader) });
     } catch (e) { fail(res, e, next); }
   });
@@ -361,9 +372,9 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
       const row = await settingsFor(req.office);
       if (!row || !row.account_id) return res.status(404).json({ error: 'No Stripe account.' });
       const reader = String((req.body && req.body.reader) || '');
-      if (reader) await client.cancelReaderAction(row.account_id, reader).catch(() => {});
+      if (reader) await client.cancelReaderAction(row.account_id, reader, client.optsFor(row)).catch(() => {});
       try {
-        const pi = await client.cancelPayment(row.account_id, req.params.id);
+        const pi = await client.cancelPayment(row.account_id, req.params.id, client.optsFor(row));
         res.json({ id: pi.id, state: pi.status === 'canceled' ? 'cancelled' : 'pending' });
       } catch (e) {
         res.json({ id: req.params.id, state: 'pending', cancel_refused: true });
@@ -374,12 +385,12 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
   /** Sandbox only: the simulated reader is handed Stripe's test card. */
   router.post('/till/stripe/readers/:id/present', terminal, async (req, res, next) => {
     try {
-      if (client.environment() === 'live') return res.status(400).json({ error: 'Sandbox only.' });
       const row = await settingsFor(req.office);
       if (!row || !row.account_id) return res.status(404).json({ error: 'No Stripe account.' });
+      if (client.environmentOf(row.environment) === 'live') return res.status(400).json({ error: 'Sandbox only.' });
       const card = String((req.body && req.body.card) || 'approved');
       if (!client.TEST_CARDS[card]) return res.status(400).json({ error: 'Which test card?' });
-      await client.presentTestCard(row.account_id, req.params.id, { card });
+      await client.presentTestCard(row.account_id, req.params.id, { ...client.optsFor(row), card });
       res.json({ ok: true, card });
     } catch (e) { fail(res, e, next); }
   });
@@ -394,7 +405,7 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
         paymentIntent: String(b.payment_intent),
         amountMinor: b.amount_minor ? Math.round(Number(b.amount_minor)) : undefined,
         reference: b.reference ? String(b.reference).slice(0, 80) : undefined,
-      });
+      }, client.optsFor(row));
       res.status(201).json({ id: r.id, status: r.status, amount_minor: r.amount });
     } catch (e) { fail(res, e, next); }
   });
@@ -407,7 +418,10 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
    * that venue's capabilities, so Stripe switches on the moment it is allowed.
    */
   router.post('/stripe/webhook', async (req, res) => {
-    const ok = stripe.verifyWebhook(req.rawBody, req.get('Stripe-Signature'), process.env.STRIPE_WEBHOOK_SECRET);
+    // The sandbox endpoint and the live one (2026-11-08) sign with their own secrets.
+    const sig = req.get('Stripe-Signature');
+    const ok = [process.env.STRIPE_WEBHOOK_SECRET, process.env.STRIPE_LIVE_WEBHOOK_SECRET]
+      .some((sec) => sec && stripe.verifyWebhook(req.rawBody, sig, sec));
     if (!ok) return res.status(400).json({ error: 'Bad signature' });
     const event = req.body || {};
     try {
@@ -426,9 +440,19 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
       // and Go at once, so a decline, a retry or a refund shows without waiting
       // for the next poll. The payment's own status still decides a sale.
       const what = String(event.type || '');
-      if (event.account && /^(payment_intent\.|charge\.refunded|terminal\.reader\.action_)/.test(what)) {
+      // An event on Vesopa's own account (no event.account) belongs to the
+      // venue that takes payments there in that mode, when there is one.
+      let owner = event.account || null;
+      if (!owner && /^(payment_intent\.|charge\.refunded|terminal\.reader\.action_)/.test(what)) {
         await ensure();
-        const [[row]] = await pool.query('SELECT office FROM epos_stripe_settings WHERE account_id = ?', [event.account]);
+        const [rows] = await pool.query('SELECT office FROM epos_stripe_settings WHERE account_id = ? AND environment = ?',
+          [client.PLATFORM, event.livemode ? 'live' : 'sandbox']);
+        if (rows.length === 1) owner = { office: rows[0].office };
+      }
+      if (owner && /^(payment_intent\.|charge\.refunded|terminal\.reader\.action_)/.test(what)) {
+        await ensure();
+        const [[row]] = typeof owner === 'object' ? [[owner]]
+          : await pool.query('SELECT office FROM epos_stripe_settings WHERE account_id = ?', [owner]);
         const obj = (event.data && event.data.object) || {};
         if (row) {
           broadcast({

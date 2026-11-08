@@ -27,7 +27,7 @@
  */
 const crypto = require('crypto');
 const { pool } = require('./db');
-const dojo = require('./dojo-billing');
+const dojo = require('./billing');
 const { planFor, resolvePeriod } = require('./plans-store');
 const { sendMail } = require('./mailer');
 const mail = require('./emails/subscription');

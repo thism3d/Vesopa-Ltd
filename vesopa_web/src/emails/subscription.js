@@ -114,7 +114,7 @@ ${k.body(d).map(p).join('')}
 </td></tr>
 <tr><td style="padding:4px 28px 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7faec; border:1px solid #e4eeba; border-radius:10px;"><tr><td style="padding:16px 18px; font-family:Arial,Helvetica,sans-serif; font-size:14px; line-height:24px; color:#354248;">${rows}</td></tr></table></td></tr>
 ${tills}${button}
-<tr><td style="padding:20px 28px; background:#fafbfa; border-top:1px solid #e2e7e2; font-family:Arial,Helvetica,sans-serif; font-size:13px; line-height:21px; color:#6b7780;">Questions? Call <a href="tel:${esc(CONTACT.emergency_phone_e164)}" style="color:#5f7d0a;">${esc(CONTACT.emergency_phone)}</a> or reply to this email. Payments are processed securely by Dojo; Vesopa never sees your card number.<br><br>${esc(CONTACT.company)} · ${esc(CONTACT.address_line1)}, ${esc(CONTACT.address_line2)}</td></tr>
+<tr><td style="padding:20px 28px; background:#fafbfa; border-top:1px solid #e2e7e2; font-family:Arial,Helvetica,sans-serif; font-size:13px; line-height:21px; color:#6b7780;">Questions? Call <a href="tel:${esc(CONTACT.emergency_phone_e164)}" style="color:#5f7d0a;">${esc(CONTACT.emergency_phone)}</a> or reply to this email. Payments are processed securely by our payment partner (Stripe); Vesopa never sees your card number.<br><br>${esc(CONTACT.company)} · ${esc(CONTACT.address_line1)}, ${esc(CONTACT.address_line2)}</td></tr>
 </table></td></tr></table></body></html>`;
   return { subject: k.subject(d), html };
 }

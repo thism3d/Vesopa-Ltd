@@ -40,6 +40,27 @@ const secretKey = () => String(process.env.STRIPE_SECRET_KEY || '').trim();
 const configured = () => /^(sk|rk)_(test|live)_/.test(secretKey());
 const environment = () => (/^(sk|rk)_live_/.test(secretKey()) ? 'live' : 'sandbox');
 
+/**
+ * A venue can run in live mode while the rest stay in the sandbox (owner,
+ * 2026-11-08: The Vesopa Kitchen goes live first). Its settings row says
+ * environment 'live'; the live keys are STRIPE_LIVE_SECRET_KEY and
+ * STRIPE_LIVE_PUBLISHABLE_KEY in the server's .env.
+ *
+ * PLATFORM as a venue's account means Vesopa Software Ltd's own Stripe
+ * account takes the payments (no Stripe-Account header): the Kitchen is
+ * Vesopa's own venue.
+ */
+const PLATFORM = 'platform';
+const liveKey = () => String(process.env.STRIPE_LIVE_SECRET_KEY || '').trim();
+const keyFor = (env) => (env === 'live' ? liveKey() : secretKey());
+const publishableFor = (env) => (env === 'live'
+  ? process.env.STRIPE_LIVE_PUBLISHABLE_KEY || null
+  : process.env.STRIPE_PUBLISHABLE_KEY || null);
+const configuredFor = (env) => /^(sk|rk)_(test|live)_/.test(keyFor(env));
+const environmentOf = (env) => (/^(sk|rk)_live_/.test(keyFor(env)) ? 'live' : 'sandbox');
+/** The options every call for this venue carries: its key. */
+const optsFor = (row) => ({ key: keyFor(row && row.environment) });
+
 /** Stripe's form encoding: a[b][0]=c. */
 function form(obj, prefix = '', out = new URLSearchParams()) {
   for (const [k, v] of Object.entries(obj || {})) {
@@ -52,9 +73,10 @@ function form(obj, prefix = '', out = new URLSearchParams()) {
   return out;
 }
 
-async function call(method, path, { body, account, v2 = false, idempotencyKey, fetchImpl = fetch } = {}) {
-  if (!configured()) throw new StripeError(503, 'NOT_CONFIGURED', 'Stripe is not set up on this server yet.');
-  const headers = { Authorization: `Bearer ${secretKey()}` };
+async function call(method, path, { body, account, v2 = false, idempotencyKey, key, fetchImpl = fetch } = {}) {
+  const sk = key || secretKey();
+  if (!/^(sk|rk)_(test|live)_/.test(sk)) throw new StripeError(503, 'NOT_CONFIGURED', 'Stripe is not set up on this server yet.');
+  const headers = { Authorization: `Bearer ${sk}` };
   if (v2) {
     headers['Stripe-Version'] = PREVIEW;
     headers['Content-Type'] = 'application/json';
@@ -62,7 +84,7 @@ async function call(method, path, { body, account, v2 = false, idempotencyKey, f
     headers['Stripe-Version'] = V1;
     if (body) headers['Content-Type'] = 'application/x-www-form-urlencoded';
   }
-  if (account) headers['Stripe-Account'] = account;
+  if (account && account !== PLATFORM) headers['Stripe-Account'] = account;
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   const res = await fetchImpl(API + path, {
     method,
@@ -107,6 +129,18 @@ function createAccount({ email, name, country = 'gb', currency = 'gbp' }, opts =
       include: ['configuration.merchant', 'configuration.customer', 'requirements'],
     },
   });
+}
+
+/** Vesopa's own account (v1): ready when it may charge and pay out. */
+async function platformReadiness(opts = {}) {
+  const a = await call('GET', '/v1/account', opts);
+  const due = (a.requirements && a.requirements.currently_due) || [];
+  return {
+    card_payments: a.charges_enabled ? 'active' : 'inactive',
+    payouts: a.payouts_enabled ? 'active' : 'inactive',
+    ready: Boolean(a.charges_enabled && a.payouts_enabled),
+    requirements_due: due.length,
+  };
 }
 
 function retrieveAccount(id, opts = {}) {
@@ -166,11 +200,13 @@ function connectionToken(account, location, opts = {}) {
  * A card-present payment on the venue's account (a direct charge). No
  * application_fee_amount: the Platform Pricing Tool sets Vesopa's margin.
  */
-function createTerminalPayment(account, { amountMinor, currency = 'gbp', reference, description }, opts = {}) {
+function createTerminalPayment(account, { amountMinor, currency = 'gbp', reference, description, attempt }, opts = {}) {
   return call('POST', '/v1/payment_intents', {
     ...opts,
     account,
-    idempotencyKey: reference ? `vesopa-tp-${reference}` : undefined,
+    // Keyed by the try, never the bill alone: a second try on the same bill
+    // got the first payment back and Go waited on it for ever (2026-11-08).
+    idempotencyKey: reference && attempt ? `vesopa-tp-${reference}-${amountMinor}-${attempt}` : undefined,
     body: {
       amount: amountMinor,
       currency,
@@ -318,6 +354,14 @@ function verifyWebhook(rawBody, header, secret, tolerance = 300, now = Date.now(
 }
 
 module.exports = {
+  PLATFORM,
+  keyFor,
+  publishableFor,
+  configuredFor,
+  environmentOf,
+  optsFor,
+  platformReadiness,
+  call,
   listReaders,
   registerReader,
   retrieveReader,

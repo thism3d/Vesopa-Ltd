@@ -11,7 +11,7 @@
 <%
   var eyebrow, title, text;
   if (state === 'paid') { eyebrow = 'Order confirmed'; title = 'Thank you for your order'; text = 'We have received ' + gbp(order.total_minor) + ' for order ' + order.number + '. A confirmation is on its way to ' + order.email + ', and we will be in touch to arrange delivery and set-up.'; }
-  else if (state === 'waiting') { eyebrow = 'One moment'; title = 'Confirming your payment'; text = 'Dojo is confirming the payment for order ' + order.number + '. This page updates by itself.'; }
+  else if (state === 'waiting') { eyebrow = 'One moment'; title = 'Confirming your payment'; text = 'Your bank is confirming the payment for order ' + order.number + '. This page updates by itself.'; }
   else if (state === 'unpaid') { eyebrow = 'Not paid yet'; title = 'Payment not finished'; text = 'Order ' + order.number + ' (' + gbp(order.total_minor) + ') has not been paid, so nothing was taken. You can try again with any card, Apple Pay or Google Pay.'; }
   else if (state === 'cancelled') { eyebrow = 'Cancelled'; title = 'Order cancelled'; text = 'Nothing was taken. Your basket is still here if you want it.'; }
   else if (state === 'error') { eyebrow = 'Please try again'; title = 'We could not reach the payment service'; text = 'Nothing has been lost. If your payment went through, your order confirms itself within a few minutes and we email you.'; }

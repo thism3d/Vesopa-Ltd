@@ -85,7 +85,7 @@
           <h2>Vesopa EPOS software</h2>
           <label style="display:flex;gap:12px;align-items:flex-start;cursor:pointer">
             <input type="checkbox" name="trial" value="1" data-co-trial <%= form.trial === '1' ? 'checked' : '' %> style="margin-top:4px;width:18px;height:18px;accent-color:#a5c715">
-            <span><b>Start my <%= trialDays %>-day free trial with this order</b><br><small class="v2-note">It starts the moment your order is paid, with no separate card check. Nothing more is taken now: we email a Dojo pay link before the trial ends. One free trial per email address.</small></span>
+            <span><b>Start my <%= trialDays %>-day free trial with this order</b><br><small class="v2-note">It starts the moment your order is paid, with no separate card check. Nothing more is taken now: we email a secure pay link before the trial ends. One free trial per email address.</small></span>
           </label>
           <div data-co-plans style="margin-top:14px" <%= form.trial === '1' ? '' : 'hidden' %>>
             <div class="co-del">
@@ -114,7 +114,7 @@
 
         <div class="co-card">
           <h2>Invoice details</h2>
-          <p class="v2-note" style="margin:-6px 0 14px">Your paid invoice comes from Vesopa Software Ltd as soon as Dojo confirms the payment, by email and in your account.</p>
+          <p class="v2-note" style="margin:-6px 0 14px">Your paid invoice comes from Vesopa Software Ltd as soon as the payment is confirmed, by email and in your account.</p>
           <% var billOpen = form.name !== undefined && form.bill_same !== '1'; %>
           <label class="co-check"><input type="checkbox" name="bill_same" value="1" data-co-billsame <%= billOpen ? '' : 'checked' %>> Invoice to the name and delivery address above</label>
           <div class="co-fields" data-co-bill style="margin-top:14px" <%= billOpen ? '' : 'hidden' %>>
@@ -143,7 +143,7 @@
             <div class="co-cards" aria-label="Accepted">
               <img src="/assets/v2/logos/visa.svg" alt="Visa"><img src="/assets/v2/logos/mastercard.svg" alt="Mastercard"><img src="/assets/v2/logos/apple-pay.svg" alt="Apple Pay"><img src="/assets/v2/logos/google-pay.svg" alt="Google Pay">
             </div>
-            <p class="v2-note" style="margin:12px 0 0;font-size:13px;line-height:1.5;text-align:center">You pay on Dojo's secure checkout; Vesopa never sees your card number. By paying you agree to our <a href="/terms" style="color:#c9d39f">terms</a> and <a href="/refund" style="color:#c9d39f">refund policy</a>.</p>
+            <p class="v2-note" style="margin:12px 0 0;font-size:13px;line-height:1.5;text-align:center">You pay on our secure payment page, by card, Apple Pay or Google Pay, processed by Stripe. Vesopa never sees your card number. By paying you agree to our <a href="/terms" style="color:#c9d39f">terms</a> and <a href="/refund" style="color:#c9d39f">refund policy</a>.</p>
           </div>
         </div>
         <p class="v2-note" style="margin:14px 4px 0;font-size:13px;line-height:1.5">Card machines come from Dojo, Teya or Barclaycard on your own merchant account. <a href="/hardware" style="color:#c9d39f">Keep shopping</a></p>

@@ -14,6 +14,7 @@ const { checkoutApiRouter } = require('./routes/checkout-api');
 const { blogPagesRouter } = require('./routes/blog-pages');
 const { subscriptionsRouter } = require('./routes/subscriptions');
 const { shopRouter } = require('./routes/shop');
+const { payRouter } = require('./routes/pay');
 const shop = require('./shop');
 const subscriptions = require('./subscriptions');
 const { adminRouter } = require('./admin');
@@ -38,7 +39,8 @@ app.use(compression());
 // in as data URIs. File uploads do not come through here — multer streams
 // multipart bodies to disk itself.
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
-app.use(express.json({ limit: '1mb' }));
+// Stripe signs the exact bytes it sent: keep them for /webhooks/stripe.
+app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => { if (req.originalUrl === '/webhooks/stripe') req.rawBody = buf.toString('utf8'); } }));
 app.use(cookieParser());
 
 // The activity log: every form posted and every failure, written to
@@ -291,6 +293,7 @@ app.use(
 // Mounted at /api, not /api/paypal: the router now carries Stripe as well, and
 // each route names its own provider. The PayPal paths it serves are unchanged.
 // Subscriptions first: it owns /api/subs, which the checkout API would otherwise see.
+app.use('/', payRouter);
 app.use('/', subscriptionsRouter);
 app.use('/', shopRouter);
 app.use('/api', checkoutApiRouter);

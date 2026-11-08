@@ -26,8 +26,8 @@ PayResult stripeResult(String? status) => switch (status) {
 
 /// What an SDK error means for the sale.
 PaymentOutcome stripeFailure(TerminalException e, {String? paymentId}) {
-  final declined = e.code == TerminalExceptionCode.declinedByStripeApi ||
-      e.code == TerminalExceptionCode.declinedByReader;
+  final declined =
+      e.code == TerminalExceptionCode.declinedByStripeApi || e.code == TerminalExceptionCode.declinedByReader;
   if (declined) {
     return PaymentOutcome(PayResult.declined, paymentId: paymentId, message: 'The card was declined.');
   }
@@ -73,28 +73,51 @@ class StripeTapToPay implements PaymentService {
     }
   }
 
+  /// The environment and location the connected reader was set up for: a
+  /// venue moved from the sandbox to live (2026-11-08) must not keep the old one.
+  static String? _connectedFor;
+
+  /// A payment still with the SDK from a try that ended badly: called off
+  /// before the next one starts, or the next one waits behind it for ever.
+  static CancelableFuture<PaymentIntent>? _inFlight;
+
   Future<void> _connect() async {
     await _init();
     final terminal = Terminal.instance;
-    if (await terminal.getConnectedReader() != null) return;
+    final config = await api.stripeConfig();
+    final locationId = config['location'] as String?;
+    if (locationId == null) throw const TapApiError(0, 'This venue has no Stripe location yet.');
+    final live = config['environment'] == 'live';
+    final want = '${live ? 'live' : 'sandbox'}|$locationId';
+    if (await terminal.getConnectedReader() != null) {
+      if (_connectedFor == want) return;
+      await terminal.disconnectReader().catchError((Object _) {});
+      try {
+        await terminal.clearCachedCredentials();
+      } catch (_) {}
+    } else if (_connectedFor != null && _connectedFor != want) {
+      try {
+        await terminal.clearCachedCredentials();
+      } catch (_) {}
+    }
 
     // Stripe will not start a reader on a phone that has refused location.
     final location = await Permission.locationWhenInUse.request();
     if (!location.isGranted) {
       throw const TapApiError(0, 'Tap to Pay needs the location permission. Allow it in Settings.');
     }
-    final config = await api.stripeConfig();
-    final locationId = config['location'] as String?;
-    if (locationId == null) throw const TapApiError(0, 'This venue has no Stripe location yet.');
 
     final readers = await terminal
-        .discoverReaders(TapToPayDiscoveryConfiguration(isSimulated: config['environment'] != 'live'))
+        .discoverReaders(TapToPayDiscoveryConfiguration(isSimulated: !live))
         .firstWhere((list) => list.isNotEmpty)
         .timeout(const Duration(seconds: 30));
-    await terminal.connectReader(
-      readers.first,
-      configuration: TapToPayConnectionConfiguration(locationId: locationId, readerDelegate: _delegate),
-    );
+    await terminal
+        .connectReader(
+          readers.first,
+          configuration: TapToPayConnectionConfiguration(locationId: locationId, readerDelegate: _delegate),
+        )
+        .timeout(const Duration(seconds: 60));
+    _connectedFor = want;
   }
 
   @override
@@ -114,31 +137,61 @@ class StripeTapToPay implements PaymentService {
       return _onReader(amountMinor + tipMinor, billRef: billRef, onStep: onStep, control: control, testCard: testCard);
     }
     String? id;
-    CancelableFuture<PaymentIntent>? collecting;
     Timer? watch;
+    final stop = Completer<void>();
+    bool cancelled() => control?.cancelRequested ?? false;
     try {
-      onStep?.call(PayStep.preparing);
-      await _connect();
-      final created = await api.stripePayment(amountMinor + tipMinor, reference: billRef);
-      id = created['id'] as String;
-      final intent = await Terminal.instance.retrievePaymentIntent(created['client_secret'] as String);
+      // The last try's payment, if the SDK still holds it.
+      final old = _inFlight;
+      _inFlight = null;
+      if (old != null) await old.cancel().timeout(const Duration(seconds: 3)).catchError((Object _) {});
 
-      onStep?.call(PayStep.waitingForCard);
-      collecting = Terminal.instance.processPaymentIntent(intent, skipTipping: true);
-      final running = collecting;
-      watch = Timer.periodic(const Duration(milliseconds: 300), (t) {
-        if (control?.cancelRequested ?? false) {
+      onStep?.call(PayStep.preparing);
+      // Cancel works from the first moment: a watch notices the clerk's Cancel.
+      watch = Timer.periodic(const Duration(milliseconds: 250), (t) {
+        if (cancelled() && !stop.isCompleted) {
           t.cancel();
-          unawaited(running.cancel());
+          stop.complete();
         }
       });
-      await collecting;
+      Future<T> orStop<T>(Future<T> f) => Future.any([f, stop.future.then<T>((_) => throw const _Stopped())]);
+
+      await orStop(_connect());
+      // A new attempt every time: a second try on the same bill is a new
+      // payment, never the first one handed back by Stripe.
+      final attempt = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+      final created = await orStop(api.stripePayment(amountMinor + tipMinor, reference: billRef, attempt: attempt));
+      id = created['id'] as String;
+      final intent = await orStop(
+        Terminal.instance
+            .retrievePaymentIntent(created['client_secret'] as String)
+            .timeout(const Duration(seconds: 20)),
+      );
+
+      onStep?.call(PayStep.waitingForCard);
+      final collecting = Terminal.instance.processPaymentIntent(intent, skipTipping: true);
+      _inFlight = collecting;
+      unawaited(stop.future.then((_) => collecting.cancel().catchError((Object _) {})));
+      // The SDK is given a moment to give the card back after a cancel; if it
+      // does not, the payment is called off on Stripe and the screen moves on.
+      await Future.any([
+        collecting.then((_) {}),
+        stop.future.then((_) => Future<void>.delayed(const Duration(seconds: 4))),
+      ]);
+      if (identical(_inFlight, collecting)) _inFlight = null;
+      onStep?.call(PayStep.confirming);
       // The server's word decides the sale, never the phone's.
       final state = await api.stripePaymentState(id);
-      return PaymentOutcome(stripeResult(state['status'] as String?), paymentId: id);
+      final result = stripeResult(state['status'] as String?);
+      if (cancelled() && result != PayResult.paid) return await _callOff(id);
+      return PaymentOutcome(result, paymentId: id);
+    } on _Stopped {
+      return id == null ? const PaymentOutcome(PayResult.cancelled) : await _callOff(id);
     } on TerminalException catch (e) {
+      if (cancelled() && id != null) return await _callOff(id);
       return stripeFailure(e, paymentId: id);
     } on TimeoutException {
+      if (id != null) return await _callOff(id, message: 'Tap to Pay did not answer. Nothing was taken. Try again.');
       return PaymentOutcome(PayResult.unavailable, paymentId: id, message: 'Tap to Pay did not start. Try again.');
     } on TapApiError catch (e) {
       return PaymentOutcome(
@@ -150,13 +203,36 @@ class StripeTapToPay implements PaymentService {
       watch?.cancel();
     }
   }
+
+  /// Call the payment off on Stripe; if it had already gone through, it is paid.
+  Future<PaymentOutcome> _callOff(String id, {String? message}) async {
+    try {
+      final r = await api.stripeCancel(id);
+      if (r['status'] == 'canceled') return PaymentOutcome(PayResult.cancelled, paymentId: id, message: message);
+    } on TapApiError catch (_) {}
+    try {
+      final s = await api.stripePaymentState(id);
+      return PaymentOutcome(stripeResult(s['status'] as String?), paymentId: id, message: message);
+    } on TapApiError catch (e) {
+      return PaymentOutcome(PayResult.uncertain, paymentId: id, message: e.message);
+    }
+  }
+}
+
+class _Stopped implements Exception {
+  const _Stopped();
 }
 
 /// The venue's Stripe card reader, driven from the server (an iPad: Apple has
 /// no Tap to Pay there). The same card-machine screen as a Dojo machine.
 extension on StripeTapToPay {
-  Future<PaymentOutcome> _onReader(int totalMinor,
-      {String? billRef, void Function(PayStep step)? onStep, PayControl? control, String? testCard}) async {
+  Future<PaymentOutcome> _onReader(
+    int totalMinor, {
+    String? billRef,
+    void Function(PayStep step)? onStep,
+    PayControl? control,
+    String? testCard,
+  }) async {
     onStep?.call(PayStep.preparing);
     final Map<String, dynamic> listed;
     try {
@@ -166,12 +242,15 @@ extension on StripeTapToPay {
     }
     final readers = [for (final r in (listed['readers'] as List? ?? const [])) Map<String, dynamic>.from(r as Map)];
     final chosen = await deviceStripeReader();
-    final reader = readers.where((r) => r['id'] == chosen).firstOrNull
-        ?? readers.where((r) => r['status'] == 'online').firstOrNull
-        ?? readers.firstOrNull;
+    final reader =
+        readers.where((r) => r['id'] == chosen).firstOrNull ??
+        readers.where((r) => r['status'] == 'online').firstOrNull ??
+        readers.firstOrNull;
     if (reader == null) {
-      return const PaymentOutcome(PayResult.unavailable,
-          message: 'This venue has no Stripe card reader yet. Add one under Cards, Card reader.');
+      return const PaymentOutcome(
+        PayResult.unavailable,
+        message: 'This venue has no Stripe card reader yet. Add one under Cards, Card reader.',
+      );
     }
     final readerId = '${reader['id']}';
     final String id;
@@ -183,8 +262,14 @@ extension on StripeTapToPay {
     onStep?.call(PayStep.onMachine);
     // The sandbox's simulated reader has no customer: hand it Stripe's test card.
     if (reader['simulated'] == true && testCard != 'none') {
-      unawaited(Future<void>.delayed(const Duration(seconds: 2),
-          () => api.stripeReaderPresent(readerId, card: testCard ?? 'approved').catchError((Object _) => <String, dynamic>{})));
+      unawaited(
+        Future<void>.delayed(
+          const Duration(seconds: 2),
+          () => api
+              .stripeReaderPresent(readerId, card: testCard ?? 'approved')
+              .catchError((Object _) => <String, dynamic>{}),
+        ),
+      );
     }
     return followMachine(
       id: id,

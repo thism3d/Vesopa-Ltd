@@ -21,7 +21,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { pool } = require('./db');
-const dojo = require('./dojo-billing');
+const dojo = require('./billing');
 const hw = require('./hardware-catalogue');
 const { sendMail, DEFAULT_TO } = require('./mailer');
 const { CONTACT } = require('./config');
@@ -194,6 +194,8 @@ async function createOrder(body) {
     reference: `${number} ${f.business || f.name}`.slice(0, 80),
     description: `Vesopa hardware order ${number}`,
     redirectUrl: `${siteUrl()}/hardware/order/${publicId}`,
+    email: f.email,
+    kind: 'hardware',
   });
   await pool.query('UPDATE web_hw_orders SET payment_intent_id = ? WHERE id = ?', [pi.id, r.insertId]);
   await pool.query('UPDATE web_hw_orders SET invoice_company = ?, invoice_vat = ?, invoice_email = ?, bill_address1 = ?, bill_address2 = ?, bill_town = ?, bill_postcode = ? WHERE id = ?',
@@ -238,7 +240,7 @@ async function markOrderPaid(o, pi) {
     replyTo: fresh.email,
     subject: `New hardware order ${fresh.number}: ${gbp(fresh.total_minor)} paid`,
     html: mailShell(`Order ${fresh.number}`, `<h1 style="margin:0 0 16px;font-size:21px;color:#000;">New hardware order ${esc(fresh.number)}</h1>
-      <p style="margin:0 0 16px;">${esc(fresh.contact_name)} &lt;${esc(fresh.email)}&gt; paid ${esc(gbp(fresh.total_minor))} on Dojo (${esc(fresh.dojo_mode)}).${fresh.trial_period ? `<br>Software trial: ${trial ? esc(trial.plan_name) + ' started' : 'not started (already had one, or an error: see the log)'}` : ''}${fresh.notes ? `<br>Notes: ${esc(fresh.notes)}` : ''}</p>${orderTable(fresh)}`),
+      <p style="margin:0 0 16px;">${esc(fresh.contact_name)} &lt;${esc(fresh.email)}&gt; paid ${esc(gbp(fresh.total_minor))} by ${esc(fresh.card_label || 'card')} (${esc(fresh.dojo_mode)}).${fresh.trial_period ? `<br>Software trial: ${trial ? esc(trial.plan_name) + ' started' : 'not started (already had one, or an error: see the log)'}` : ''}${fresh.notes ? `<br>Notes: ${esc(fresh.notes)}` : ''}</p>${orderTable(fresh)}`),
   }).catch(() => {});
 }
 

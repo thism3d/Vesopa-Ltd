@@ -525,14 +525,19 @@ class _PayPageState extends ConsumerState<PayPage> {
     final running = _result == null && step != CardStep.done;
     // Cancel while the machine waits for the card or the PIN (Dojo: cancel
     // from the till; the machine refuses once the card is in, ERR-422).
-    final cancellable = running && _control != null && machine &&
-        const {PayStep.onMachine, PayStep.pin, PayStep.cancelling}.contains(_step);
+    // Stripe's Tap to Pay can be called off too, while it gets ready or waits
+    // for the card (owner, 2026-11-08: "cannot cancel, go back or retry").
+    final stripeTap = !machine && ref.read(cardGatewayProvider) == CardGateway.stripe;
+    final cancellable = running && _control != null &&
+        ((machine && const {PayStep.onMachine, PayStep.pin, PayStep.cancelling}.contains(_step)) ||
+            (stripeTap && const {PayStep.preparing, PayStep.activating, PayStep.waitingForCard}.contains(_step)));
     // Turn to the customer while Tap to Pay waits for their card, as Dojo's
     // and Apple's guides show the merchant turning the iPhone round.
     final turnable = !machine && (_result != null || _testing || _step == PayStep.waitingForCard || _step == PayStep.confirming || _cardStep != null);
     if (!turnable && _facing) _facing = false;
     final screen = CardPayScreen(
       topInset: _facing ? 84 : 0,
+      facing: _facing,
       amountMinor: _cardAmount + _tip,
       heading: _facing ? (ref.read(tapProvider).venue?.name ?? 'Pay by card') : (machine ? 'Card machine' : 'Tap to Pay'),
       step: step,
@@ -580,13 +585,22 @@ class _PayPageState extends ConsumerState<PayPage> {
                 top: false,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  child: Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 8, children: [
                     FilledButton.tonalIcon(
                       key: const ValueKey('turn-back'),
                       onPressed: () => _turn(false),
                       icon: const Icon(Icons.screen_rotation_alt_rounded),
                       label: const Text('Turn back'),
                     ),
+                    // The clerk can still stop it without turning the screen back.
+                    if (cancellable)
+                      TextButton.icon(
+                        key: const ValueKey('cancel-facing'),
+                        onPressed: _cancelling ? null : _cancelPayment,
+                        style: TextButton.styleFrom(foregroundColor: Tp.danger),
+                        icon: const Icon(Icons.close_rounded),
+                        label: Text(_cancelling ? 'Cancelling…' : 'Cancel'),
+                      ),
                   ]),
                 ),
               ),

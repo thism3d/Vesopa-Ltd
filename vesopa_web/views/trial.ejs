@@ -91,7 +91,7 @@
                     <div class="after"><span>After <%= trialDays %> days</span><span data-t-total><%= q ? gbp(q.first.total) : '' %></span></div>
                 </div>
                 <p class="v2-accredit-cards" style="margin-top:16px" aria-label="Cards and wallets accepted"><img src="/assets/v2/logos/visa.svg" alt="Visa" width="46" height="28"><img src="/assets/v2/logos/mastercard.svg" alt="Mastercard" width="46" height="28"><img src="/assets/v2/logos/apple-pay.svg" alt="Apple Pay" width="46" height="28"><img src="/assets/v2/logos/google-pay.svg" alt="Google Pay" width="46" height="28"></p>
-                <p class="tr-safe">Paid on Dojo's secure page: card, Apple Pay or Google Pay. We never see your card number. Your trial starts the moment the £1 goes through.</p>
+                <p class="tr-safe">Paid on our secure payment page: card, Apple Pay or Google Pay, processed by Stripe. We never see your card number. Your trial starts the moment the £1 goes through.</p>
             </aside>
         </div>
     </form>
@@ -140,7 +140,7 @@
   f.addEventListener('submit', function (e) {
     var v = f.querySelector('[name=venue]'), m = f.querySelector('[name=email]');
     if (!v.value.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(m.value.trim())) { e.preventDefault(); go(3); (v.value.trim() ? m : v).focus(); (v.value.trim() ? m : v).classList.add('tr-err'); return; }
-    var b = f.querySelector('[data-tr-submit]'); b.disabled = true; b.textContent = 'Opening Dojo’s secure page…';
+    var b = f.querySelector('[data-tr-submit]'); b.disabled = true; b.textContent = 'Opening the secure payment page…';
   });
   update(); go(<%= error ? 3 : 1 %>);
   var sw = document.querySelector('[data-tr-swap]');

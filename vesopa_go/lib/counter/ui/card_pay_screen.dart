@@ -77,7 +77,13 @@ class CardPayScreen extends StatefulWidget {
     this.cancelling = false,
     this.onTurnToCustomer,
     this.topInset = 0,
+    this.facing = false,
   });
+
+  /// Turned round to the customer. The card in the hold-here picture then
+  /// still comes to the phone's real top edge, where the reader is: on the
+  /// customer's side (owner, 2026-11-08).
+  final bool facing;
 
   final int amountMinor;
 
@@ -230,7 +236,12 @@ class _CardPayScreenState extends State<CardPayScreen> {
                                 child: stageKey == 'hold'
                                     ? FittedBox(
                                         fit: BoxFit.scaleDown,
-                                        child: HoldHere(tablet: MediaQuery.sizeOf(context).shortestSide >= 600),
+                                        // The screen is turned half round for the customer, so the
+                                        // picture turns back: its card meets the device's real top.
+                                        child: RotatedBox(
+                                          quarterTurns: w.facing ? 2 : 0,
+                                          child: HoldHere(tablet: MediaQuery.sizeOf(context).shortestSide >= 600),
+                                        ),
                                       )
                                     : _StageArt(step: shownStep, result: r),
                               ),

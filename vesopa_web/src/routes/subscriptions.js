@@ -18,7 +18,7 @@ const crypto = require('crypto');
 const express = require('express');
 const subs = require('../subscriptions');
 const { list: planList, resolvePeriod } = require('../plans-store');
-const dojo = require('../dojo-billing');
+const dojo = require('../billing');
 const { sendMail } = require('../mailer');
 const shop = require('../shop');
 
