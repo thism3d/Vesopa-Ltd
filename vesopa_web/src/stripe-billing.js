@@ -92,15 +92,15 @@ function asDojo(pi) {
 }
 
 /**
- * A payment for the page to take. Wallets (Apple Pay, Google Pay), cards and
- * Link come from the Dashboard's payment-method settings
- * (automatic_payment_methods). The return address rides in metadata.
+ * A payment for the page to take: card, Apple Pay, Google Pay and Link. The
+ * return address rides in metadata.
  */
 async function createPaymentIntent({ amountMinor, reference, description, redirectUrl, email, kind }) {
   const pi = await call('POST', '/v1/payment_intents', {
     amount: amountMinor,
     currency: 'gbp',
-    automatic_payment_methods: { enabled: true },
+    // Card (with Apple Pay and Google Pay, which are card wallets) and Link.
+    payment_method_types: ['card', 'link'],
     description: description ? String(description).slice(0, 250) : undefined,
     statement_descriptor_suffix: 'VESOPA EPOS',
     receipt_email: email || undefined,
