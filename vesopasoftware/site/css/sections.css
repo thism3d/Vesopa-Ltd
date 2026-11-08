@@ -463,3 +463,67 @@
   box-shadow:inset 0 0 0 1px rgba(94,122,14,.35),0 18px 40px -22px rgba(94,122,14,.5)}
 @media (max-width:640px){.sec-ico{width:2.9rem;height:2.9rem;border-radius:14px;margin-bottom:.9rem}.sec-ico svg{width:1.7rem;height:1.7rem}}
 @media (prefers-reduced-motion:reduce){.sec-ico svg *{stroke-dashoffset:0;transition:none}.sec-ico.drawn{animation:none}}
+
+/* ---- Payment partners, live venue and Vesopa Go (2026-11-08) ---- */
+.partner-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.25rem;margin-top:2.5rem}
+.partner{display:flex;flex-direction:column;gap:.55rem;padding:1.6rem 1.5rem 1.5rem;border-radius:20px;text-align:left;
+  background:#fff;border:1px solid rgba(0,0,0,.1);color:#0B0E0A;text-decoration:none;
+  box-shadow:0 18px 40px -28px rgba(0,0,0,.35);transition:transform .25s ease,box-shadow .25s ease;position:relative}
+.partner:hover{transform:translateY(-4px);box-shadow:0 26px 50px -26px rgba(94,122,14,.55)}
+.partner-logo{display:flex;align-items:center;height:56px;padding:0 .9rem;margin-bottom:.4rem;align-self:flex-start;
+  background:#fff;border-radius:12px;border:1px solid rgba(0,0,0,.06)}
+.partner-logo img{height:30px;width:auto;display:block}
+.partner-tag{position:absolute;top:1.1rem;right:1.1rem;font-family:"Martian Mono",monospace;font-size:.62rem;
+  letter-spacing:.12em;text-transform:uppercase;padding:.3rem .55rem;border-radius:99px;background:#A5C715;color:#0B0E0A}
+.partner b{font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 114,"wght" 640;font-size:1.3rem}
+.partner i{font-style:normal;font-size:.95rem;opacity:.78;line-height:1.45}
+
+.live-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:2.5rem;align-items:start;margin-top:2.5rem}
+.live-copy,.go-copy{text-align:left}
+.live-copy .site-cta,.go-copy .site-cta{display:flex;flex-wrap:wrap;gap:.75rem}
+.live-hero{aspect-ratio:1024/500}
+.live-club{display:flex;align-items:center;gap:.9rem;margin-bottom:1.2rem}
+.live-club img{width:64px;height:64px;border-radius:14px;flex:none}
+.live-club b{display:block;font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 114,"wght" 680;font-size:1.25rem}
+.live-club i{font-style:normal;opacity:.7;font-size:.92rem}
+.store-row{display:flex;flex-wrap:wrap;gap:.75rem;margin:1.4rem 0 .6rem}
+.store-badge{display:inline-block;line-height:0;border-radius:10px;transition:transform .2s ease}
+.store-badge:hover{transform:translateY(-2px)}
+.store-badge img{height:50px;width:auto}
+.live-dot{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:#e5484d;margin-right:.5rem;
+  box-shadow:0 0 0 0 rgba(229,72,77,.6);animation:live-pulse 1.8s ease-out infinite;vertical-align:middle}
+@keyframes live-pulse{0%{box-shadow:0 0 0 0 rgba(229,72,77,.55)}70%{box-shadow:0 0 0 .55rem rgba(229,72,77,0)}100%{box-shadow:0 0 0 0 rgba(229,72,77,0)}}
+.cta.live-menu{background:#0B0E0A;color:#F2EFE6}
+.live-pill{display:inline-flex;align-items:center;flex-wrap:wrap;gap:.25rem;margin:.4rem 0 .9rem;padding:.55rem .9rem;
+  border-radius:99px;background:rgba(229,72,77,.1);border:1px solid rgba(229,72,77,.35);color:inherit;text-decoration:none;font-size:.9rem}
+.live-pill b{margin-right:.35rem}
+.live-shots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.25rem;margin-top:2.5rem;max-width:860px;margin-inline:auto}
+.live-shots figure{margin:0;text-align:center}
+.live-shots img{width:100%;height:auto;border-radius:22px;box-shadow:0 22px 50px -30px rgba(0,0,0,.6);border:1px solid rgba(0,0,0,.08)}
+.live-shots figcaption{margin-top:.6rem;font-size:.88rem;opacity:.75}
+
+.go-split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:2.5rem;align-items:center;margin-top:2.5rem}
+.go-shot{margin:0}
+.go-shot img{width:100%;height:auto;display:block}
+.go-modes{list-style:none;margin:0;padding:0;display:grid;gap:1rem}
+.go-modes li{display:grid;grid-template-columns:3rem 1fr;column-gap:1rem;align-items:start}
+.go-modes b{grid-column:2;font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 110,"wght" 640;font-size:1.1rem}
+.go-modes i{grid-column:2;font-style:normal;opacity:.75;font-size:.95rem;line-height:1.45}
+.go-ico{grid-row:span 2;width:3rem;height:3rem;border-radius:14px;display:grid;place-items:center;background:rgba(165,199,21,.14)}
+.go-ico svg{width:1.7rem;height:1.7rem;fill:none;stroke:#A5C715;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.go-ico.tap{background:#A5C715}
+.go-ico.tap svg{stroke:#0B0E0A}
+
+@media (max-width:1000px){
+  .partner-grid{grid-template-columns:1fr 1fr}
+  .live-split,.go-split{grid-template-columns:1fr;gap:1.75rem}
+}
+@media (max-width:640px){
+  .partner-grid{grid-template-columns:1fr}
+  .live-shots{grid-template-columns:repeat(3,minmax(0,1fr));gap:.6rem}
+  .live-shots img{border-radius:14px}
+  .live-shots figcaption{font-size:.76rem}
+  .store-badge img{height:44px}
+  .site-cta .cta{width:100%;text-align:center;justify-content:center}
+}
+@media (prefers-reduced-motion:reduce){.live-dot{animation:none}.partner,.store-badge{transition:none}}

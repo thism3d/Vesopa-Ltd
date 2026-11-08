@@ -304,10 +304,9 @@ export function envelopeShape(count) {
   return o;
 }
 
-/* Bitcoin, in Bitcoin's own colours: the disc in #F7931A and the ₿ struck into
-   it in white. Vesopa Pay settles on-chain, so this is the section's subject
-   drawn literally rather than a generic token. */
-export const COIN_PALETTE = ["#F7931A", "#FFFFFF"];
+/* A coin with a glyph struck into it. No longer on the page (2026-11-08: the
+   payments section is the card partners now, see contactlessShape). */
+export const COIN_PALETTE = ["#A5C715", "#FFFFFF"];
 export function coinShape(count, regions) {
   const o = new Float32Array(count * 3);
   const disc = Math.floor(count * .72);
@@ -321,6 +320,42 @@ export function coinShape(count, regions) {
     g.fillText("₿", s * .5, s * .52);
   }, 0, 0, .10, 1.5);
   mark(regions, disc, glyph, 2);                   // white glyph
+  return o;
+}
+
+/* A payment card with the contactless mark: the payment partners' section
+   (Dojo, Stripe, Teya). No card scheme's logo, in Vesopa's own lime. */
+export const CONTACTLESS_PALETTE = ["#A5C715", "#5E7A0E"];
+export function contactlessShape(count, regions) {
+  const o = new Float32Array(count * 3);
+  const card = Math.floor(count * .62);
+  const waves = count - card;
+  glyphInto(o, 0, card, (g, s) => {
+    g.strokeStyle = "#fff";
+    g.lineWidth = s * .035;
+    const x = s * .14, y = s * .24, w = s * .72, h = s * .46, r = s * .05;
+    g.beginPath();
+    g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r);
+    g.lineTo(x + w, y + h - r); g.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    g.lineTo(x + r, y + h); g.quadraticCurveTo(x, y + h, x, y + h - r);
+    g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y);
+    g.stroke();
+    g.fillStyle = "#fff";
+    g.fillRect(s * .22, s * .36, s * .12, s * .09);            // the chip
+    g.fillRect(s * .22, s * .56, s * .30, s * .03);            // the number
+  }, 0, .02, 0, 1.86);
+  mark(regions, 0, card, 1);
+  glyphInto(o, card, waves, (g, s) => {
+    g.strokeStyle = "#fff";
+    g.lineWidth = s * .03;
+    g.lineCap = "round";
+    for (const k of [0, 1, 2]) {
+      g.beginPath();
+      g.arc(s * .58, s * .47, s * (.05 + k * .045), -Math.PI / 3.2, Math.PI / 3.2);
+      g.stroke();
+    }
+  }, 0, .02, 0, 1.86);
+  mark(regions, card, waves, 2);
   return o;
 }
 
@@ -929,7 +964,7 @@ export function buildShapes(count) {
     mk(cloudShape),                                 // 10 Vesopa Cloud
     mk(shieldShape),                                // 11 Vesopa ID — a shield
     mk(layersShape, LAYERS_PALETTE),                // 12 the whole stack — six layers
-    mk(coinShape, COIN_PALETTE),                    // 13 Vesopa Pay — Bitcoin
+    mk(contactlessShape, CONTACTLESS_PALETTE),      // 13 payment partners — a contactless card
     mk(plateShape, PLATE_PALETTE),                  // 14 built to order — a number plate
     mk(checklistShape, CHECK_PALETTE),              // 15 how it works — the project checklist
     mk(poundShape),                                 // 16 what it costs — £
@@ -949,8 +984,8 @@ export function buildShapes(count) {
    a missing or rejected matte simply leaves the procedural shape in place. */
 export async function upgradeShapes(shapes, count, base = "assets/particles/") {
   const jobs = [
-    // The photographed token used to replace the coin here; it has no ₿ and
-    // no palette regions, so Pay now keeps the procedural Bitcoin coin.
+    // The photographed token once replaced the coin here; the payments
+    // section now draws a contactless card instead.
     [1,  "till",  .45],
   ];
   const changed = [];

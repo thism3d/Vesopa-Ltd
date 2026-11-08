@@ -99,7 +99,7 @@ export const TIERS = [
 /** Flat add-ons, priced as a band each. */
 export const FEATURES = [
   { id: "brand",       label: "Brand & identity",          min: 700,  max: 2200, blurb: "Logo, palette, type, the lot." },
-  { id: "payments",    label: "Card & online payments",    min: 600,  max: 1800, blurb: "Dojo card machines, online checkout, or Vesopa Pay." },
+  { id: "payments",    label: "Card & online payments",    min: 600,  max: 1800, blurb: "Dojo, Stripe or Teya: card machines, Tap to Pay and online checkout." },
   { id: "accounts",    label: "Customer accounts",         min: 800,  max: 2400, blurb: "Login, profiles, permissions." },
   { id: "vesopa_id",   label: "Vesopa ID sign-in",         min: 400,  max: 1200, blurb: "One secure sign-in shared with every Vesopa app." },
   { id: "cms",         label: "Content editing",           min: 500,  max: 1600, blurb: "You change the words, not us." },
