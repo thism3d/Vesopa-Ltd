@@ -35,7 +35,63 @@ PaymentOutcome stripeFailure(TerminalException e, {String? paymentId}) {
     return PaymentOutcome(PayResult.cancelled, paymentId: paymentId);
   }
   // Anything else may or may not have reached the card, so it is never "failed".
-  return PaymentOutcome(PayResult.uncertain, paymentId: paymentId, message: e.message);
+  return PaymentOutcome(PayResult.uncertain, paymentId: paymentId, message: tapProblemWords(e));
+}
+
+/// A Tap to Pay problem that is not the bank's answer, in words the clerk can
+/// act on (2026-11-09: an iPhone's Apple Pay on the Kitchen's Android phone
+/// timed out, then broke off, and Go only said Stripe's own sentence).
+String tapProblemWords(TerminalException e) {
+  const hold =
+      'Hold the card, phone or watch flat on the back of this device, near the top, and keep it still until the tick.';
+  const wallet = 'On an iPhone or Apple Watch, double-click the side button and look at it (or enter the passcode) first.';
+  return switch (e.code) {
+    TerminalExceptionCode.cardReadTimedOut => 'No card or phone was read in time. Nothing was taken. $hold $wallet',
+    TerminalExceptionCode.cardRemoved ||
+    TerminalExceptionCode.cardInsertNotRead ||
+    TerminalExceptionCode.cardSwipeNotRead ||
+    TerminalExceptionCode.unexpectedReaderError ||
+    TerminalExceptionCode.missingEmvData => 'The card or phone moved away before it was read. Nothing was taken. Try again. $hold',
+    TerminalExceptionCode.unexpectedSdkError when e.message.contains('reader failure') =>
+      'The card or phone moved away before it was read. Nothing was taken. Try again. $hold $wallet',
+    TerminalExceptionCode.tapToPayPinUnavailable =>
+      'This card needs its PIN and this phone cannot take PINs. Nothing was taken. Use the card machine, or pay with a phone or watch wallet.',
+    TerminalExceptionCode.nfcDisabled => 'NFC is off on this phone. Turn on NFC in Settings, then try again. Nothing was taken.',
+    TerminalExceptionCode.commandNotAllowedDuringCall => 'Tap to Pay cannot run during a phone call. End the call and try again. Nothing was taken.',
+    TerminalExceptionCode.notConnectedToInternet ||
+    TerminalExceptionCode.internetConnectTimeOut ||
+    TerminalExceptionCode.requestTimedOut ||
+    TerminalExceptionCode.stripeApiConnectionError ||
+    TerminalExceptionCode.internalNetworkError =>
+      'This phone lost its connection to Stripe. Check Wi-Fi or mobile data and check the payment before taking it again.',
+    TerminalExceptionCode.stripeApiError || TerminalExceptionCode.stripeApiResponseDecodingError =>
+      'Stripe had a problem with this payment (${e.message}). Check the payment before taking it again.',
+    TerminalExceptionCode.connectionTokenProviderError || TerminalExceptionCode.sessionExpired =>
+      'Tap to Pay needs to sign in to Stripe again. Nothing was taken. Try again in a moment.',
+    TerminalExceptionCode.notConnectedToReader || TerminalExceptionCode.readerBusy =>
+      'Tap to Pay was not ready on this phone. Nothing was taken. Try again.',
+    TerminalExceptionCode.tapToPayUnsupportedDevice ||
+    TerminalExceptionCode.tapToPayUnsupportedOperatingSystemVersion =>
+      'This phone cannot take Tap to Pay (it needs NFC and an up-to-date system). Use the card machine.',
+    TerminalExceptionCode.tapToPayDeviceTampered ||
+    TerminalExceptionCode.tapToPayInsecureEnvironment ||
+    TerminalExceptionCode.tapToPayDebugNotSupported =>
+      'Tap to Pay will not run on this phone while developer options, screen sharing or a rooted system are on. Turn them off, or use the card machine.',
+    TerminalExceptionCode.tapToPayReaderTOSAcceptanceCanceled ||
+    TerminalExceptionCode.tapToPayReaderTOSNotYetAccepted ||
+    TerminalExceptionCode.tapToPayReaderTOSAcceptanceFailed ||
+    TerminalExceptionCode.tapToPayReaderTOSAcceptanceRequiresiCloudSignIn =>
+      "Apple's Tap to Pay terms have to be accepted on this iPhone first (signed in to iCloud). Open More, Set up Tap to Pay on this iPhone.",
+    TerminalExceptionCode.tapToPayReaderMerchantBlocked ||
+    TerminalExceptionCode.tapToPayReaderInvalidMerchant ||
+    TerminalExceptionCode.tapToPayReaderAccountDeactivated ||
+    TerminalExceptionCode.tapToPayReaderDeviceBanned ||
+    TerminalExceptionCode.featureNotEnabledOnAccount =>
+      "The venue's Stripe account cannot take Tap to Pay on this device right now. Use the card machine and contact Vesopa.",
+    TerminalExceptionCode.passcodeNotEnabled => 'Tap to Pay needs a screen lock (passcode) on this phone. Set one in Settings, then try again.',
+    TerminalExceptionCode.invalidAmount => 'Card payments with Stripe must be at least £0.30. Nothing was taken.',
+    _ => '${e.message.trim().isEmpty ? 'Tap to Pay stopped.' : e.message.trim()} Nothing was taken. Try again, or pay another way.',
+  };
 }
 
 class StripeTapToPay implements PaymentService {
@@ -399,7 +455,7 @@ class StripeTapToPay implements PaymentService {
       final f = stripeFailure(sdk, paymentId: id);
       if (f.result == PayResult.declined) {
         unawaited(api.stripeCancel(id).catchError((Object _) => <String, dynamic>{}));
-        return PaymentOutcome(PayResult.declined, paymentId: id, message: sdk.message);
+        return PaymentOutcome(PayResult.declined, paymentId: id, message: declineWords({'message': sdk.message}));
       }
     }
     return _callOff(
@@ -407,7 +463,7 @@ class StripeTapToPay implements PaymentService {
       message:
           message ??
           (sdk != null && !cancelledByClerk && sdk.code != TerminalExceptionCode.canceled
-              ? '${sdk.message} Nothing was taken.'
+              ? tapProblemWords(sdk)
               : null),
     );
   }
@@ -433,7 +489,16 @@ class StripeTapToPay implements PaymentService {
 
 /// A bank's decline in words for the clerk and the customer, with what to do.
 String declineWords(Map<String, dynamic> error) {
+  // Stripe's own fraud check (Radar) stopped it before the bank saw it: the
+  // same card tried again straight away is stopped again (2026-11-09, a
+  // Bangladeshi debit card at the Kitchen after its bank's first refusal).
+  if (error['blocked'] == true) {
+    return 'Stripe stopped this card as too risky after the earlier tries, before the bank saw it. '
+        'No money was taken. Do not try this card again now: ask for another card, or pay another way.';
+  }
   final code = '${error['decline_code'] ?? error['code'] ?? ''}';
+  final country = '${error['card_country'] ?? ''}'.toUpperCase();
+  final abroad = country.isNotEmpty && country != 'GB';
   final said = switch (code) {
     'insufficient_funds' => 'Not enough money on this card.',
     'expired_card' => 'This card has expired.',
@@ -447,7 +512,11 @@ String declineWords(Map<String, dynamic> error) {
     _ =>
       (error['message'] as String?)?.trim().isNotEmpty == true ? '${error['message']}' : 'The bank declined the card.',
   };
-  return '$said No money was taken. Ask for another card, or pay another way.';
+  final foreign = abroad && const {'transaction_not_allowed', 'card_not_supported', 'do_not_honor', 'generic_decline', 'card_declined', 'restricted_card'}.contains(code)
+      ? ' This card is from abroad ($country): its bank may need to allow payments in the UK or contactless payments.'
+      : '';
+  final later = error['advice'] == 'try_again_later' && !abroad ? ' The bank says try again later.' : '';
+  return '$said$foreign$later No money was taken. Ask for another card, or pay another way.';
 }
 
 class _Stopped implements Exception {

@@ -32,4 +32,23 @@ void main() {
     expect(out.result, PayResult.uncertain);
     expect(out.paymentId, 'pi_1');
   });
+
+  // 2026-11-09, the Kitchen's Android phone: an iPhone's Apple Pay timed out,
+  // then broke off, and Go only showed Stripe's own sentence.
+  test('a wallet not read in time, or moved away, says what to do', () {
+    TerminalException e(TerminalExceptionCode code, [String m = '']) =>
+        TerminalException(code: code, message: m, stackTrace: null, paymentIntent: null, apiError: null);
+    final late = tapProblemWords(e(TerminalExceptionCode.cardReadTimedOut, 'Collection timed out.'));
+    expect(late, contains('No card or phone was read in time'));
+    expect(late, contains('double-click the side button'));
+    expect(late, contains('Nothing was taken'));
+    final moved = tapProblemWords(e(
+      TerminalExceptionCode.unexpectedSdkError,
+      "Collection failed java.lang.IllegalStateException: App Error: SERVER_ERROR 'Transaction failed with unexpected reader failure.'",
+    ));
+    expect(moved, contains('moved away before it was read'));
+    expect(tapProblemWords(e(TerminalExceptionCode.tapToPayPinUnavailable)), contains('PIN'));
+    expect(tapProblemWords(e(TerminalExceptionCode.nfcDisabled)), contains('NFC is off'));
+    expect(tapProblemWords(e(TerminalExceptionCode.unknown, '')), contains('Nothing was taken'));
+  });
 }

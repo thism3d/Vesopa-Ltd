@@ -15,6 +15,21 @@ void main() {
     expect(declineWords({'code': 'card_declined', 'decline_code': 'something_new', 'message': 'Call your bank.'}), startsWith('Call your bank.'));
   });
 
+  test('a card Stripe\'s fraud check stopped says not to try it again', () {
+    final w = declineWords({'code': 'card_declined', 'blocked': true, 'card_country': 'BD'});
+    expect(w, contains('too risky'));
+    expect(w, contains('Do not try this card again'));
+    expect(w, contains('No money was taken'));
+  });
+
+  test('a foreign card refused by its bank says the bank may need to allow it', () {
+    final w = declineWords({'decline_code': 'transaction_not_allowed', 'card_country': 'BD', 'advice': 'try_again_later'});
+    expect(w, contains('from abroad (BD)'));
+    expect(w, isNot(contains('try again later')));
+    expect(declineWords({'decline_code': 'generic_decline', 'card_country': 'GB'}), isNot(contains('abroad')));
+    expect(declineWords({'decline_code': 'generic_decline', 'advice': 'try_again_later'}), contains('try again later'));
+  });
+
   test('no funds and a wrong PIN read plainly', () {
     expect(declineWords({'decline_code': 'insufficient_funds'}), startsWith('Not enough money'));
     expect(declineWords({'decline_code': 'incorrect_pin'}), startsWith('The PIN was wrong'));

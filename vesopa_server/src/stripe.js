@@ -275,14 +275,31 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
     try {
       const row = await settingsFor(req.office);
       if (!row || !row.account_id) return res.status(404).json({ error: 'No Stripe account.' });
-      const pi = await client.retrievePayment(row.account_id, req.params.id, client.optsFor(row));
+      const pi = await client.retrievePayment(row.account_id, req.params.id, { ...client.optsFor(row), expandCharge: true });
       // The bank's answer, so Go shows a decline even when the phone's own
       // Stripe software never reports it (2026-11-08, Kitchen iPhone 12).
       const e = pi.last_payment_error || null;
+      // Why the card failed, from the charge (2026-11-09): Stripe's fraud
+      // check stopping it (outcome.type 'blocked') is not the bank saying no,
+      // and a card from abroad often needs its bank to allow UK payments.
+      const ch = pi.latest_charge && typeof pi.latest_charge === 'object' ? pi.latest_charge : null;
+      const failed = ch && ch.status === 'failed' && pi.status === 'requires_payment_method' ? ch : null;
+      const o = (failed && failed.outcome) || {};
+      const card = (ch && ch.payment_method_details && ch.payment_method_details.card_present) || {};
       res.json({
         id: pi.id, status: pi.status, amount_minor: pi.amount, amount_received: pi.amount_received,
-        charge: typeof pi.latest_charge === 'string' ? pi.latest_charge : (pi.latest_charge && pi.latest_charge.id) || null,
-        error: e ? { code: e.code || null, decline_code: e.decline_code || null, message: e.message || null, charge: e.charge || null } : null,
+        charge: ch ? ch.id : (pi.latest_charge || null),
+        error: e || failed ? {
+          code: (e && e.code) || (failed && failed.failure_code) || null,
+          decline_code: (e && e.decline_code) || null,
+          message: (e && e.message) || (failed && failed.failure_message) || null,
+          charge: (e && e.charge) || (failed && failed.id) || null,
+          blocked: o.type === 'blocked',
+          reason: o.reason || null,
+          advice: o.advice_code || null,
+          network_code: o.network_decline_code || null,
+          card_country: card.country || null,
+        } : null,
       });
     } catch (e) { fail(res, e, next); }
   });

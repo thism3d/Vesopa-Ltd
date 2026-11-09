@@ -154,11 +154,13 @@ class _CardPayScreenState extends State<CardPayScreen> {
     final r = w.result?.result;
     final failed = r != null && r != PayResult.paid;
     final paid = r == PayResult.paid || (r == null && w.step == CardStep.done);
+    // The reason, when there is one: a blank one never leaves the clerk guessing.
+    final said = (w.result?.message ?? '').trim().isEmpty ? null : w.result!.message!.trim();
     final (title, words, colour) = switch (r) {
-      PayResult.declined => ('Payment declined', w.result?.message ?? 'The bank said no. No money has been taken. Try again, or pay another way.', Tp.danger),
-      PayResult.cancelled => ('Payment cancelled', 'Nothing was taken.', _amber),
-      PayResult.uncertain => ('Payment not confirmed', w.result?.message ?? 'The payment provider has not answered yet. Check the payment before taking it again.', _amber),
-      PayResult.unavailable => ('Payment failed', w.result?.message ?? 'Card payments are not available on this device.', Tp.danger),
+      PayResult.declined => ('Payment declined', said ?? 'The bank said no. No money has been taken. Try again, or pay another way.', Tp.danger),
+      PayResult.cancelled => ('Payment cancelled', said ?? 'Nothing was taken.', _amber),
+      PayResult.uncertain => ('Payment not confirmed', said ?? 'The payment provider has not answered yet. Check the payment before taking it again.', _amber),
+      PayResult.unavailable => ('Payment failed', said ?? 'Card payments are not available on this device.', Tp.danger),
       PayResult.paid => ('Payment approved', 'Thank you.', Tp.lime),
       null => (w.step.label, w.detail ?? '', w.step == CardStep.done ? Tp.lime : Colors.white),
     };

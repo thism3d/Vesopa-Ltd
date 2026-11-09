@@ -319,8 +319,11 @@ function readerState(pi, reader) {
   return { state: 'pending', prompt: 'present card' };
 }
 
+/** opts.expandCharge: the latest charge comes whole (its outcome says why it failed). */
 function retrievePayment(account, id, opts = {}) {
-  return call('GET', `/v1/payment_intents/${encodeURIComponent(id)}`, { ...opts, account });
+  const { expandCharge, ...rest } = opts;
+  const q = expandCharge ? '?expand[]=latest_charge' : '';
+  return call('GET', `/v1/payment_intents/${encodeURIComponent(id)}${q}`, { ...rest, account });
 }
 
 function cancelPayment(account, id, opts = {}) {

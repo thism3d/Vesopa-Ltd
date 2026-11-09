@@ -159,6 +159,35 @@ async function check(name, fn) {
     assert.strictEqual(small.status, 400);
   });
 
+  await check('a card Stripe\'s fraud check stopped says so, with the card\'s country', async () => {
+    const pool = fakePool();
+    const client = fakeClient({ status: 'active' });
+    let asked;
+    client.retrievePayment = async (acct, id, opts) => {
+      asked = opts;
+      return {
+        id: 'pi_2', status: 'requires_payment_method', amount: 50, amount_received: 0,
+        last_payment_error: null,
+        latest_charge: {
+          id: 'ch_2', status: 'failed', failure_code: 'card_declined', failure_message: 'Your card was declined.',
+          outcome: { type: 'blocked', reason: 'highest_risk_level', advice_code: null, network_decline_code: null },
+          payment_method_details: { card_present: { country: 'BD' } },
+        },
+      };
+    };
+    const server = await listen(appWith(pool, client));
+    await call(server, 'POST', '/api/stripe/account', { token: session });
+    await call(server, 'PUT', '/api/stripe-settings', { token: session, body: { enabled: true, uses: { tap: true } } });
+    const r = await call(server, 'GET', '/api/till/stripe/payments/pi_2', { token: terminal });
+    server.close();
+    assert.strictEqual(asked.expandCharge, true);
+    assert.strictEqual(r.body.charge, 'ch_2');
+    assert.strictEqual(r.body.error.blocked, true, JSON.stringify(r.body));
+    assert.strictEqual(r.body.error.reason, 'highest_risk_level');
+    assert.strictEqual(r.body.error.card_country, 'BD');
+    assert.strictEqual(r.body.error.code, 'card_declined');
+  });
+
   await check('an unsigned webhook is refused', async () => {
     const server = await listen(appWith(fakePool(), fakeClient()));
     const r = await call(server, 'POST', '/api/stripe/webhook', { body: { type: 'x' } });
