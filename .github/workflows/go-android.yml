@@ -153,12 +153,28 @@ jobs:
           mkdir -p "$out"
           cp build/app/outputs/bundle/release/app-release.aab "$out/$APP-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}.aab"
           ls -la "$out"
+          # The same build as an APK, signed with the upload key, for
+          # go.vesopa.com/install (owner, 2026-11-09: "Can we do the same for
+          # Android?"). Kept apart from android-builds so Play never sees it.
+          flutter build apk --release \
+            --build-name="${{ steps.num.outputs.version }}" --build-number="${{ steps.num.outputs.build }}"
+          apk="$RUNNER_TEMP/android-apk"
+          mkdir -p "$apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "$apk/VesopaGo-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}.apk"
+          ls -la "$apk"
 
       - uses: actions/upload-artifact@v4
         if: inputs.mode != 'listing' && inputs.mode != 'promote'
         with:
           name: vesopa-go-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}
           path: ${{ runner.temp }}/android-builds/*.aab
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        with:
+          name: vesopa-go-apk
+          path: ${{ runner.temp }}/android-apk/*.apk
           retention-days: 30
 
       - name: Upload to Google Play
