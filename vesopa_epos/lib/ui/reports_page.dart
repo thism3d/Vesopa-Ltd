@@ -429,14 +429,14 @@ class _ReportBody extends StatelessWidget {
         const _Heading('Cash drawer'),
         _Stat(label: 'Opening float', value: money(report.openingFloatMinor)),
         _Stat(label: '+ Cash sales', value: money(report.cashSalesMinor)),
-        if (report.paidIn.count > 0)
-          _Stat(label: '+ Paid in  [${report.paidIn.count}]', value: money(report.paidIn.amountMinor)),
-        if (report.expenses.count > 0)
-          _Stat(label: '− Paid out  [${report.expenses.count}]', value: money(report.expenses.amountMinor)),
+        // Paid in, paid out and cashback always show, at £0.00 too, so the
+        // drawer's sum reads the same every day (Pontardawe, 2026-11-12: a Z
+        // with no cashback that day looked as if cashback was never counted).
+        _Stat(label: '+ Paid in  [${report.paidIn.count}]', value: money(report.paidIn.amountMinor)),
+        _Stat(label: '− Paid out  [${report.expenses.count}]', value: money(report.expenses.amountMinor)),
         if (report.cashRefundsMinor > 0)
           _Stat(label: '− Cash refunds', value: money(report.cashRefundsMinor)),
-        if (report.cashbackMinor > 0)
-          _Stat(label: '− Cashback given', value: money(report.cashbackMinor)),
+        _Stat(label: '− Cashback given', value: money(report.cashbackMinor)),
         _Stat(
           label: 'Expected in drawer',
           value: money(report.expectedCashMinor),

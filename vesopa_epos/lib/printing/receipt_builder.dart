@@ -979,18 +979,14 @@ class ReceiptBuilder {
     // can follow down the paper (2026-10-26).
     bytes.addAll(_row('Float', _money(report.openingFloatMinor)));
     bytes.addAll(_row('+ Cash sales', _money(report.cashSalesMinor)));
-    if (report.paidIn.count > 0) {
-      bytes.addAll(_row('+ Paid in [${report.paidIn.count}]', _money(report.paidIn.amountMinor)));
-    }
-    if (report.expenses.count > 0) {
-      bytes.addAll(_row('- Paid out [${report.expenses.count}]', _money(report.expenses.amountMinor)));
-    }
+    // Paid in, paid out and cashback print every time, at 0.00 too, so the
+    // sum down the paper is the same shape every day (Pontardawe, 2026-11-12).
+    bytes.addAll(_row('+ Paid in [${report.paidIn.count}]', _money(report.paidIn.amountMinor)));
+    bytes.addAll(_row('- Paid out [${report.expenses.count}]', _money(report.expenses.amountMinor)));
     if (report.cashRefundsMinor > 0) {
       bytes.addAll(_row('- Cash refunds', _money(report.cashRefundsMinor)));
     }
-    if (report.cashbackMinor > 0) {
-      bytes.addAll(_row('- Cashback given', _money(report.cashbackMinor)));
-    }
+    bytes.addAll(_row('- Cashback given', _money(report.cashbackMinor)));
     bytes.addAll(
       _rowText([
         _col(

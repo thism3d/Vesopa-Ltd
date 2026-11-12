@@ -86,6 +86,19 @@ void main() {
       expect(endsWith(bytes, [0x1B, 0x64, 6, 0x1D, 0x56, 1]), isTrue);
     });
 
+    // Pontardawe, 2026-11-12: a Z with no cashback that day had no Cashback
+    // line, and read as if cashback was never counted.
+    test('the Z prints paid in, paid out and cashback even at 0.00', () async {
+      final b = await ReceiptBuilder.forPrinter(
+        const PrinterConfig(id: 'z', name: 'Counter', kind: PrinterKind.network, host: 'x'),
+      );
+      final text = String.fromCharCodes(b.tillReport(_report(), shopName: 'Pontardawe RFC'));
+      expect(text, contains('+ Paid in [0]'));
+      expect(text, contains('- Paid out [0]'));
+      expect(text, contains('- Cashback given'));
+      expect(text, contains('CASH EXPECTED'));
+    });
+
     test('the test slip says it arrived in full', () async {
       const p = PrinterConfig(id: 't', name: 'T', kind: PrinterKind.network, host: 'x');
       final b = await ReceiptBuilder.forPrinter(p);

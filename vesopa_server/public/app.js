@@ -18036,6 +18036,7 @@ async function loadRunReport() {
     // Yesterday rather than Today, because the question a manager opens this
     // page to answer is almost always about a day that has finished.
     $('rr-period').value = 'yesterday';
+    rrRangeSetup();
 
     $('rr-period').addEventListener('change', rrToggleCustom);
     $('rr-report').addEventListener('change', rrNameReport);
@@ -18084,19 +18085,151 @@ function rrFillTerminals() {
 }
 
 /** The two date boxes only exist for Custom Range, and never with a week. */
-function rrToggleCustom() {
-  const custom = $('rr-period').value === 'custom' && $('rr-period-field').hidden === false;
-  $('rr-from-field').hidden = !custom;
-  $('rr-to-field').hidden = !custom;
-  if (custom && !$('rr-from').value) {
-    // Seeded with a sensible week rather than left blank, so the first press of
-    // Run does something instead of complaining.
-    const today = new Date();
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 6);
-    $('rr-from').value = weekAgo.toISOString().slice(0, 10);
-    $('rr-to').value = today.toISOString().slice(0, 10);
+// ---- Start / End Date & Time (2026-11-12) ---------------------------------
+//
+// Pontardawe's stock taker asked for Newbridge's picker: quick choices (Today,
+// Yesterday, Last 7 Days ...) or a start date AND time and a finish date AND
+// time, then Apply. The period select keeps the choice for rrSpec; rr-from and
+// rr-to carry the times when it is a custom range. The server reads a value
+// with a time as that minute, and a bare date as the whole day.
+
+/** The window a quick choice means, worked out as the server does. */
+function rrRangeOf(key, now = new Date()) {
+  const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const end = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59);
+  const add = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const today = day(now);
+  const monday = add(today, -((today.getDay() + 6) % 7));
+  switch (key) {
+    case 'today': return [today, end(now)];
+    case 'yesterday': return [add(today, -1), end(add(today, -1))];
+    case 'last_7_days': return [add(today, -6), end(now)];
+    case 'last_30_days': return [add(today, -29), end(now)];
+    case 'this_week': return [monday, end(now)];
+    case 'last_week': return [add(monday, -7), end(add(monday, -1))];
+    case 'this_month': return [new Date(now.getFullYear(), now.getMonth(), 1), end(now)];
+    case 'last_month': return [new Date(now.getFullYear(), now.getMonth() - 1, 1), end(new Date(now.getFullYear(), now.getMonth(), 0))];
+    case 'this_year': return [new Date(now.getFullYear(), 0, 1), end(now)];
+    case 'last_year': return [new Date(now.getFullYear() - 1, 0, 1), end(new Date(now.getFullYear() - 1, 11, 31))];
+    default: return null;
   }
+}
+
+/** "11 Nov 2026 06:30" for the button and the note. */
+function rrRangeText(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
+  const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const p = (n) => String(n).padStart(2, '0');
+  return `${date} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** The two times the picker holds now, as Dates. */
+function rrRangeDates() {
+  const read = (v) => (v ? new Date(v) : null);
+  return [read($('rr-range-start').value), read($('rr-range-end').value)];
+}
+
+let rrRangeKey = 'yesterday';
+
+/** The button says what will run: the choice's name and its exact window. */
+function rrRangeLabel() {
+  const key = $('rr-period').value;
+  const span = key === 'custom'
+    ? [new Date($('rr-from').value), new Date($('rr-to').value)]
+    : rrRangeOf(key);
+  const name = key === 'custom' ? 'Custom range' : ($('rr-period').selectedOptions[0] || {}).text || '';
+  const when = span ? `${rrRangeText(span[0])} – ${rrRangeText(span[1])}` : '';
+  $('rr-range-btn').innerHTML = `<span class="rr-range-name">${esc(name)}</span>`
+    + (when ? `<span class="rr-range-when">${esc(when)}</span>` : '');
+  $('rr-range-btn').dataset.label = when ? `${name}, ${when}` : name;
+}
+
+function rrRangeMark(key) {
+  rrRangeKey = key;
+  document.querySelectorAll('#rr-range-presets button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.key === key);
+    b.setAttribute('aria-pressed', String(b.dataset.key === key));
+  });
+  const [s, e] = rrRangeDates();
+  $('rr-range-note').textContent = s && e
+    ? `${rrRangeText(s)} – ${rrRangeText(e)}${s > e ? ' (the finish is before the start: they will be swapped)' : ''}`
+    : 'Choose a start and a finish.';
+}
+
+function rrRangeOpen(open) {
+  const pop = $('rr-range-pop');
+  pop.hidden = !open;
+  $('rr-range-btn').setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  // Open on what is chosen now, so Cancel and Apply both start from it.
+  const key = $('rr-period').value;
+  const span = key === 'custom'
+    ? [new Date($('rr-from').value), new Date($('rr-to').value)]
+    : rrRangeOf(key) || rrRangeOf('today');
+  $('rr-range-start').value = dashLocal(span[0]);
+  $('rr-range-end').value = dashLocal(span[1]);
+  rrRangeMark(key);
+}
+
+/** Apply the picker: a quick choice by its name, anything else as custom. */
+function rrRangeApply() {
+  if (rrRangeKey !== 'custom') {
+    $('rr-period').value = rrRangeKey;
+    $('rr-from').value = '';
+    $('rr-to').value = '';
+  } else {
+    let [s, e] = rrRangeDates();
+    if (!s || !e || Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) {
+      $('rr-range-note').textContent = 'Choose a start and a finish date and time.';
+      return;
+    }
+    if (s > e) [s, e] = [e, s];
+    $('rr-period').value = 'custom';
+    $('rr-from').value = dashLocal(s);
+    $('rr-to').value = dashLocal(e);
+  }
+  rrRangeOpen(false);
+  rrRangeLabel();
+  rrNameReport();
+}
+
+/** Once, when the catalogue has arrived: the quick choices and the wiring. */
+function rrRangeSetup() {
+  $('rr-range-presets').innerHTML = (rrCatalogue.ranges || [])
+    .map((r) => `<li><button type="button" data-key="${esc(r.key)}">${esc(r.key === 'custom' ? 'Custom Range' : r.label)}</button></li>`)
+    .join('');
+  $('rr-range-presets').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-key]');
+    if (!b) return;
+    const span = rrRangeOf(b.dataset.key);
+    if (span) {
+      // A quick choice is chosen at once, as Newbridge does.
+      $('rr-range-start').value = dashLocal(span[0]);
+      $('rr-range-end').value = dashLocal(span[1]);
+      rrRangeMark(b.dataset.key);
+      rrRangeApply();
+    } else {
+      rrRangeMark('custom');
+      $('rr-range-start').focus();
+    }
+  });
+  for (const id of ['rr-range-start', 'rr-range-end']) {
+    $(id).addEventListener('input', () => rrRangeMark('custom'));
+  }
+  $('rr-range-btn').addEventListener('click', () => rrRangeOpen($('rr-range-pop').hidden));
+  $('rr-range-cancel').addEventListener('click', () => rrRangeOpen(false));
+  $('rr-range-apply').addEventListener('click', rrRangeApply);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('rr-range-pop').hidden) rrRangeOpen(false);
+  });
+  document.addEventListener('click', (e) => {
+    if ($('rr-range-pop').hidden || e.target.closest('#rr-period-field')) return;
+    rrRangeOpen(false);
+  });
+}
+
+function rrToggleCustom() {
+  rrRangeLabel();
 }
 
 /** What the run, the preview and the download all send. */
@@ -18325,13 +18458,13 @@ async function rrExport() {
  * a misleading name on it.
  */
 function rrView() {
-  const period = $('rr-period');
-  const window_ = period.options[period.selectedIndex];
+  // What the date button says: the choice and its exact window.
+  const when = $('rr-range-btn').dataset.label || '';
   viewReport({
     path: '/api/reports/export',
     body: { ...rrSpec(), format: 'pdf', disposition: 'inline' },
     title: $('rr-report').options[$('rr-report').selectedIndex].text,
-    subtitle: `${window_ ? window_.text : ''} · ${
+    subtitle: `${when} · ${
       $('rr-terminal').options[$('rr-terminal').selectedIndex].text
     }`,
   });

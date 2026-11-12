@@ -119,6 +119,14 @@ const PAYMENTS = [
 
 const summaryPool = () =>
   fakePool([
+    // Card cashback and the drawer's own events (2026-11-12).
+    ['AS cashback_total', [{ cashback_count: 2, cashback_total: 4000 }]],
+    ['FROM epos_till_events', [
+      { kind: 'cashback', note: null, amount_minor: 1000 },
+      { kind: 'paid_in', note: 'Bank', amount_minor: 5000 },
+      { kind: 'expense', note: 'Window cleaner', amount_minor: 1500 },
+      { kind: 'expense', note: 'Milk', amount_minor: 250 },
+    ]],
     ['AS sub_department', LINES],
     ['AS bills', [GENERAL]],
     ['epos_gift_card_txns', [{ count: 1, total_minor: 2500 }]],
@@ -207,6 +215,14 @@ check('a custom range typed backwards is read as a range, not as nothing', () =>
   assert.strictEqual(r.to.getDate(), 27);
 });
 
+check('a custom range with times keeps them; dates alone are whole days (2026-11-12)', () => {
+  const r = resolveRange('custom', { from: '2026-11-11T06:30', to: '2026-11-12T02:15' });
+  assert.deepStrictEqual([r.from.getDate(), r.from.getHours(), r.from.getMinutes()], [11, 6, 30]);
+  assert.deepStrictEqual([r.to.getDate(), r.to.getHours(), r.to.getMinutes(), r.to.getSeconds()], [12, 2, 15, 59]);
+  const day = resolveRange('custom', { from: '2026-11-11', to: '2026-11-11' });
+  assert.deepStrictEqual([day.from.getHours(), day.to.getHours(), day.to.getMinutes()], [0, 23, 59]);
+});
+
 check('a custom range with nothing in it is refused', () => {
   assert.strictEqual(resolveRange('custom', {}), null);
   assert.strictEqual(resolveRange('custom', { from: 'nonsense', to: 'x' }), null);
@@ -261,10 +277,25 @@ check('it has every section the reference report has', async () => {
       'General',
       'Other Discounts',
       'Expenses',
+      'Cash In Drawer (on top of the floats)',
       'Spend Per Head',
       'Payment Methods',
     ]
   );
+});
+
+check('cashback, paid in and paid out are counted, and the drawer adds up (2026-11-12)', async () => {
+  const report = await build();
+  const general = sectionNamed(report, 'General').rows;
+  const row = (n) => general.find((r) => r.name === n);
+  assert.deepStrictEqual([row('Cashback').count, row('Cashback').total_minor], [3, 5000]);
+  assert.deepStrictEqual([row('Paid In').count, row('Paid In').total_minor], [1, 5000]);
+  assert.deepStrictEqual([row('Paid Out').count, row('Paid Out').total_minor], [2, 1750]);
+  assert.deepStrictEqual(sectionNamed(report, 'Expenses').rows.map((r) => r.name), ['Milk', 'Window cleaner']);
+  const drawer = sectionNamed(report, 'Cash In Drawer (on top of the floats)');
+  assert.strictEqual(drawer.total.name, 'Expected cash in drawers');
+  // Cash £178.06 + paid in £50 - paid out £17.50 - cashback £50 = £160.56
+  assert.strictEqual(drawer.total.total_minor, 17806 + 5000 - 1750 - 5000);
 });
 
 check('departments and sub departments are two views of one set of rows', async () => {

@@ -160,10 +160,21 @@ function resolveRange(period, { from, to, now = new Date() } = {}) {
       if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
         return null;
       }
+      // A date alone is the whole day; a date with a time is that minute
+      // (2026-11-12: Pontardawe's stock taker picks a start and finish date
+      // AND time, as Newbridge lets them). The finish minute is included.
+      const timed = (v) => /\d{1,2}:\d{2}/.test(String(v));
+      const lo = (d, v) => (timed(v) ? d : startOfDay(d));
+      const hi = (d, v) => {
+        if (!timed(v)) return endOfDay(d);
+        const out = new Date(d);
+        out.setSeconds(59, 999);
+        return out;
+      };
       // A range typed backwards is a slip, not a request for no rows.
       return start <= end
-        ? { from: startOfDay(start), to: endOfDay(end) }
-        : { from: startOfDay(end), to: endOfDay(start) };
+        ? { from: lo(start, from), to: hi(end, to) }
+        : { from: lo(end, to), to: hi(start, from) };
     }
     default:
       return null;
@@ -505,13 +516,61 @@ async function financialSummary({ pool, office, from, to, siteName, terminal }) 
     .catch(() => [[]]);
   const topups = topupRows[0] || { count: 0, total_minor: 0 };
 
+  // ---- The drawer's own movements (2026-11-12) ---------------------------
+  //
+  // Cashback was printed here as a fixed zero from before the till took any;
+  // Pontardawe had £340 of it in the month and the report still said £0.00.
+  // Card cashback rides on the payment; cashback, paid in and paid out at the
+  // drawer come from the till's events, in the same window and terminal.
+  const [cashbackRows] = await pool.query(
+    `SELECT COALESCE(SUM(pay.cashback_minor > 0), 0) AS cashback_count,
+            COALESCE(SUM(pay.cashback_minor), 0)     AS cashback_total
+       FROM epos_payments pay
+       JOIN epos_orders o ON o.id = pay.order_id
+      WHERE ${window}`,
+    params
+  );
+  const eventWindow = ['e.office = ? AND e.at BETWEEN ? AND ?'];
+  const eventParams = [office, sqlDateTime(from), sqlDateTime(to)];
+  if (terminal === UNKNOWN_TERMINAL) eventWindow.push("(e.terminal IS NULL OR e.terminal = '')");
+  else if (terminal) {
+    eventWindow.push('e.terminal = ?');
+    eventParams.push(terminal);
+  }
+  const [eventRows] = await pool
+    .query(
+      `SELECT e.kind, e.note, e.amount_minor
+         FROM epos_till_events e
+        WHERE ${eventWindow.join(' AND ')} AND e.kind IN ('cashback', 'paid_in', 'expense')`,
+      eventParams
+    )
+    .catch(() => [[]]);
+  const tally = (kind) => eventRows
+    .filter((e) => e.kind === kind)
+    .reduce((t, e) => ({ count: t.count + 1, total_minor: t.total_minor + Math.abs(Number(e.amount_minor) || 0) }), { count: 0, total_minor: 0 });
+  const drawerCashback = tally('cashback');
+  const paidIn = tally('paid_in');
+  const paidOut = tally('expense');
+  const cashback = {
+    count: Number((cashbackRows[0] || {}).cashback_count || 0) + drawerCashback.count,
+    total_minor: Number((cashbackRows[0] || {}).cashback_total || 0) + drawerCashback.total_minor,
+  };
+  // Paid out, by who it went to, for the Expenses section.
+  const expenseBy = new Map();
+  for (const e of eventRows.filter((x) => x.kind === 'expense')) {
+    const name = String(e.note || '').trim() || 'Paid out';
+    const row = expenseBy.get(name) || { name, count: 0, total_minor: 0 };
+    row.count += 1;
+    row.total_minor += Math.abs(Number(e.amount_minor) || 0);
+    expenseBy.set(name, row);
+  }
+  const expenseRows = [...expenseBy.values()].sort((a, b) => a.name.localeCompare(b.name));
+
   const generalRows = [
     { name: 'Gratuities', count: Number(general.gratuity_count), total_minor: Number(general.gratuity_minor) },
-    // Not recorded by the till: it takes no cashback and does no cash
-    // rounding. Printed as zero rather than omitted so the report keeps the
-    // shape a manager is used to reading, and so the day either is added the
-    // line is already where they expect it.
-    { name: 'Cashback', count: 0, total_minor: 0 },
+    { name: 'Cashback', count: cashback.count, total_minor: cashback.total_minor },
+    { name: 'Paid In', count: paidIn.count, total_minor: paidIn.total_minor },
+    { name: 'Paid Out', count: paidOut.count, total_minor: paidOut.total_minor },
     { name: 'Service Charges', count: Number(general.service_count), total_minor: Number(general.service_minor) },
     { name: 'Gift Card Topup', count: Number(topups.count), total_minor: Number(topups.total_minor) },
     { name: 'Cash Rounding', count: 0, total_minor: 0 },
@@ -662,14 +721,32 @@ async function financialSummary({ pool, office, from, to, siteName, terminal }) 
         [col('name', 'Discount'), col('count', 'Discount Sales', 'number'), col('total_minor', 'Discount Amount', 'money')],
         discountRows
       ),
-      // No expenses feature exists yet. The section is kept because the
-      // reference has it and its absence reads as a missing number rather than
-      // as a feature this till does not have.
+      // Paid out of the drawer at the till, by who it went to.
       section(
         'Expenses',
         [col('name', 'Name'), col('count', 'Count', 'number'), col('total_minor', 'Total £', 'money')],
-        []
+        expenseRows
       ),
+      // The drawer's sum, as the till's Z prints it (2026-11-12). The float is
+      // counted in at each till and stays there, so this is the cash the day's
+      // trading should have left in the drawers on top of their floats.
+      // Its Summary Total is the expected cash: the rows are signed, so they
+      // add up to it, and the total is named for what it is.
+      (() => {
+        const cash = paymentRows.find((r) => r.name.toLowerCase() === 'cash') || { count: 0, total_minor: 0 };
+        const s = section(
+          'Cash In Drawer (on top of the floats)',
+          [col('name', 'Name'), col('count', 'Count', 'number'), col('total_minor', 'Total £', 'money')],
+          [
+            { name: 'Cash taken', count: cash.count, total_minor: cash.total_minor },
+            { name: '+ Paid in', count: paidIn.count, total_minor: paidIn.total_minor },
+            { name: '- Paid out', count: paidOut.count, total_minor: -paidOut.total_minor },
+            { name: '- Cashback given', count: cashback.count, total_minor: -cashback.total_minor },
+          ]
+        );
+        s.total = { ...s.total, name: 'Expected cash in drawers', count: null };
+        return s;
+      })(),
       {
         title: 'Spend Per Head',
         columns: [col('covers', '# of Covers', 'number'), col('average_minor', 'Average Spend', 'money')],

@@ -3774,6 +3774,140 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   min-width: 0;
 }
 
+/* Start / End Date & Time: one button and its panel (2026-11-12). */
+.rr-range-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  grid-column: span 2;
+}
+.rr-range-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.rr-range-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 34px 7px 12px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--input-bg, var(--card))
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M3 10h18M8 3v4M16 3v4'/%3E%3C/svg%3E")
+    no-repeat right 11px center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.rr-range-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+.rr-range-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+.rr-range-when {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.rr-range-pop {
+  position: absolute;
+  z-index: 40;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: minmax(150px, auto) minmax(250px, 1fr);
+  gap: 14px;
+  width: min(560px, calc(100vw - 32px));
+  padding: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+.rr-range-pop[hidden] {
+  display: none;
+}
+.rr-range-presets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rr-range-presets button {
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  font: inherit;
+  font-size: 13.5px;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.rr-range-presets button:hover {
+  background: var(--hover);
+}
+.rr-range-presets button.active {
+  background: var(--blue);
+  color: #fff;
+}
+.rr-range-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.rr-range-custom label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.rr-range-custom input {
+  width: 100%;
+  min-height: 40px;
+}
+.rr-range-custom p {
+  margin: 0;
+}
+.rr-range-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+}
+@media (max-width: 640px) {
+  .rr-range-field {
+    grid-column: auto;
+  }
+  .rr-range-pop {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+  .rr-range-presets {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .rr-range-presets button {
+    width: auto;
+  }
+}
+
 .rr-actions {
   display: flex;
   flex-wrap: wrap;

@@ -618,21 +618,40 @@
               <label>Report
                 <select id="rr-report"></select>
               </label>
-              <label id="rr-period-field">Period
-                <select id="rr-period"></select>
-              </label>
+              <!-- One Start / End Date & Time button, as Newbridge has it
+                   (Pontardawe's stock taker, 2026-11-12): quick choices, or a
+                   start and finish date and time, then Apply. The select holds
+                   the chosen period for rrSpec; from/to hold the times. -->
+              <div id="rr-period-field" class="rr-range-field">
+                <span class="rr-range-label">Start / End Date &amp; Time</span>
+                <select id="rr-period" hidden></select>
+                <button type="button" id="rr-range-btn" class="rr-range-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="rr-range-pop"></button>
+                <div id="rr-range-pop" class="rr-range-pop" role="dialog" aria-label="Choose the report's dates and times" hidden>
+                  <ul id="rr-range-presets" class="rr-range-presets"></ul>
+                  <div class="rr-range-custom">
+                    <label>Start date and time
+                      <input type="datetime-local" id="rr-range-start" step="60">
+                    </label>
+                    <label>Finish date and time
+                      <input type="datetime-local" id="rr-range-end" step="60">
+                    </label>
+                    <p class="muted small" id="rr-range-note"></p>
+                    <div class="rr-range-actions">
+                      <button type="button" class="btn" id="rr-range-cancel">Cancel</button>
+                      <button type="button" class="btn primary" id="rr-range-apply">Apply</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <label id="rr-week-field" hidden>Week starting
                 <input type="date" id="rr-week">
               </label>
               <label>Terminal
                 <select id="rr-terminal"></select>
               </label>
-              <label id="rr-from-field" hidden>From
-                <input type="date" id="rr-from">
-              </label>
-              <label id="rr-to-field" hidden>To
-                <input type="date" id="rr-to">
-              </label>
+              <!-- Filled by the date and time picker above. -->
+              <input type="hidden" id="rr-from">
+              <input type="hidden" id="rr-to">
               <label id="rr-clerk-field" hidden>Clerk
                 <select id="rr-clerk"></select>
               </label>
