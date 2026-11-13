@@ -190,6 +190,21 @@ function sqlDateTime(date) {
   );
 }
 
+/**
+ * The moment a report was made, in UK time (2026-11-13). The server's own
+ * clock is set to UTC-1, an hour behind the venues in winter and two in
+ * summer; the period itself is already UK wall-clock, as the tills store it.
+ */
+function ukDateTime(date) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    }).formatToParts(date).map((x) => [x.type, x.value])
+  );
+  return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
 /** dd/MM/yyyy HH:mm:ss — the format the reference reports print. */
 function displayDateTime(date) {
   const pad = (n) => String(n).padStart(2, '0');
@@ -868,7 +883,7 @@ function reportHeader(report) {
   return [
     ['Report Name', report.name],
     ['Site Name', report.site],
-    ['Report Generated Date', displayDateTime(report.generatedAt)],
+    ['Report Generated Date', ukDateTime(report.generatedAt)],
     ['Report Start Date', displayDateTime(report.from)],
     ['Report End Date', displayDateTime(report.to)],
     // Always printed, including when it says All. A report filtered to one till
@@ -1167,7 +1182,7 @@ function toPdf(report) {
       put(report.site, left + width * 0.6, 60, { width: width * 0.4, align: 'right' });
 
       doc.font('Helvetica').fontSize(8).fillColor(BRAND.dim);
-      put(`Generated ${displayDateTime(report.generatedAt)}`, left + width * 0.6, 78, {
+      put(`Generated ${ukDateTime(report.generatedAt)}`, left + width * 0.6, 78, {
         width: width * 0.4,
         align: 'right',
       });
@@ -1219,7 +1234,7 @@ function toPdf(report) {
         // on paper otherwise, and that is exactly the confusion that gets a
         // manager shouting at the wrong member of staff.
         { label: 'Terminal', lines: [report.terminalLabel || 'All terminals'], part: 0.22 },
-        { label: 'Generated', lines: [displayDateTime(report.generatedAt)], part: 0.22 },
+        { label: 'Generated', lines: [ukDateTime(report.generatedAt)], part: 0.22 },
       ];
 
       let x = left;

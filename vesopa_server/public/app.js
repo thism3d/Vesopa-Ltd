@@ -18285,14 +18285,21 @@ function rrWhen(value) {
 }
 
 function rrRender(report) {
+  // The period as the server ran it, in the venue's own clock: the tills
+  // store UK wall-clock times, and redrawing the instant in the browser's zone
+  // turned 00:00 into 09:00 on a phone set to another country (2026-11-13).
+  const said = (label) => ((report.header || []).find((h) => h[0] === label) || [])[1];
+  const period = said('Report Start Date') && said('Report End Date')
+    ? `${said('Report Start Date')} — ${said('Report End Date')}`
+    : `${rrWhen(report.from)} — ${rrWhen(report.to)}`;
   const meta = [
     ['Site', report.site],
-    ['Period covered', `${rrWhen(report.from)} — ${rrWhen(report.to)}`],
+    ['Period covered', period],
     ['Terminal', report.terminalLabel || 'All terminals'],
     // Whatever the report was narrowed by, from the same header the PDF
     // prints -- everything after the Terminal line.
     ...(report.header || []).slice(6),
-    ['Generated', rrWhen(report.generatedAt)],
+    ['Generated', said('Report Generated Date') || rrWhen(report.generatedAt)],
   ];
 
   const head = `
@@ -18305,7 +18312,7 @@ function rrRender(report) {
         </div>
         <div class="rr-head-site">
           <strong>${esc(report.site)}</strong>
-          <span>${esc(rrWhen(report.from))} — ${esc(rrWhen(report.to))}</span>
+          <span>${esc(period)}</span>
         </div>
       </div>
       <dl class="rr-meta">
