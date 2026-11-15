@@ -118,7 +118,10 @@ async function loadLan() {
       : '';
     return `<tr>
       <td><strong>${esc(d.name || d.device)}</strong><br><span class="muted small">${esc(roleName[d.role] || d.role)} · ${esc(d.version || '')}</span></td>
-      <td>${state}${data.preferred_hub === d.device ? ' <span class="pill">Pinned</span>' : ''}</td>
+      <td>${state}${data.preferred_hub === d.device ? ' <span class="pill">Pinned</span>' : ''}${
+        // Chosen on the till itself (EPOS 1.16.53): Settings, Local network.
+        r.mode === 'master' ? ' <span class="pill" title="Set on the till">Master</span>'
+          : r.mode === 'slave' ? ' <span class="pill" title="Set on the till">Slave</span>' : ''}</td>
       <td class="small">${esc((r.ips || []).join(', ') || '—')}</td>
       <td>${reach}</td>
       <td class="small muted">${fresh(d) ? 'Just now' : esc(ago(d.age_s))}</td>

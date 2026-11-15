@@ -13,6 +13,7 @@ import '../data/hardware.dart';
 import '../data/printer_settings.dart';
 import '../data/terminal_sync.dart';
 import '../printing/print_drive_connector.dart';
+import '../data/lan/lan_link.dart';
 import '../data/lan/lan_service.dart';
 import '../data/lan/offline_money.dart';
 import '../data/app_update.dart';
@@ -456,11 +457,17 @@ class _PosShellState extends ConsumerState<PosShell> {
     // The venue's local link (2026-10-27): tables, kitchen tickets, displays
     // on other computers and offline balances over the venue's own network.
     unawaited(() async {
+      // The till's own name, not the placeholder it has for its first moment.
+      var linkName = terminalName;
+      try {
+        final real = await ref.read(terminalIdentityProvider.future).timeout(const Duration(seconds: 5));
+        if (real.trim().isNotEmpty) linkName = real;
+      } catch (_) {}
       await LanService.instance.configure(
         apiBase: ref.read(apiBaseProvider),
         token: session.terminalToken,
         deviceId: deviceId,
-        name: terminalName,
+        name: linkName,
         version: VesopaBrand.appVersion,
         role: 'till',
       );
@@ -482,6 +489,31 @@ class _PosShellState extends ConsumerState<PosShell> {
             .get();
         return selling.isNotEmpty;
       };
+      // The master's All tills report (2026-11-15): this till's X on request,
+      // and its Z -- closed here, printed here on this till's own printer,
+      // and never while a sale is open on it.
+      lan.onCall('xreport', (data, from) async {
+        final x = await ref.read(sessionRepositoryProvider).xReport(
+              terminalName: ref.read(terminalNameProvider),
+              staffName: ref.read(servedByProvider),
+            );
+        return x.toJson();
+      });
+      lan.onCall('zreport', (data, from) async {
+        final check = lan.busy;
+        if (check != null && await check()) {
+          throw LanUnavailable('A sale is open on ${ref.read(terminalNameProvider)}. Finish or save it first.');
+        }
+        final by = data is Map ? '${data['by'] ?? ''}'.trim() : '';
+        final z = await ref.read(sessionRepositoryProvider).zReport(
+              terminalName: ref.read(terminalNameProvider),
+              staffName: by.isEmpty ? ref.read(servedByProvider) : by,
+            );
+        ref.invalidate(xReportProvider);
+        ref.read(lastZReportProvider.notifier).set(z);
+        unawaited(printTillReport(ref, z).catchError((Object _) {}));
+        return z.toJson();
+      });
       lan.extraReport = () async => tillEquipment(
             ref.read(printerSettingsProvider).value?.printers ?? const [],
             ref.read(dojoConfigProvider).value,

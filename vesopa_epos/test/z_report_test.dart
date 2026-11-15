@@ -317,6 +317,27 @@ void main() {
       expect(queued.first.payload, contains('"amount_minor":410'));
     });
 
+    // Pontardawe, 2026-11-14: the X took cashback and paid in off the drawer,
+    // the Z forgot both, so the Z's cash expected was GBP 45 too high.
+    test('a Z keeps cashback and paid in, exactly as the X showed them', () async {
+      await stock([beer]);
+      final session = await sessions.current();
+      await sell(beer, qty: 2, method: 'cash');
+      final id = await orders.openOrder();
+      await orders.addLine(id, beer);
+      await orders.settle(id, 'card', 500, sessionId: session.id, cashbackMinor: 4000, reference: 'pi_9');
+      await orders.logPaidIn(sessionId: session.id, amountMinor: 2500, from: 'Bank');
+
+      final x = await sessions.xReport();
+      final z = await sessions.zReport();
+      expect(x.cashbackMinor, 4000);
+      expect(z.cashbackMinor, 4000);
+      expect(z.paidIn.amountMinor, 2500);
+      expect(z.paidIn.count, 1);
+      expect(z.expectedCashMinor, x.expectedCashMinor);
+      expect(z.expectedCashMinor, z.openingFloatMinor + 1000 + 2500 - 4000);
+    });
+
     test('the cashback on a card tender is kept on the payment row', () async {
       await stock([beer]);
       final session = await sessions.current();

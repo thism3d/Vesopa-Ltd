@@ -96,3 +96,36 @@ Phase 5 (Vesopa Go) left out at the owner's request.
   `/api/lan/snapshot` (lists replayed ids) and `X-Vesopa-Offline-Id` dedupe (src/lan.js).
 - Tests: vesopa_epos test/lan_link_test.dart, lan_offline_test.dart; kitchen
   test/lan_kitchen_test.dart; server test/lan.test.js.
+
+## Master and slave, the menu and All tills (2026-11-15, EPOS 1.16.53)
+
+Asked by Meirion ("get the tills to talk to each other so we can start putting
+the software everywhere") and the owner ("master/slave rules"). Chosen: the
+role is picked on the till, with takeover; a slave takes tables, the menu,
+prices and staff, a combined X/Z, and the kitchen from the master.
+
+- **Role on the till:** Settings, Local network: Master, Slave or Auto
+  (`LanIdentity.mode`, kept in the till's preferences as `vesopa_lan_mode`).
+  Ranking is master (or the back office's pinned till), then auto, then slave;
+  within one kind the longest running. A slave stands in while no master is
+  heard and hands the lead back; a master is also pinned in the back office so
+  older tills and the screens agree. Announces carry `mode`.
+- **Names:** the link now carries the till's real name (both of Pontardawe's
+  were "Till", the placeholder from before the name had loaded).
+- **Tables offline:** taking a bill from another till goes straight over the
+  link when the last cloud ask failed, instead of waiting 8 s for the cloud.
+- **Menu, prices, staff:** `lan_catalogue.dart`. Every till keeps the last good
+  answer for products, departments, deals, cash keys, staff, screens and
+  modifiers; a till whose download fails asks the main till (`catalogue`
+  channel); a newer copy on the link reruns the downloads. A 401/403 is never
+  papered over.
+- **All tills X/Z:** End of Day shows "All tills" once another till is linked.
+  Each till answers `xreport` / `zreport` (LanService.onCall). Z every till:
+  each closes and prints its own, the asking till prints the combined one; a
+  till with a sale open is left alone and named.
+- **Z fix:** `zReport()` dropped cashback, paid in and cash refunds when it
+  rebuilt the report, so a Z (not an X) expected too much cash.
+- Tests: lan_link_test (master/slave), lan_catalogue_test, all_tills_report_test,
+  local_network_card_test, z_report_test.
+- Not done: printing through the master's own receipt printer (a slave prints
+  on its own printers; network kitchen printers need no internet).

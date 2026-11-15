@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/constants.dart';
 import '../main.dart';
+import 'lan/lan_catalogue.dart';
 
 /// The venue's own sale-screen layouts, as the till reads them.
 ///
@@ -585,9 +586,12 @@ class ScreensRepository {
 
   Future<ScreenSet> load(String office) async {
     try {
-      final res = await _client
-          .get(Uri.parse('$apiBase/api/till/screens?office=$office'))
-          .timeout(const Duration(seconds: 8));
+      final res = await LanCatalogue.instance.fetch(
+        'screens',
+        () => _client
+            .get(Uri.parse('$apiBase/api/till/screens?office=$office'))
+            .timeout(const Duration(seconds: 8)),
+      );
       if (res.statusCode != 200) return _cached();
 
       final set = ScreenSet.fromJson(

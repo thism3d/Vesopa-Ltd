@@ -14,6 +14,10 @@ import '../data/till_permissions.dart';
 import 'cash_drawer_sheets.dart';
 import 'permission_gate.dart';
 import 'widgets/basket_panel.dart' show money;
+import 'dart:async';
+
+import '../data/lan/lan_service.dart';
+import '../data/terminal_identity.dart';
 
 final xReportProvider = FutureProvider<TillReport>(
   // Who is signed on goes on the report, as it does on the reference one this
@@ -170,6 +174,9 @@ class ReportsPage extends ConsumerWidget {
                 ),
               ],
             ),
+          // Every till of the venue as one report, over the local link.
+          const SizedBox(height: 12),
+          const _AllTillsKey(),
           // The way back from a printer that was off when the Z ran. Shown only
           // once there is a Z to reprint, and it names its number so a manager
           // holding a torn-off strip can tell whether it is the one in hand.
@@ -498,6 +505,384 @@ class _Stat extends StatelessWidget {
           Flexible(child: Text(label, style: style)),
           Text(value, style: style),
         ],
+      ),
+    );
+  }
+}
+
+
+/// The key that opens the venue-wide report. Shown once another till is
+/// heard on the local link, so a single-till venue never sees it.
+class _AllTillsKey extends ConsumerStatefulWidget {
+  const _AllTillsKey();
+
+  @override
+  ConsumerState<_AllTillsKey> createState() => _AllTillsKeyState();
+}
+
+class _AllTillsKeyState extends ConsumerState<_AllTillsKey> {
+  StreamSubscription<void>? _changes;
+
+  @override
+  void initState() {
+    super.initState();
+    _changes = LanService.instance.changes.listen((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _changes?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lan = LanService.instance;
+    final others = lan.otherTills;
+    if (!lan.linked || others.isEmpty) return const SizedBox.shrink();
+    final n = others.length + 1;
+    return Material(
+      color: Pos.brandSoft,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => showDialog<void>(context: context, builder: (_) => const _AllTillsDialog()),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.hub_outlined, color: Pos.brandDeep),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('All tills: $n linked', style: const TextStyle(fontWeight: FontWeight.w700, color: Pos.onBrand)),
+                    const Text(
+                      'One X or Z for the whole venue, from every till on the local network.',
+                      style: TextStyle(fontSize: 13, color: Pos.graphite),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Pos.brandDeep),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One till's part of the venue-wide report.
+class _TillPart {
+  _TillPart({required this.id, required this.name, this.address});
+  final String id;
+  final String name;
+  final String? address;
+  TillReport? report;
+  String? problem;
+  bool busy = true;
+}
+
+/// Every till's X side by side and added up; print it, or Z the lot.
+class _AllTillsDialog extends ConsumerStatefulWidget {
+  const _AllTillsDialog();
+
+  @override
+  ConsumerState<_AllTillsDialog> createState() => _AllTillsDialogState();
+}
+
+class _AllTillsDialogState extends ConsumerState<_AllTillsDialog> {
+  final List<_TillPart> _parts = [];
+  bool _working = false;
+  bool _closed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  String get _here => ref.read(terminalNameProvider);
+
+  Future<void> _load() async {
+    final lan = LanService.instance;
+    _parts
+      ..clear()
+      ..add(_TillPart(id: lan.deviceId, name: '$_here (this till)'))
+      ..addAll([
+        for (final p in lan.otherTills) _TillPart(id: p.id, name: p.name, address: p.address.address),
+      ]);
+    if (mounted) setState(() {});
+    await Future.wait([
+      for (final part in _parts)
+        () async {
+          try {
+            if (part.id == lan.deviceId) {
+              part.report = await ref.read(sessionRepositoryProvider).xReport(
+                    terminalName: _here,
+                    staffName: ref.read(servedByProvider),
+                  );
+            } else {
+              final got = await lan.call(part.id, 'xreport', null);
+              part.report = TillReport.fromJson(got as Map);
+            }
+          } catch (e) {
+            part.problem = _plain(e);
+          } finally {
+            part.busy = false;
+            if (mounted) setState(() {});
+          }
+        }(),
+    ]);
+  }
+
+  /// A till that is too old to answer says so in words a manager can act on.
+  String _plain(Object e) {
+    final text = '$e';
+    if (text.contains('is not available on')) return 'Needs updating to answer (EPOS 1.16.53 or newer).';
+    if (text.toLowerCase().contains('timeout') || text.contains('TimeoutException')) return 'Did not answer in time.';
+    return text;
+  }
+
+  List<TillReport> get _reports => [for (final p in _parts) if (p.report != null) p.report!];
+
+  TillReport? get _combined => _reports.isEmpty
+      ? null
+      : TillReport.combined(
+          _reports,
+          name: 'All tills (${_reports.length} of ${_parts.length})',
+          staffName: ref.read(servedByProvider),
+        );
+
+  Future<void> _print() async {
+    final all = _combined;
+    if (all == null) return;
+    if (!await allowed(context, ref, TillPermission.xReport)) return;
+    setState(() => _working = true);
+    try {
+      await printTillReport(ref, all);
+      if (mounted) PosMessenger.success(context, 'All tills ${all.isZ ? 'Z' : 'X'} report printed.');
+    } catch (e) {
+      if (mounted) PosMessenger.error(context, 'Could not print it: $e');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<void> _zAll() async {
+    if (!await allowed(context, ref, TillPermission.zReport)) return;
+    if (!mounted) return;
+    final missing = [for (final p in _parts) if (p.report == null) p.name];
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.lock_clock, color: Pos.red, size: 32),
+        title: Text('Run the Z on ${_parts.length - missing.length} till${_parts.length - missing.length == 1 ? '' : 's'}?'),
+        content: Text(
+          'Each till closes its own trading period and prints its own Z on its own printer. '
+          'This till then prints one Z for them all. It cannot be undone.\n\n'
+          'A till with a sale open is left alone and named afterwards.'
+          '${missing.isEmpty ? '' : '\n\nNot answering, and left out: ${missing.join(', ')}.'}',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Pos.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Run every Z'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _working = true);
+    final lan = LanService.instance;
+    final by = ref.read(servedByProvider) ?? '';
+    final done = <TillReport>[];
+    final left = <String>[];
+    // The others first: if one refuses, this till has not closed anything yet
+    // and the manager can still walk over and finish the sale.
+    for (final part in _parts.where((p) => p.report != null && p.id != lan.deviceId)) {
+      setState(() => part.busy = true);
+      try {
+        final got = await lan.call(part.id, 'zreport', {'by': by}, timeout: const Duration(seconds: 20));
+        part.report = TillReport.fromJson(got as Map);
+        done.add(part.report!);
+      } catch (e) {
+        part.problem = _plain(e);
+        left.add(part.name);
+      } finally {
+        part.busy = false;
+        if (mounted) setState(() {});
+      }
+    }
+    final mine = _parts.first;
+    try {
+      final z = await ref.read(sessionRepositoryProvider).zReport(terminalName: _here, staffName: by.isEmpty ? null : by);
+      ref.invalidate(xReportProvider);
+      ref.read(lastZReportProvider.notifier).set(z);
+      mine.report = z;
+      done.add(z);
+      try {
+        await printTillReport(ref, z);
+      } catch (_) {
+        // Reprint Z on the End of Day page has it.
+      }
+    } catch (e) {
+      mine.problem = '$e';
+      left.add(mine.name);
+    }
+    _closed = true;
+    if (done.isNotEmpty) {
+      final all = TillReport.combined(done, name: 'All tills (${done.length} of ${_parts.length})', staffName: by.isEmpty ? null : by);
+      try {
+        await printTillReport(ref, all);
+      } catch (e) {
+        if (mounted) PosMessenger.error(context, 'Every Z ran, but the combined one did not print ($e). Print it from here again.');
+      }
+    }
+    if (!mounted) return;
+    setState(() => _working = false);
+    if (left.isEmpty) {
+      PosMessenger.success(context, 'Z run on ${done.length} till${done.length == 1 ? '' : 's'}.');
+    } else {
+      PosMessenger.error(context, 'Z run on ${done.length}. Not run on: ${left.join(', ')}.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final all = _combined;
+    final loading = _parts.any((p) => p.busy);
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final tills = ListView.separated(
+      shrinkWrap: true,
+      // Inside the one scrolling column on a narrow screen.
+      physics: wide ? null : const NeverScrollableScrollPhysics(),
+      itemCount: _parts.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, i) {
+        final p = _parts[i];
+        final r = p.report;
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: p.problem != null ? Pos.red.withValues(alpha: 0.5) : Theme.of(context).dividerColor),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                p.problem != null ? Icons.error_outline : Icons.point_of_sale,
+                color: p.problem != null ? Pos.red : Pos.brandDeep,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(p.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    Text(
+                      p.problem ??
+                          (r == null
+                              ? 'Asking…'
+                              : '${r.isZ ? 'Z #${r.zNumber ?? ''} run' : '${r.orderCount} sale${r.orderCount == 1 ? '' : 's'}'}'
+                                  ' · cash expected ${money(r.expectedCashMinor)}'
+                                  '${p.address == null ? '' : ' · ${p.address}'}'),
+                      style: TextStyle(fontSize: 13, color: p.problem != null ? Pos.red : Pos.graphite),
+                    ),
+                  ],
+                ),
+              ),
+              if (p.busy)
+                const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              else if (r != null)
+                Text(money(r.grossMinor), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            ],
+          ),
+        );
+      },
+    );
+    final body = all == null
+        ? Center(child: Text(loading ? 'Asking every till…' : 'No till answered.'))
+        : _ReportBody(report: all);
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(20),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1040, maxHeight: 760),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.hub_outlined, color: Pos.brandDeep),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _closed ? 'All tills: Z run' : 'All tills: X report',
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Ask every till again',
+                    onPressed: _working || _closed ? null : _load,
+                    icon: const Icon(Icons.refresh),
+                  ),
+                  IconButton(tooltip: 'Close', onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+                ],
+              ),
+              if (all != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${money(all.grossMinor)} taken on ${_reports.length} of ${_parts.length} tills · '
+                  'cash expected across the drawers ${money(all.expectedCashMinor)}',
+                  style: const TextStyle(color: Pos.graphite),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Expanded(
+                child: wide
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(width: 380, child: tills),
+                          const SizedBox(width: 20),
+                          Expanded(child: body),
+                        ],
+                      )
+                    : ListView(children: [tills, const SizedBox(height: 16), SizedBox(height: 520, child: body)]),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.print_outlined),
+                    label: Text(_closed ? 'Print the combined Z again' : 'Print combined X'),
+                    onPressed: all == null || _working ? null : _print,
+                  ),
+                  if (!_closed)
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(backgroundColor: Pos.red),
+                      icon: const Icon(Icons.lock_clock),
+                      label: Text(_working ? 'Running…' : 'Z every till (reset)'),
+                      onPressed: all == null || _working || loading ? null : _zAll,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

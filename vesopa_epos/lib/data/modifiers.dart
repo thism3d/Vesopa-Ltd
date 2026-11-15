@@ -24,6 +24,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../main.dart';
+import 'lan/lan_catalogue.dart';
 
 
 /// One question, and the two numbers that are its whole behaviour.
@@ -170,9 +171,12 @@ class ModifiersRepository {
 
   Future<ModifierSet> load(String office) async {
     try {
-      final res = await _client
-          .get(Uri.parse('$apiBase/api/till/modifiers?office=$office'))
-          .timeout(const Duration(seconds: 8));
+      final res = await LanCatalogue.instance.fetch(
+        'modifiers',
+        () => _client
+            .get(Uri.parse('$apiBase/api/till/modifiers?office=$office'))
+            .timeout(const Duration(seconds: 8)),
+      );
       if (res.statusCode != 200) return _cached();
 
       final set = ModifierSet.fromJson(

@@ -89,6 +89,13 @@ const whatsNewByVersion = <String, List<String>>{
     'Updates: choose automatic, ask first, or off in Settings, and see what is new.',
     'The till repairs itself if a file goes missing, and updates can no longer leave a file out.',
   ],
+  '1.16.52': ['X and Z reports always show the float, paid in, paid out, cashback and the cash expected.'],
+  '1.16.53': [
+    'Tills work together: choose Master or Slave in Settings, Local network. A slave stands in if the master is off.',
+    'With the internet down, a till takes the menu, prices and staff from the master, and tables move at once.',
+    'End of Day has All tills: one X or Z for the whole venue.',
+    'The Z report takes cashback, paid in and cash refunds off the cash expected, as the X always did.',
+  ],
 };
 
 /// The notes to show once after an update to [VesopaBrand.appVersion], or

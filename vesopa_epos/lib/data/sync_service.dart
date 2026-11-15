@@ -10,6 +10,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'local/database.dart';
 import 'price_levels.dart';
 import 'product_extras.dart';
+import 'lan/lan_catalogue.dart';
 
 /// A snapshot of the terminal's link to the back office, for the till's
 /// online/offline badge.
@@ -230,10 +231,16 @@ class SyncService {
   Future<void> resync() async {
     _connectWebSocket();
     await flush();
-    await pullCatalogue();
-    await pullDepartments();
-    await pullDeals();
-    await pullDenominations();
+    // Each on its own (2026-11-15): with the internet down the products may
+    // still come from the main till, and one list failing must not stop the
+    // staff list or the screens behind it from being asked for.
+    for (final pull in [pullCatalogue, pullDepartments, pullDeals, pullDenominations]) {
+      try {
+        await pull();
+      } catch (_) {
+        // What this till already holds carries on working.
+      }
+    }
 
     // The screens too. A screen change scheduled in the back office goes live
     // with a push to the venue's tills; a till that was offline at that moment
@@ -543,13 +550,16 @@ class SyncService {
   /// as it did before.
   Future<void> pullDepartments() async {
     try {
-      final res = await http
-          .get(
-            Uri.parse(
-              '$apiBase/till/departments?office=${Uri.encodeComponent(office)}',
-            ),
-          )
-          .timeout(const Duration(seconds: 8));
+      final res = await LanCatalogue.instance.fetch(
+        'departments',
+        () => http
+            .get(
+              Uri.parse(
+                '$apiBase/till/departments?office=${Uri.encodeComponent(office)}',
+              ),
+            )
+            .timeout(const Duration(seconds: 8)),
+      );
       if (res.statusCode != 200) return;
 
       final items = (jsonDecode(res.body) as List<dynamic>)
@@ -600,14 +610,17 @@ class SyncService {
   /// Cash has to keep working when nothing else does.
   Future<void> pullDenominations() async {
     try {
-      final res = await http
-          .get(
-            Uri.parse(
-              '$apiBase/till/denominations'
-              '?office=${Uri.encodeComponent(office)}',
-            ),
-          )
-          .timeout(const Duration(seconds: 8));
+      final res = await LanCatalogue.instance.fetch(
+        'denominations',
+        () => http
+            .get(
+              Uri.parse(
+                '$apiBase/till/denominations'
+                '?office=${Uri.encodeComponent(office)}',
+              ),
+            )
+            .timeout(const Duration(seconds: 8)),
+      );
       if (res.statusCode != 200) return;
 
       final items = (jsonDecode(res.body) as List<dynamic>)
@@ -670,8 +683,12 @@ class SyncService {
   /// office signals a change, so the till always has a sellable catalogue even
   /// if it is later cut off from the network.
   Future<void> pullCatalogue() async {
-    final res = await http.get(
-      Uri.parse('$apiBase/till/products?office=${Uri.encodeComponent(office)}'),
+    // The back office, or the main till's copy when it cannot be reached.
+    final res = await LanCatalogue.instance.fetch(
+      'products',
+      () => http
+          .get(Uri.parse('$apiBase/till/products?office=${Uri.encodeComponent(office)}'))
+          .timeout(const Duration(seconds: 20)),
     );
     if (res.statusCode != 200) return;
 
@@ -817,8 +834,11 @@ class SyncService {
   /// down — a promotion that silently stops working offline would overcharge
   /// the customer.
   Future<void> pullDeals() async {
-    final res = await http.get(
-      Uri.parse('$apiBase/till/deals?office=${Uri.encodeComponent(office)}'),
+    final res = await LanCatalogue.instance.fetch(
+      'deals',
+      () => http
+          .get(Uri.parse('$apiBase/till/deals?office=${Uri.encodeComponent(office)}'))
+          .timeout(const Duration(seconds: 20)),
     );
     if (res.statusCode != 200) return;
 

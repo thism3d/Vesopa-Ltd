@@ -249,6 +249,9 @@ class BillSync {
   bool _lanBusy = false;
   bool _lanAgain = false;
 
+  /// Whether the last ask of the back office went unanswered.
+  bool _cloudDown = false;
+
   /// Our bills onto the venue's local link: every change, at once, with no
   /// network call in the way. Runs again straight after if anything changed
   /// while it was running, so nothing waits for the next tick.
@@ -383,6 +386,7 @@ class BillSync {
   Future<void> pull() async {
     if (_disposed || !_terminals.canShare) return;
     final feed = await _terminals.pullBills(since: _cursor);
+    _cloudDown = feed == null;
     if (feed == null) {
       // No internet. With the local link up the plan is still current: the
       // other tills' bills arrive over it the moment they change.
@@ -654,14 +658,22 @@ class BillSync {
   /// has gone. The caller is a clerk standing at a table, and "nothing
   /// happened" is not an answer they can act on.
   Future<void> claim(String id) async {
-    RemoteBill bill;
-    try {
-      bill = await _terminals.claimBill(id);
-    } on TerminalUnavailable {
-      // No internet: the till holding it hands it over on the local link.
-      final handed = await _claimOverLan(id);
-      if (handed == null) rethrow;
-      bill = handed;
+    RemoteBill? bill;
+    // The internet is known to be down and the tills are linked: straight to
+    // the till holding it, rather than a clerk at a table waiting eight
+    // seconds for a cloud call to give up first (2026-11-15).
+    if (_cloudDown && LanService.instance.linked) {
+      bill = await _claimOverLan(id);
+    }
+    if (bill == null) {
+      try {
+        bill = await _terminals.claimBill(id);
+      } on TerminalUnavailable {
+        // No internet: the till holding it hands it over on the local link.
+        final handed = await _claimOverLan(id);
+        if (handed == null) rethrow;
+        bill = handed;
+      }
     }
     _changedAt[id] = LanService.instance.now();
     // Written from the server's answer rather than assumed, and with heldBy

@@ -76,7 +76,10 @@ class LanIdentity {
 
   /// Stable per device: the till's terminal device id, the screen's own.
   final String id;
-  final String name;
+
+  /// What people call this device. May arrive after the link has started (a
+  /// till's name is read from its settings), so it can be corrected.
+  String name;
 
   /// 'till', 'kitchen' or 'display'. Only a till can be the main one.
   final String role;
@@ -84,6 +87,16 @@ class LanIdentity {
 
   /// The till the back office has pinned as the main one, if any.
   String? preferredHub;
+
+  /// What this till was told to be, on the till itself (2026-11-15, owner:
+  /// "master/slave rules", like ICR tills): 'master' takes the main role
+  /// whenever it is on, 'slave' follows and only stands in while no master
+  /// can be heard, 'auto' leaves it to the back office's pin and to whichever
+  /// till has been running longest. What is set on the till wins over the pin.
+  String mode = 'auto';
+
+  /// Whether this till puts itself forward as the main one.
+  bool get prefersSelf => mode == 'master' || (mode == 'auto' && preferredHub == id);
 
   bool get canHost => role == 'till';
 }
@@ -101,6 +114,7 @@ class LanPeer {
     required this.preferred,
     required this.version,
     required this.seen,
+    this.mode = 'auto',
   });
 
   final String id;
@@ -116,6 +130,9 @@ class LanPeer {
   String version;
   DateTime seen;
 
+  /// 'master', 'slave' or 'auto', as set on that till (older tills: 'auto').
+  String mode;
+
   Map<String, Object?> toJson(DateTime now) => {
         'id': id,
         'name': name,
@@ -124,6 +141,7 @@ class LanPeer {
         'port': port,
         'up_s': upMs ~/ 1000,
         'hub': claimsHub,
+        'mode': mode,
         'version': version,
         'seen_s': now.difference(seen).inSeconds,
       };
@@ -363,7 +381,8 @@ class LanNode {
         'port': _boundLinkPort,
         'up': upMs,
         'hub': _isHub,
-        'pref': identity.preferredHub == identity.id,
+        'pref': identity.prefersSelf,
+        'mode': identity.mode,
         'ver': identity.version,
       };
 
@@ -527,7 +546,10 @@ class LanNode {
         ..upMs = up
         ..claimsHub = claimsHub
         ..preferred = body['pref'] == true;
-      if (hubChanged) _changed();
+      final mode = '${body['mode'] ?? 'auto'}';
+      final modeChanged = p.mode != mode;
+      p.mode = mode;
+      if (hubChanged || modeChanged) _changed();
     }
     peers[id] = p;
     if (isNew) _changed();
@@ -545,26 +567,31 @@ class LanNode {
 
   // ---- who is the main till ------------------------------------------------
 
-  /// Better placed first: pinned, then running longest, then by id.
-  static int _rank(({bool pref, int up, String id}) a, ({bool pref, int up, String id}) b) {
-    if (a.pref != b.pref) return a.pref ? -1 : 1;
+  /// Better placed first: a master (or the pinned till), then a till left on
+  /// automatic, then a slave; within one kind the longest running, then by id.
+  static int _rank(({int tier, int up, String id}) a, ({int tier, int up, String id}) b) {
+    if (a.tier != b.tier) return a.tier.compareTo(b.tier);
     // Within two seconds counts as the same: announces are not simultaneous.
     if ((a.up - b.up).abs() > 2000) return b.up.compareTo(a.up);
     return a.id.compareTo(b.id);
   }
 
-  ({bool pref, int up, String id}) get _me =>
-      (pref: identity.preferredHub == identity.id, up: upMs, id: identity.id);
+  static int _tier({required bool pref, required String mode}) => pref ? 0 : (mode == 'slave' ? 2 : 1);
 
-  ({bool pref, int up, String id}) _of(LanPeer p) =>
-      (pref: p.preferred || identity.preferredHub == p.id, up: p.upMs, id: p.id);
+  ({int tier, int up, String id}) get _me =>
+      (tier: _tier(pref: identity.prefersSelf, mode: identity.mode), up: upMs, id: identity.id);
+
+  ({int tier, int up, String id}) _of(LanPeer p) => (
+        tier: _tier(pref: p.preferred || (p.mode == 'auto' && identity.preferredHub == p.id), mode: p.mode),
+        up: p.upMs,
+        id: p.id,
+      );
 
   void _elect() {
     final tills = [for (final p in peers.values) if (p.role == 'till' && p.port > 0) p];
     final claimers = [for (final p in tills) if (p.claimsHub) p];
 
     if (identity.canHost) {
-      final pinnedHere = identity.preferredHub == identity.id;
       if (_isHub) {
         // Step down only for a better-placed till that also claims the job.
         final better = claimers.where((p) => _rank(_of(p), _me) < 0).toList();
@@ -575,9 +602,13 @@ class LanNode {
         final best = [...tills.map(_of), _me]..sort(_rank);
         final iAmBest = best.first.id == identity.id;
         final settled = upMs >= claimAfter.inMilliseconds;
-        // Nobody has the job and this till is the best placed -- or this is
-        // the pinned till, which takes it back once it has been up a while.
-        if (settled && ((claimers.isEmpty && iAmBest) || (pinnedHere && upMs >= claimAfter.inMilliseconds * 3))) {
+        // A till of a better kind than whoever holds the job takes it back
+        // once it has been up a while: the master from a slave standing in,
+        // the pinned till from an ordinary one.
+        final outranks = claimers.isNotEmpty && claimers.every((p) => _of(p).tier > _me.tier);
+        // Nobody has the job and this till is the best placed, or it outranks
+        // the till that has it.
+        if (settled && ((claimers.isEmpty && iAmBest) || (outranks && upMs >= claimAfter.inMilliseconds * 3))) {
           _becomeHub();
           return;
         }
@@ -601,6 +632,13 @@ class LanNode {
       _client = null;
       _changed();
     }
+  }
+
+  /// Look again now, after this till's mode was changed on it.
+  void nudge() {
+    if (!_running) return;
+    unawaited(_onTick());
+    _changed();
   }
 
   void _becomeHub() {
@@ -994,6 +1032,8 @@ class LanNode {
         return report();
       case 'takeover':
         identity.preferredHub = identity.id;
+        // Asked for by name: a till set to slave stands in until restarted.
+        if (identity.mode == 'slave') identity.mode = 'auto';
         return {'ok': true};
       case 'disconnect':
         pause(const Duration(seconds: 60));
@@ -1198,6 +1238,7 @@ class LanNode {
       'link_port': _boundLinkPort,
       'listening': _server != null,
       'is_hub': _isHub,
+      'mode': identity.mode,
       'linked': linked,
       'hub': hubId == null
           ? null

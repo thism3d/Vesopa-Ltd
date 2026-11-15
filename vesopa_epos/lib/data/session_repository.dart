@@ -21,6 +21,13 @@ class ReportTally {
       );
 
   bool get isEmpty => count == 0 && amountMinor == 0;
+
+  ReportTally operator +(ReportTally o) => ReportTally(count: count + o.count, amountMinor: amountMinor + o.amountMinor);
+
+  Map<String, Object?> toJson() => {'c': count, 'a': amountMinor};
+  static ReportTally fromJson(Object? j) => j is Map
+      ? ReportTally(count: (j['c'] as num?)?.toInt() ?? 0, amountMinor: (j['a'] as num?)?.toInt() ?? 0)
+      : const ReportTally();
 }
 
 /// Sum a set of tallies into the TOTAL line that closes each section.
@@ -128,6 +135,120 @@ class TillReport {
   /// a Z that printed "down £240.00" because nobody was asked would be worse
   /// than one that says nothing.
   final int? declaredCashMinor;
+
+  /// For the local link: a till's report asked for by the master (2026-11-15).
+  Map<String, Object?> toJson() => {
+        'is_z': isZ,
+        'z': zNumber,
+        'opened': openedAt.millisecondsSinceEpoch,
+        'closed': closedAt?.millisecondsSinceEpoch,
+        'orders': orderCount,
+        'gross': grossMinor,
+        'discount': discountMinor,
+        'tax': taxMinor,
+        'by_method': {for (final e in byMethod.entries) e.key: e.value.toJson()},
+        'by_department': {for (final e in byDepartment.entries) e.key: e.value.toJson()},
+        'float': openingFloatMinor,
+        'covers': covers,
+        'voids': voids.toJson(),
+        'no_sales': noSales.toJson(),
+        'refunds': refunds.toJson(),
+        'expenses': expenses.toJson(),
+        'paid_in': paidIn.toJson(),
+        'cash_refunds': cashRefundsMinor,
+        'cashback': cashbackMinor,
+        'wastage': wastage.toJson(),
+        'discounts': discounts.toJson(),
+        'gratuity': gratuityMinor,
+        'declared': declaredCashMinor,
+        'terminal': terminalName,
+        'staff': staffName,
+      };
+
+  static TillReport fromJson(Map<dynamic, dynamic> j) {
+    int n(String k) => (j[k] as num?)?.toInt() ?? 0;
+    Map<String, ReportTally> tallies(String k) => {
+          for (final e in (j[k] as Map? ?? const {}).entries) '${e.key}': ReportTally.fromJson(e.value),
+        };
+    final closed = (j['closed'] as num?)?.toInt();
+    return TillReport(
+      isZ: j['is_z'] == true,
+      zNumber: (j['z'] as num?)?.toInt(),
+      openedAt: DateTime.fromMillisecondsSinceEpoch(n('opened')),
+      closedAt: closed == null ? null : DateTime.fromMillisecondsSinceEpoch(closed),
+      orderCount: n('orders'),
+      grossMinor: n('gross'),
+      discountMinor: n('discount'),
+      taxMinor: n('tax'),
+      byMethod: tallies('by_method'),
+      byDepartment: tallies('by_department'),
+      openingFloatMinor: n('float'),
+      covers: n('covers'),
+      voids: ReportTally.fromJson(j['voids']),
+      noSales: ReportTally.fromJson(j['no_sales']),
+      refunds: ReportTally.fromJson(j['refunds']),
+      expenses: ReportTally.fromJson(j['expenses']),
+      paidIn: ReportTally.fromJson(j['paid_in']),
+      cashRefundsMinor: n('cash_refunds'),
+      cashbackMinor: n('cashback'),
+      wastage: ReportTally.fromJson(j['wastage']),
+      discounts: ReportTally.fromJson(j['discounts']),
+      gratuityMinor: n('gratuity'),
+      declaredCashMinor: (j['declared'] as num?)?.toInt(),
+      terminalName: j['terminal'] as String?,
+      staffName: j['staff'] as String?,
+    );
+  }
+
+  /// Several tills' reports as one: every figure added up, the period from
+  /// the earliest opening to the latest close. The drawers stay separate in
+  /// life, so the cash expected here is the sum of what each should hold.
+  static TillReport combined(List<TillReport> reports, {required String name, String? staffName}) {
+    Map<String, ReportTally> add(Iterable<Map<String, ReportTally>> maps) {
+      final out = <String, ReportTally>{};
+      for (final m in maps) {
+        for (final e in m.entries) {
+          out[e.key] = (out[e.key] ?? const ReportTally()) + e.value;
+        }
+      }
+      return out;
+    }
+
+    int sum(int Function(TillReport r) f) => reports.fold(0, (s, r) => s + f(r));
+    ReportTally tally(ReportTally Function(TillReport r) f) =>
+        reports.fold(const ReportTally(), (s, r) => s + f(r));
+    final closes = [for (final r in reports) if (r.closedAt != null) r.closedAt!];
+    final declared = reports.isNotEmpty && reports.every((r) => r.declaredCashMinor != null)
+        ? sum((r) => r.declaredCashMinor!)
+        : null;
+    return TillReport(
+      isZ: reports.isNotEmpty && reports.every((r) => r.isZ),
+      zNumber: null,
+      openedAt: reports.map((r) => r.openedAt).reduce((a, b) => a.isBefore(b) ? a : b),
+      closedAt: closes.isEmpty ? null : closes.reduce((a, b) => a.isAfter(b) ? a : b),
+      orderCount: sum((r) => r.orderCount),
+      grossMinor: sum((r) => r.grossMinor),
+      discountMinor: sum((r) => r.discountMinor),
+      taxMinor: sum((r) => r.taxMinor),
+      byMethod: add(reports.map((r) => r.byMethod)),
+      byDepartment: add(reports.map((r) => r.byDepartment)),
+      openingFloatMinor: sum((r) => r.openingFloatMinor),
+      covers: sum((r) => r.covers),
+      voids: tally((r) => r.voids),
+      noSales: tally((r) => r.noSales),
+      refunds: tally((r) => r.refunds),
+      expenses: tally((r) => r.expenses),
+      paidIn: tally((r) => r.paidIn),
+      cashRefundsMinor: sum((r) => r.cashRefundsMinor),
+      cashbackMinor: sum((r) => r.cashbackMinor),
+      wastage: tally((r) => r.wastage),
+      discounts: tally((r) => r.discounts),
+      gratuityMinor: sum((r) => r.gratuityMinor),
+      declaredCashMinor: declared,
+      terminalName: name,
+      staffName: staffName,
+    );
+  }
 
   /// What should physically be in the drawer: the float plus everything taken
   /// in cash, less what was paid out of it. A window cleaner paid £30 from
@@ -350,6 +471,12 @@ class SessionRepository {
         noSales: report.noSales,
         refunds: report.refunds,
         expenses: report.expenses,
+        // Paid in, cash refunds and cashback were left out of this copy, so a
+        // Z (never an X) expected cash the drawer had already handed over:
+        // Pontardawe, 2026-11-14, two cashbacks (GBP 45) and the Z "down".
+        paidIn: report.paidIn,
+        cashRefundsMinor: report.cashRefundsMinor,
+        cashbackMinor: report.cashbackMinor,
         wastage: report.wastage,
         discounts: report.discounts,
         gratuityMinor: report.gratuityMinor,

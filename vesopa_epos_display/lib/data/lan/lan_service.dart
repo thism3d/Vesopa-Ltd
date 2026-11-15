@@ -71,6 +71,43 @@ class LanService {
   /// the back office unreachable -- this device still knows where to look.
   static const _knownKey = 'vesopa_lan_known';
 
+  /// Master, slave or automatic, as chosen on this till (Settings > Local
+  /// network). Kept on the device: it is a fact about this machine's place at
+  /// the counter, and has to hold with the back office out of reach.
+  static const _modeKey = 'vesopa_lan_mode';
+  String _mode = 'auto';
+  String get mode => _mode;
+
+  /// Choose this till's place on the link. A master is also pinned in the
+  /// back office, so older tills and the screens agree on who it is.
+  Future<void> setMode(String mode) async {
+    if (!const {'auto', 'master', 'slave'}.contains(mode)) return;
+    _mode = mode;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_modeKey, mode);
+    } catch (_) {}
+    final n = _node;
+    if (n != null) {
+      n.identity.mode = n.identity.canHost ? mode : 'auto';
+      n.nudge();
+    }
+    _changed();
+    final base = _apiBase, token = _token;
+    if (mode == 'master' && base != null && token != null && _deviceId.isNotEmpty) {
+      try {
+        await _client
+            .post(
+              Uri.parse('$base/api/lan/main-till'),
+              headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+              body: jsonEncode({'device': _deviceId}),
+            )
+            .timeout(const Duration(seconds: 6));
+      } catch (_) {}
+    }
+    unawaited(sendReport());
+  }
+
   List<String> manualHosts = const [];
   List<String> _knownHosts = const [];
   List<String> _serverHosts = const [];
@@ -94,12 +131,21 @@ class LanService {
     _name = name;
     _version = version;
     _role = role;
-    if (same && _node != null) return;
+    if (same && _node != null) {
+      // The real name, once it is known: both of Pontardawe's tills were
+      // "Till" on the link, the placeholder from before theirs had loaded.
+      if (_node!.identity.name != name && name.isNotEmpty) {
+        _node!.identity.name = name;
+        _node!.nudge();
+      }
+      return;
+    }
     if (deviceId.isEmpty) return;
 
     try {
       final prefs = await SharedPreferences.getInstance();
       manualHosts = prefs.getStringList(_manualKey) ?? const [];
+      _mode = prefs.getString(_modeKey) ?? 'auto';
       _knownHosts = prefs.getStringList(_knownKey) ?? const [];
     } catch (_) {}
 
@@ -186,7 +232,7 @@ class LanService {
         role: _role,
         version: _version,
         preferredHub: k.preferred,
-      ),
+      )..mode = _role == 'till' ? _mode : 'auto',
       targets: _targetsOf(k.targets),
     );
     for (final e in _subs.entries) {
@@ -196,6 +242,9 @@ class LanService {
     }
     for (final e in _handlers.entries) {
       node.handle(e.key, e.value);
+    }
+    for (final e in _calls.entries) {
+      node.onCall(e.key, e.value);
     }
     node.onCall('identify', (data, from) {
       if (!_identify.isClosed) _identify.add('This is ${node.identity.name}');
@@ -283,6 +332,32 @@ class LanService {
     _handlers[channel] = handler;
     _node?.handle(channel, handler);
   }
+
+  final Map<String, LanHandler> _calls = {};
+
+  /// Answer [method] when another device of the venue calls it on this one
+  /// (a till asked for its X report by the master, say).
+  void onCall(String method, LanHandler handler) {
+    _calls[method] = handler;
+    _node?.onCall(method, handler);
+  }
+
+  /// Ask [deviceId] something, through the main till when need be.
+  Future<Object?> call(String deviceId, String method, Object? data, {Duration timeout = const Duration(seconds: 8)}) {
+    final n = _node;
+    if (n == null) throw const LanUnavailable('The local link is not running');
+    return n.call(deviceId, method, data, timeout: timeout);
+  }
+
+  /// The other tills heard on the network just now.
+  List<LanPeer> get otherTills => [
+        for (final p in _node?.peers.values ?? const <LanPeer>[])
+          if (p.role == 'till' && p.port > 0) p,
+      ]..sort((a, b) => a.name.compareTo(b.name));
+
+  /// This device's own id and name on the link.
+  String get deviceId => _deviceId;
+  String get deviceName => _name;
 
   /// Called each time this device has a fresh link to a main till.
   void whenReady(void Function() f) => _ready.add(f);

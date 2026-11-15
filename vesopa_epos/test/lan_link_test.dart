@@ -82,6 +82,41 @@ void main() {
     await until(() => b.isHub && k.linked && k.hubId == 'till-b', within: const Duration(seconds: 15));
   }, timeout: const Timeout(Duration(seconds: 40)));
 
+  // Owner, 2026-11-15: "master/slave rules", chosen on the till like an ICR.
+  test('master and slave: the master takes the job, a slave stands in while it is off and hands it back', () async {
+    final slave = node('till-s', 'till', 47930, [47931])..identity.mode = 'slave';
+    final master = node('till-m', 'till', 47931, [47930])..identity.mode = 'master';
+    // The slave has been running longest, and has the job to itself.
+    await slave.start();
+    addTearDown(slave.dispose);
+    await until(() => slave.isHub);
+
+    // The master arrives later and still takes it.
+    await master.start();
+    addTearDown(master.dispose);
+    await until(() => master.isHub && !slave.isHub && slave.linked && slave.hubId == 'till-m', within: const Duration(seconds: 15));
+    expect(slave.peers['till-m']?.mode, 'master');
+
+    // The master goes off: the slave stands in.
+    await master.stop();
+    await until(() => slave.isHub, within: const Duration(seconds: 15));
+
+    // And hands it back when the master returns.
+    await master.start();
+    await until(() => master.isHub && !slave.isHub && slave.hubId == 'till-m', within: const Duration(seconds: 20));
+  }, timeout: const Timeout(Duration(seconds: 70)));
+
+  test('a slave gives way to a till left on automatic', () async {
+    final slave = node('till-s2', 'till', 47934, [47935])..identity.mode = 'slave';
+    final auto = node('till-a2', 'till', 47935, [47934]);
+    await slave.start();
+    addTearDown(slave.dispose);
+    await until(() => slave.isHub);
+    await auto.start();
+    addTearDown(auto.dispose);
+    await until(() => auto.isHub && !slave.isHub && slave.linked, within: const Duration(seconds: 15));
+  }, timeout: const Timeout(Duration(seconds: 40)));
+
   test('the main till coming back at a new address is followed (MAC randomisation, a new DHCP lease)', () async {
     final a = node('till-m', 'till', 47930, []);
     await a.start();

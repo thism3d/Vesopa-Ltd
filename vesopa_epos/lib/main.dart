@@ -10,6 +10,7 @@ import 'package:window_manager/window_manager.dart';
 import 'config/constants.dart';
 import 'data/activity_log.dart';
 import 'data/lan/lan_identify.dart';
+import 'data/lan/lan_catalogue.dart';
 import 'data/lan/lan_service.dart';
 import 'data/app_update.dart';
 import 'data/bill_sync.dart';
@@ -1026,6 +1027,15 @@ final syncServiceProvider = Provider<SyncService>((ref) {
   // captured now, so a terminal that signs in later picks up its token without
   // this service being rebuilt.
   sync.pullStaff = () => ref.read(staffRepositoryProvider).sync();
+
+  // The menu, prices, screens and staff from the main till when the back
+  // office cannot be reached, and again when the main till has newer ones.
+  LanCatalogue.instance
+    ..start()
+    ..onNewer = (keys) async {
+      await sync.resync();
+      if (keys.contains('modifiers')) sync.emit('modifiers');
+    };
 
   // Which machine this is, read at send time for the same reason as above: the
   // name is a preference that resolves asynchronously and can be changed by a

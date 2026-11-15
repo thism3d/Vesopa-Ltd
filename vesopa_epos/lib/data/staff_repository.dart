@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'local/database.dart';
 import 'till_permissions.dart';
+import 'lan/lan_catalogue.dart';
 
 /// Why a staff list could not be pulled, in words a manager standing at the
 /// till can act on.
@@ -73,15 +74,19 @@ class StaffRepository {
 
     final http.Response res;
     try {
-      res = await _client
-          .get(
-            // `features=training`: this till keeps a trainee's sales to itself
-            // (data/training_mode.dart), so the back office may send training
-            // accounts. A till that does not say so is never given one.
-            Uri.parse('$apiBase/till/staff?features=training'),
-            headers: {'Authorization': 'Bearer $token'},
-          )
-          .timeout(timeout);
+      // The back office, or the main till's copy when it cannot be reached.
+      res = await LanCatalogue.instance.fetch(
+        'staff',
+        () => _client
+            .get(
+              // `features=training`: this till keeps a trainee's sales to itself
+              // (data/training_mode.dart), so the back office may send training
+              // accounts. A till that does not say so is never given one.
+              Uri.parse('$apiBase/till/staff?features=training'),
+              headers: {'Authorization': 'Bearer $token'},
+            )
+            .timeout(timeout),
+      );
     } catch (e) {
       throw StaffSyncFailed(
         'Could not reach the back office to update the staff list.\n\n$e',

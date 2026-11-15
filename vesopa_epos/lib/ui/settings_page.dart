@@ -901,6 +901,127 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
     }
   }
 
+  /// Master, slave or automatic, chosen here on the till (2026-11-15).
+  Future<void> _setMode(String mode) async {
+    final lan = LanService.instance;
+    if (mode == lan.mode) return;
+    final otherMasters = [
+      for (final p in lan.otherTills)
+        if (p.mode == 'master') p.name,
+    ];
+    if (mode == 'master' && otherMasters.isNotEmpty) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.star_rounded, color: Pos.amber, size: 32),
+          title: const Text('Two masters?'),
+          content: Text(
+            '${otherMasters.join(' and ')} is already set as master. A venue needs one. '
+            'If both stay as master, the one running longest leads and the other follows.\n\n'
+            'Set the other till to Slave afterwards.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Make this the master')),
+          ],
+        ),
+      );
+      if (go != true) return;
+    }
+    setState(() => _busy = true);
+    await lan.setMode(mode);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    PosMessenger.success(
+      context,
+      switch (mode) {
+        'master' => 'This till is the master. The others follow it within a few seconds.',
+        'slave' => 'This till is a slave. It follows the master, and stands in if the master is off.',
+        _ => 'Automatic: the till running longest leads.',
+      },
+    );
+  }
+
+  /// Every device on the link tried at once, with the answer in plain words.
+  Future<void> _test() async {
+    setState(() => _testing = true);
+    Map<String, Object?>? result;
+    String? problem;
+    try {
+      result = await LanService.instance.fullCheck();
+    } catch (e) {
+      problem = '$e';
+    }
+    if (!mounted) return;
+    setState(() => _testing = false);
+    final devices = [for (final d in (result?['devices'] as List? ?? const [])) (d as Map).cast<String, Object?>()];
+    final internet = result?['internet_ms'] as int?;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: Icon(
+          problem == null ? Icons.network_check : Icons.error_outline,
+          color: problem == null ? Pos.brandDeep : Pos.red,
+          size: 32,
+        ),
+        title: const Text('Link test'),
+        content: SizedBox(
+          width: 460,
+          child: problem != null
+              ? Text(problem)
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _TestRow(
+                      icon: Icons.cloud_outlined,
+                      name: 'Internet (back office)',
+                      ok: internet != null,
+                      detail: internet == null ? 'Not reachable. The tills carry on over the local link.' : 'Answered in $internet ms',
+                    ),
+                    if (devices.isEmpty)
+                      const _TestRow(
+                        icon: Icons.devices_other,
+                        name: 'Other devices',
+                        ok: false,
+                        detail: 'None found. Check they are switched on, updated and on the same network.',
+                      ),
+                    for (final d in devices)
+                      _TestRow(
+                        icon: Icons.point_of_sale,
+                        name: '${d['name']}',
+                        ok: (d['link'] as Map?)?['ok'] == true,
+                        detail: _linkWords(d),
+                      ),
+                  ],
+                ),
+        ),
+        actions: [FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
+      ),
+    );
+  }
+
+  bool _testing = false;
+
+  /// "Answered in 1.2 ms, 420 Mb/s", or why not.
+  static String _linkWords(Map<String, Object?> d) {
+    final link = (d['link'] as Map?) ?? const {};
+    if (link['ok'] != true) return 'No answer: ${link['error'] ?? 'not reachable'}';
+    final ms = (link['avg_ms'] as num?)?.toDouble();
+    final speed = ((d['speed'] as Map?)?['down_mbps'] as num?)?.toDouble();
+    return 'Answered in ${ms == null ? '?' : ms.toStringAsFixed(ms < 10 ? 1 : 0)} ms'
+        '${speed == null ? '' : ' · ${speed.toStringAsFixed(0)} Mb/s'}'
+        '${(link['lost'] as num? ?? 0) > 0 ? ' · ${link['lost']} lost' : ''}';
+  }
+
+  static const _roleIcon = {
+    'till': Icons.point_of_sale,
+    'kitchen': Icons.soup_kitchen_outlined,
+    'display': Icons.tv_outlined,
+    'go': Icons.smartphone,
+  };
+  static const _roleName = {'till': 'Till', 'kitchen': 'Kitchen screen', 'display': 'Customer display', 'go': 'Vesopa Go'};
+
   @override
   Widget build(BuildContext context) {
     final lan = LanService.instance;
@@ -918,49 +1039,150 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
             ? 'This till'
             : node.peers[node.hubId]?.name ?? node.hubId;
     final others = node.peers.values.toList()..sort((a, b) => a.name.compareTo(b.name));
-    final roleName = {'till': 'Till', 'kitchen': 'Kitchen screen', 'display': 'Customer display'};
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ListTile(
-          leading: Icon(
-            node.linked ? Icons.lan : Icons.lan_outlined,
-            color: node.linked ? Pos.brandDeep : Pos.graphite,
-          ),
-          title: Text(node.isHub
-              ? 'This is the main till'
-              : node.linked
-                  ? 'Linked to the main till: $hub'
-                  : hub == null
-                      ? 'Looking for the other tills'
-                      : 'Connecting to the main till: $hub'),
-          subtitle: Text(
-            'Tables, kitchen tickets, customer displays and, with the internet down, points, gift cards '
-            "and vouchers go between this venue's devices over its own network. Encrypted; only this "
-            "venue's devices can join."
-            '${node.isHub ? '\n${node.clientCount} device${node.clientCount == 1 ? '' : 's'} connected to this till.' : ''}',
-          ),
-        ),
-        if (others.isEmpty)
-          const ListTile(
-            dense: true,
-            title: Text('No other device heard yet'),
-            subtitle: Text('If there should be, check they are on the same network and updated.'),
+    final theme = Theme.of(context);
+    final good = node.linked;
+    final (headline, detail) = node.isHub
+        ? (
+            'This till is leading',
+            '${node.clientCount} device${node.clientCount == 1 ? '' : 's'} connected to it'
+                '${lan.mode == 'slave' ? '. Standing in: no master can be heard.' : ''}',
           )
-        else
-          for (final p in others)
-            ListTile(
-              dense: true,
-              leading: Icon(p.claimsHub ? Icons.star : Icons.circle, size: 14, color: Pos.brandDeep),
-              title: Text(p.name),
-              subtitle: Text('${roleName[p.role] ?? p.role} · ${p.address.address}${p.claimsHub ? ' · main till' : ''}'),
+        : node.linked
+            ? ('Linked to $hub', 'Tables, kitchen tickets and the menu move over the venue\'s own network.')
+            : hub == null
+                ? (
+                    'Looking for the other tills',
+                    others.isEmpty ? 'Nothing heard yet on this network.' : 'Heard ${others.length}; agreeing which till leads.',
+                  )
+                : ('Connecting to $hub', 'Found it; joining now.');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Where the link stands, at a glance.
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: (good ? Pos.brand : Pos.amber).withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(14),
             ),
-        const Divider(height: 1),
-        ListTile(
-          dense: true,
-          leading: const Icon(Icons.settings_ethernet, color: Pos.graphite),
-          title: const Text('Network setup'),
-          subtitle: FutureBuilder<List<String>>(
+            child: Row(
+              children: [
+                Icon(
+                  node.isHub ? Icons.hub : (good ? Icons.lan : Icons.wifi_find_outlined),
+                  color: good ? Pos.brandDeep : Pos.amber,
+                  size: 30,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(headline, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text(detail, style: TextStyle(fontSize: 13, color: theme.hintColor)),
+                    ],
+                  ),
+                ),
+                _Badge(
+                  label: switch (lan.mode) { 'master' => 'MASTER', 'slave' => 'SLAVE', _ => 'AUTO' },
+                  color: switch (lan.mode) { 'master' => Pos.amber, 'slave' => Pos.blue, _ => Pos.graphite },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text('This till is', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: 'master', icon: Icon(Icons.star_rounded), label: Text('Master')),
+              ButtonSegment(value: 'slave', icon: Icon(Icons.link_rounded), label: Text('Slave')),
+              ButtonSegment(value: 'auto', icon: Icon(Icons.auto_mode_rounded), label: Text('Auto')),
+            ],
+            selected: {lan.mode},
+            onSelectionChanged: _busy ? null : (v) => _setMode(v.first),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            switch (lan.mode) {
+              'master' =>
+                'Leads the venue: holds the tables, the menu and the balances for the others, and takes the lead back '
+                    'whenever it is switched on. Choose one master per venue.',
+              'slave' =>
+                'Follows the master. If the master is switched off, this till stands in within a few seconds '
+                    'and hands the lead back when the master returns.',
+              _ => 'The till that has been running longest leads, unless the back office has pinned one.',
+            },
+            style: TextStyle(fontSize: 13, color: theme.hintColor),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              const Expanded(child: Text('On this network', style: TextStyle(fontWeight: FontWeight.w700))),
+              OutlinedButton.icon(
+                onPressed: _testing ? null : _test,
+                icon: _testing
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.network_check, size: 18),
+                label: Text(_testing ? 'Testing…' : 'Test the link'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _DeviceRow(
+            icon: Icons.point_of_sale,
+            name: '${node.identity.name} (this till)',
+            detail: 'Till',
+            badges: [
+              if (node.isHub) const _Badge(label: 'LEADING', color: Pos.brandDeep),
+              if (lan.mode != 'auto') _Badge(label: lan.mode == 'master' ? 'MASTER' : 'SLAVE', color: lan.mode == 'master' ? Pos.amber : Pos.blue),
+            ],
+          ),
+          if (others.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Text(
+                'No other device heard yet. If there should be, check they are on the same network and updated.',
+                style: TextStyle(fontSize: 13, color: theme.hintColor),
+              ),
+            )
+          else
+            for (final p in others)
+              _DeviceRow(
+                icon: _roleIcon[p.role] ?? Icons.devices_other,
+                name: p.name,
+                detail: '${_roleName[p.role] ?? p.role} · ${p.address.address}',
+                badges: [
+                  if (p.claimsHub) const _Badge(label: 'LEADING', color: Pos.brandDeep),
+                  if (p.role == 'till' && p.mode != 'auto')
+                    _Badge(label: p.mode == 'master' ? 'MASTER' : 'SLAVE', color: p.mode == 'master' ? Pos.amber : Pos.blue),
+                ],
+              ),
+          const SizedBox(height: 6),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          // Vesopa support's page: hidden behind a long press, and the day's code.
+          GestureDetector(
+            onLongPress: () => openConnectedDevices(context),
+            child: Row(
+              children: [
+                const Icon(Icons.settings_ethernet, color: Pos.graphite, size: 20),
+                const SizedBox(width: 10),
+                const Expanded(child: Text('Network setup', style: TextStyle(fontWeight: FontWeight.w700))),
+                OutlinedButton.icon(
+                  onPressed: _editHosts,
+                  icon: const Icon(Icons.edit_location_alt_outlined, size: 18),
+                  label: const Text('Addresses'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          FutureBuilder<List<String>>(
             future: LanNode.localAddresses(),
             builder: (context, ips) => Text(
               'This till: ${(ips.data ?? const <String>[]).join(', ')}'
@@ -971,28 +1193,119 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
               'In a power cut the router needs a UPS too. Sales, tables and balances catch up '
               'with the cloud by themselves when the internet is back.'
               '${lan.manualHosts.isEmpty ? '' : '\nAlso trying: ${lan.manualHosts.join(', ')}'}',
+              style: TextStyle(fontSize: 12.5, color: theme.hintColor, height: 1.35),
             ),
           ),
-          trailing: OutlinedButton(onPressed: _editHosts, child: const Text('Addresses')),
-          // Vesopa support's page: hidden, and behind the day's code.
-          onLongPress: () => openConnectedDevices(context),
-        ),
-        if (Platform.isWindows && lan.firewallOpen == false)
-          ListTile(
-            leading: const Icon(Icons.shield_outlined, color: Pos.graphite),
-            title: const Text('Windows may be keeping the other devices out'),
-            subtitle: Text(
-              'Allow the local link through the firewall. Windows asks for the administrator login once.'
-              '${lan.networkProfile == null ? '' : ' Network: ${lan.networkProfile}.'}',
+          if (Platform.isWindows && lan.firewallOpen == false)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.shield_outlined, color: Pos.red),
+              title: const Text('Windows may be keeping the other devices out'),
+              subtitle: Text(
+                'Allow the local link through the firewall. Windows asks for the administrator login once.'
+                '${lan.networkProfile == null ? '' : ' Network: ${lan.networkProfile}.'}',
+              ),
+              trailing: FilledButton(
+                onPressed: _busy ? null : _allow,
+                child: Text(_busy ? 'Asking…' : 'Allow'),
+              ),
             ),
-            trailing: FilledButton(
-              onPressed: _busy ? null : _allow,
-              child: Text(_busy ? 'Asking…' : 'Allow'),
-            ),
-          ),
-      ],
+        ],
+      ),
     );
   }
+}
+
+/// A small coloured word: MASTER, SLAVE, LEADING.
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(left: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(999)),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.6,
+            // Darker on a light page, so amber and blue stay readable.
+            color: Theme.of(context).brightness == Brightness.dark ? color : Color.lerp(color, Colors.black, 0.42),
+          ),
+        ),
+      );
+}
+
+/// One device on the venue's network.
+class _DeviceRow extends StatelessWidget {
+  const _DeviceRow({required this.icon, required this.name, required this.detail, this.badges = const []});
+
+  final IconData icon;
+  final String name;
+  final String detail;
+  final List<Widget> badges;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(color: Pos.brand.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, size: 20, color: Pos.brandDeep),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, style: const TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                  Text(detail, style: TextStyle(fontSize: 12.5, color: Theme.of(context).hintColor)),
+                ],
+              ),
+            ),
+            ...badges,
+          ],
+        ),
+      );
+}
+
+/// One line of the link test.
+class _TestRow extends StatelessWidget {
+  const _TestRow({required this.icon, required this.name, required this.ok, required this.detail});
+
+  final IconData icon;
+  final String name;
+  final bool ok;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, color: Pos.graphite),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text(detail, style: TextStyle(fontSize: 12.5, color: Theme.of(context).hintColor)),
+                ],
+              ),
+            ),
+            Icon(ok ? Icons.check_circle : Icons.cancel, color: ok ? Pos.green : Pos.red),
+          ],
+        ),
+      );
 }
 
 /// How big the till's on-screen keyboard is (also A- / A+ on the keyboard).
@@ -2679,3 +2992,7 @@ class _Row extends StatelessWidget {
     );
   }
 }
+
+/// The Local network panel on its own, for its layout test.
+@visibleForTesting
+Widget localNetworkCardForTest() => const _LocalNetworkCard();
