@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../payments/go_terminal_provider.dart';
 import 'package:intl/intl.dart';
 
 import '../data/customer_display.dart';
@@ -101,6 +102,21 @@ Future<int> refundDojoPayment(
   String? orderId,
   String? reason,
 }) async {
+  // Taken on a Vesopa Go card terminal: that device's gateway holds it.
+  if (isGoTerminalReference(intentId)) {
+    await showDialog<void>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Refund it on the card terminal'),
+        content: const Text(
+          'This card payment was taken on a Vesopa Go card terminal. Open Vesopa Go on that device, '
+          'go to More, Card payments on this phone, and refund it there.',
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(dialog).pop(), child: const Text('OK'))],
+      ),
+    );
+    return 0;
+  }
   // Taken on Teya: refunded through Teya.
   if (isTeyaReference(intentId) || isBarclaycardReference(intentId)) {
     return refundTeyaPayment(

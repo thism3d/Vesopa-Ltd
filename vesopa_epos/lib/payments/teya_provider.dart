@@ -10,6 +10,7 @@ import '../config/constants.dart';
 import '../data/terminal_identity.dart';
 import '../main.dart';
 import 'barclaycard_provider.dart';
+import 'go_terminal_provider.dart';
 import 'payment_provider.dart';
 import 'teya_sdk.dart';
 import 'teya_sdk_provider.dart';
@@ -590,6 +591,10 @@ class TeyaProvider implements CloudStatusCard {
 final teyaProvider = Provider<TeyaCard?>((ref) {
   // Barclaycard first, when the back office gave this venue's tills to it:
   // the customer pays on their phone from a QR code (barclaycard_provider.dart).
+  // A Vesopa Go card terminal this till was pointed at in Settings comes
+  // before everything: it was chosen on this till, for this till (2026-11-16).
+  final goTerminal = ref.watch(goTerminalTillProvider);
+  if (goTerminal != null) return goTerminal;
   final barclays = ref.watch(barclaycardTillProvider);
   if (barclays != null) return barclays;
   final config = ref.watch(teyaConfigProvider).value;

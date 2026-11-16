@@ -16,6 +16,7 @@ import '../data/customer_display_control.dart';
 import '../data/fonts.dart';
 import '../data/gym.dart';
 import '../data/terminal_identity.dart';
+import '../payments/go_terminal_provider.dart';
 import '../main.dart';
 import '../payments/teya_provider.dart';
 import '../payments/barclaycard_provider.dart';
@@ -319,6 +320,7 @@ class SettingsPage extends ConsumerWidget {
 
         const SizedBox(height: 28),
         const _SectionTitle('Card payments'),
+        const _GoTerminalCard(),
         const _BarclaycardCard(),
         const _TeyaCard(),
         _DojoCard(),
@@ -1365,6 +1367,123 @@ class _KeyboardSizeCard extends StatelessWidget {
                 showSelectedIcon: false,
                 onSelectionChanged: (v) => KeyboardSize.set(v.first),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A Vesopa Go card terminal for this till (2026-11-16): a phone or tablet
+/// running Vesopa Go as a Card terminal takes the tap, and the sale stays
+/// here. Chosen on the till because it is this till's card machine.
+class _GoTerminalCard extends ConsumerStatefulWidget {
+  const _GoTerminalCard();
+
+  @override
+  ConsumerState<_GoTerminalCard> createState() => _GoTerminalCardState();
+}
+
+class _GoTerminalCardState extends ConsumerState<_GoTerminalCard> {
+  List<GoTerminalSeen> _found = const [];
+  bool _looked = false;
+  Timer? _again;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_look());
+    _again = Timer.periodic(const Duration(seconds: 6), (_) => unawaited(_look()));
+  }
+
+  @override
+  void dispose() {
+    _again?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _look() async {
+    try {
+      final found = await goTerminalsAwake(
+        apiBase: ref.read(apiBaseProvider),
+        token: ref.read(sessionProvider).terminalToken,
+      );
+      if (mounted) {
+        setState(() {
+          _found = found;
+          _looked = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _looked = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final mine = ref.watch(goTerminalChoiceProvider).value;
+    // Nothing to offer and nothing chosen: the card stays out of the way.
+    if (mine == null && _found.isEmpty) return const SizedBox.shrink();
+    final listed = _found.any((f) => f.deviceId == mine?.deviceId);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ListTile(
+                leading: Container(
+                  width: 34,
+                  height: 34,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: Pos.brand, borderRadius: BorderRadius.circular(10)),
+                  child: const Icon(Icons.contactless_rounded, color: Pos.onBrand, size: 22),
+                ),
+                title: const Text('Vesopa Go card terminal', style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(
+                  mine == null
+                      ? 'A phone or tablet running Vesopa Go as a Card terminal can take this till\'s cards. '
+                          'Card sends it the amount; the customer taps there.'
+                      : 'Card payments on this till go to ${mine.name}.',
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ),
+              if (mine != null && !listed)
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.bedtime_outlined),
+                  title: Text(mine.name),
+                  subtitle: Text(_looked ? 'Asleep or switched off just now. Open Vesopa Go on it.' : 'Looking for it…'),
+                  trailing: TextButton(
+                    onPressed: () => ref.read(goTerminalChoiceProvider.notifier).set(null),
+                    child: const Text('Stop using'),
+                  ),
+                ),
+              for (final f in _found)
+                ListTile(
+                  dense: true,
+                  leading: Icon(Icons.smartphone_rounded, color: f.ready ? Pos.green : Pos.amber),
+                  title: Text(f.name),
+                  subtitle: Text(
+                    !f.ready ? (f.why ?? 'Cannot take cards yet') : (f.busy ? 'Taking a payment' : 'Ready'),
+                    style: TextStyle(color: theme.hintColor),
+                  ),
+                  trailing: f.deviceId == mine?.deviceId
+                      ? TextButton(
+                          onPressed: () => ref.read(goTerminalChoiceProvider.notifier).set(null),
+                          child: const Text('Stop using'),
+                        )
+                      : FilledButton.tonal(
+                          onPressed: () =>
+                              ref.read(goTerminalChoiceProvider.notifier).set(GoTerminalChoice(f.deviceId, f.name)),
+                          child: const Text('Use on this till'),
+                        ),
+                ),
             ],
           ),
         ),
