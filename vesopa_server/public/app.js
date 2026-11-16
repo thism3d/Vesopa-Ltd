@@ -4715,7 +4715,11 @@ function fieldHtml(f) {
         </span>
       </li>`;
     };
+    // An empty marker that is always sent, so a product whose last question
+    // was removed saves as "no questions" rather than "not touched" (Nicky,
+    // 2026-11-16: "I need to be able to delete a modifier off the product").
     return `<div class="mod-field" data-mod-field>
+      <input type="hidden" name="${f.name}" value="" />
       <ol class="mod-list">${chosen.map(rowFor).join('')}</ol>
       <div class="mod-add">
         <select data-mod-pick>
@@ -7562,6 +7566,7 @@ document.addEventListener('click', async (e) => {
     if (!plu || data.modifier_group_ids === undefined) return;
     const ids = []
       .concat(data.modifier_group_ids)
+      .filter((n) => String(n ?? '').trim() !== '')
       .map((n) => Number(n))
       .filter(Number.isFinite);
     await api(`/products/${plu}/modifiers`, {
