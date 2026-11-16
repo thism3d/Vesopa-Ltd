@@ -10,6 +10,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import '../../nfc/card_read_sheet.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/config/constants.dart' show apiBase;
@@ -289,8 +290,8 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
   }
 
   Future<void> _card() async {
-    final id = await StaffCardReader.readOnce();
-    if (id == null) return;
+    final id = await readCard(context, title: 'Tap your staff card', camera: false);
+    if (id == null || !mounted) return;
     final clerk = ClerkAuth.byCard(ref.read(tapProvider).staff, id);
     if (clerk != null) {
       _signOn(clerk);

@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
+import '../../nfc/card_read_sheet.dart';
 import '../../ui/pages/customers_page.dart' show GoCustomer;
 import '../../ui/theme.dart';
 
@@ -111,7 +112,25 @@ class _CodeTenderState extends ConsumerState<_CodeTender> {
             decoration: InputDecoration(
               labelText: _gift ? 'Gift card number' : 'Deposit reference',
               hintText: _gift ? null : 'DEP-123456',
-              suffixIcon: IconButton(onPressed: _busy ? null : _look, icon: const Icon(Icons.search_rounded)),
+              // Tap the card, scan its code, or type it (2026-11-16).
+              suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  tooltip: _gift ? 'Tap or scan the card' : 'Scan the reference',
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          final code = await readCard(
+                            context,
+                            title: _gift ? 'Tap or scan the gift card' : 'Scan the deposit reference',
+                          );
+                          if (code == null || !mounted) return;
+                          _code.text = code;
+                          _look();
+                        },
+                  icon: const Icon(Icons.contactless_rounded),
+                ),
+                IconButton(tooltip: 'Look up', onPressed: _busy ? null : _look, icon: const Icon(Icons.search_rounded)),
+              ]),
             ),
           ),
           if (_busy) const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),

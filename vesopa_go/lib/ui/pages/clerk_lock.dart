@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../../nfc/card_read_sheet.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -51,8 +52,8 @@ class _ClerkLockPageState extends ConsumerState<ClerkLockPage> {
   }
 
   Future<void> _card() async {
-    final id = await StaffCardReader.readOnce();
-    if (id == null) return;
+    final id = await readCard(context, title: 'Tap your staff card', camera: false);
+    if (id == null || !mounted) return;
     final clerk = ClerkAuth.byCard(ref.read(tapProvider).staff, id);
     if (clerk != null) {
       ref.read(tapProvider.notifier).signOn(clerk);

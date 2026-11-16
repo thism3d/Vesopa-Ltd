@@ -16,6 +16,7 @@ import '../../data/models.dart';
 import '../../data/session.dart';
 import '../clerk_chip.dart' show initialsOf;
 import '../product_photo.dart' show photoUrl;
+import '../../nfc/card_read_sheet.dart';
 import '../theme.dart';
 
 /// One customer as `/till/customers` answers.
@@ -117,6 +118,36 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
     _debounce = Timer(const Duration(milliseconds: 300), _search);
   }
 
+  /// A member's card tapped, or the code on it or in their app scanned.
+  /// Found: straight onto the sale. Not found: searched for, so the clerk
+  /// sees why.
+  Future<void> _scanCard() async {
+    final code = await readCard(
+      context,
+      title: 'Scan or tap their card',
+      hint: 'Hold their card against the back of the phone',
+      cameraHint: 'The code on their card, or the one their app shows',
+    );
+    if (code == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (!ref.read(tapProvider).demo) {
+      try {
+        final member = await ref.read(apiProvider).member(code);
+        if (!mounted) return;
+        final billId = widget.billId ?? ref.read(currentSaleProvider.notifier).ensure();
+        ref.read(tapProvider.notifier).setMember(billId, member);
+        Navigator.of(context).maybePop();
+        messenger.showSnackBar(SnackBar(content: Text('${member.name} is on the sale')));
+        return;
+      } on TapApiError catch (_) {
+        // Not a member number: look for it as a name, phone or card instead.
+      }
+    }
+    if (!mounted) return;
+    _q.text = code;
+    await _search();
+  }
+
   /// Onto the sale, with their loyalty account (points, discount) as the till does.
   Future<void> _attach(GoCustomer c) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -214,7 +245,11 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
             decoration: InputDecoration(
               prefixIcon: const Icon(Icons.search_rounded),
               hintText: 'Name, mobile, email or card number',
-              suffixIcon: _busy ? const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))) : null,
+              // Their card or the code their app shows: tapped or scanned,
+              // and they are on the sale (2026-11-16).
+              suffixIcon: _busy
+                  ? const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)))
+                  : IconButton(tooltip: 'Scan or tap their card', onPressed: _scanCard, icon: const Icon(Icons.qr_code_scanner_rounded)),
             ),
           ),
         ),
@@ -225,32 +260,81 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
               : ListView.separated(
                   padding: const EdgeInsets.only(bottom: 96),
                   itemCount: _found.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1, indent: 72),
-                  itemBuilder: (_, i) {
-                    final c = _found[i];
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: context.goRaised,
-                        foregroundImage: c.photo == null || c.photo!.isEmpty ? null : CachedNetworkImageProvider(photoUrl(c.photo!)),
-                        child: Text(initialsOf(c.name)),
-                      ),
-                      title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                      subtitle: Text([
-                        if (c.memberNumber != null) c.memberNumber!,
-                        if (c.phone != null && c.phone!.isNotEmpty) c.phone!,
-                        if (c.schemeName != null) '${c.points} points',
-                        if (c.discount.isNotEmpty) c.discount,
-                        if (c.expired) 'Membership ended',
-                      ].join(' · '), style: TextStyle(color: c.expired ? Tp.danger : null)),
-                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                        IconButton(tooltip: 'Edit', onPressed: () => _editor(c: c), icon: const Icon(Icons.edit_rounded)),
-                        FilledButton.tonal(onPressed: () => _attach(c), child: const Text('Add to sale')),
-                      ]),
-                    );
-                  },
+                  separatorBuilder: (_, _) => const Divider(height: 1, indent: 16, endIndent: 16),
+                  itemBuilder: (_, i) => _CustomerRow(
+                    customer: _found[i],
+                    onEdit: () => _editor(c: _found[i]),
+                    onAttach: () => _attach(_found[i]),
+                  ),
                 ),
         ),
       ]),
+    );
+  }
+}
+
+/// One customer. Wide screens keep the buttons on the right; on a small phone
+/// they sit under the name at full width, so the name is never squeezed and
+/// both buttons stay a full finger tall (the owner, 2026-11-16).
+class _CustomerRow extends StatelessWidget {
+  const _CustomerRow({required this.customer, required this.onEdit, required this.onAttach});
+  final GoCustomer customer;
+  final VoidCallback onEdit;
+  final VoidCallback onAttach;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = customer;
+    final t = Theme.of(context).textTheme;
+    final details = [
+      if (c.memberNumber != null) c.memberNumber!,
+      if (c.phone != null && c.phone!.isNotEmpty) c.phone!,
+      if (c.schemeName != null) '${c.points} points',
+      if (c.discount.isNotEmpty) c.discount,
+      if (c.expired) 'Membership ended',
+    ].join(' · ');
+    final who = Row(children: [
+      CircleAvatar(
+        radius: 22,
+        backgroundColor: context.goRaised,
+        foregroundImage: c.photo == null || c.photo!.isEmpty ? null : CachedNetworkImageProvider(photoUrl(c.photo!)),
+        child: Text(initialsOf(c.name)),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          if (details.isNotEmpty)
+            Text(details, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.bodyMedium?.copyWith(color: c.expired ? Tp.danger : context.goMuted)),
+        ]),
+      ),
+    ]);
+    final edit = OutlinedButton.icon(onPressed: onEdit, icon: const Icon(Icons.edit_rounded, size: 18), label: const Text('Edit'));
+    final attach = FilledButton.icon(onPressed: onAttach, icon: const Icon(Icons.add_rounded, size: 18), label: const Text('Add to sale'));
+    return LayoutBuilder(
+      builder: (context, box) {
+        final narrow = box.maxWidth < 520 || MediaQuery.textScalerOf(context).scale(1) > 1.3;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: narrow
+              ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  who,
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    Expanded(child: edit),
+                    const SizedBox(width: 10),
+                    Expanded(flex: 2, child: attach),
+                  ]),
+                ])
+              : Row(children: [
+                  Expanded(child: who),
+                  const SizedBox(width: 12),
+                  edit,
+                  const SizedBox(width: 8),
+                  attach,
+                ]),
+        );
+      },
     );
   }
 }

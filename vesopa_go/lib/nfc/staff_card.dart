@@ -28,7 +28,9 @@ class StaffCardReader {
   /// clerk cancelled or [timeout] passed. On iPhone the system's own "Ready
   /// to scan" sheet is shown.
   static Future<String?> readOnce({Duration timeout = const Duration(seconds: 30)}) async {
+    await cancel();
     final done = Completer<String?>();
+    _waiting = done;
     try {
       await NfcManager.instance.startSession(
         pollingOptions: {NfcPollingOption.iso14443},
@@ -46,6 +48,19 @@ class StaffCardReader {
       NfcManager.instance.stopSession();
       return null;
     });
+  }
+
+  static Completer<String?>? _waiting;
+
+  /// Stop listening: the reading screen was closed, or another read begins.
+  static Future<void> cancel() async {
+    final waiting = _waiting;
+    _waiting = null;
+    if (waiting == null || waiting.isCompleted) return;
+    waiting.complete(null);
+    try {
+      await NfcManager.instance.stopSession();
+    } catch (_) {}
   }
 
   static Uint8List? _idOf(NfcTag tag) {

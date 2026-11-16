@@ -90,7 +90,7 @@ class _ReportBody extends ConsumerWidget {
               Text('Net sales', style: t.titleSmall),
               Money(r.netMinor, style: t.displaySmall?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 14),
-              Wrap(spacing: 10, runSpacing: 10, children: [
+              _StatGrid([
                 _Stat('Sales', '${r.sales}'),
                 _Stat('Average', money(r.averageMinor)),
                 _Stat('Discounts', money(r.discountMinor)),
@@ -227,6 +227,45 @@ class _ReportBody extends ConsumerWidget {
   }
 }
 
+/// The stat boxes, sharing the whole width of the card.
+///
+/// A Wrap left each box at its own width, so the row stopped short and an
+/// empty strip sat beside the last box (the owner, 2026-11-16). Here every row
+/// is filled edge to edge: as many boxes as fit at a readable width, and a
+/// short last row stretches rather than leaving a hole.
+class _StatGrid extends StatelessWidget {
+  const _StatGrid(this.stats);
+  final List<Widget> stats;
+
+  static const _gap = 10.0;
+  static const _least = 132.0;
+
+  @override
+  Widget build(BuildContext context) {
+    if (stats.isEmpty) return const SizedBox.shrink();
+    return LayoutBuilder(builder: (context, box) {
+      final fit = ((box.maxWidth + _gap) / (_least + _gap)).floor().clamp(1, stats.length);
+      // Even rows where the count allows: four boxes on a phone are two and
+      // two, never three and one.
+      final rows = (stats.length / fit).ceil();
+      final perRow = (stats.length / rows).ceil();
+      return Column(children: [
+        for (var start = 0; start < stats.length; start += perRow) ...[
+          if (start > 0) const SizedBox(height: _gap),
+          IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              for (var i = start; i < start + perRow && i < stats.length; i++) ...[
+                if (i > start) const SizedBox(width: _gap),
+                Expanded(child: stats[i]),
+              ],
+            ]),
+          ),
+        ],
+      ]);
+    });
+  }
+}
+
 class _Stat extends StatelessWidget {
   const _Stat(this.label, this.value, {this.rolling = false});
   final String label;
@@ -239,15 +278,18 @@ class _Stat extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     return Container(
-      constraints: const BoxConstraints(minWidth: 120),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(border: Border.all(color: Theme.of(context).colorScheme.outlineVariant), borderRadius: BorderRadius.circular(14)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(label, style: t.bodySmall),
-        if (rolling)
-          RollingText(value, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: Tp.tabular))
-        else
-          Text(value, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: Tp.tabular)),
+        // Scaled down rather than clipped when a long figure meets a narrow box.
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: rolling
+              ? RollingText(value, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: Tp.tabular))
+              : Text(value, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: Tp.tabular)),
+        ),
       ]),
     );
   }
@@ -503,7 +545,7 @@ class _VenueBodyState extends ConsumerState<_VenueBody> {
               Text('Net sales', style: t.titleSmall),
               RollingText(money(net), style: t.displaySmall?.copyWith(fontWeight: FontWeight.w900, fontFeatures: Tp.tabular)),
               const SizedBox(height: 14),
-              Wrap(spacing: 10, runSpacing: 10, children: [
+              _StatGrid([
                 _Stat('Sales', '${n(r['sales'])}', rolling: true),
                 _Stat('Average', money(n(r['average_minor'])), rolling: true),
                 _Stat('Discounts', money(n(r['discount_minor'])), rolling: true),

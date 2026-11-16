@@ -3,13 +3,13 @@ library;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../nfc/card_read_sheet.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
-import '../../nfc/staff_card.dart';
 import '../../payments/payment_service.dart';
 import '../../payments/stripe_tap.dart' show StripeTapToPay;
 import '../add_printers_tile.dart';
@@ -99,7 +99,7 @@ class _MorePageState extends ConsumerState<MorePage> {
   }
 
   Future<void> _readCard() async {
-    final id = await StaffCardReader.readOnce();
+    final id = await readCard(context, title: 'Read a staff card', camera: false);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(id == null ? 'No card read' : 'Card $id: put this under the person\'s Staff card in the back office.'),

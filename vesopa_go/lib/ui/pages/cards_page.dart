@@ -4,12 +4,12 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../../nfc/card_read_sheet.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
-import '../../nfc/staff_card.dart';
 import '../theme.dart';
 import 'card_machine_page.dart';
 import 'more.dart';
@@ -67,7 +67,7 @@ class CardsPage extends ConsumerWidget {
           // Not the payment symbol: this reads a staff card, not a payment (HIG).
           trailing: const Icon(Icons.nfc_rounded),
           onTap: () async {
-            final id = await StaffCardReader.readOnce();
+            final id = await readCard(context, title: 'Read a staff card', camera: false);
             if (!context.mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(id == null ? 'No card read' : 'Card $id: put this under the person\'s Staff card in the back office.'),
@@ -111,7 +111,7 @@ class CardsPage extends ConsumerWidget {
               tooltip: 'Tap the card',
               icon: const Icon(Icons.contactless_rounded),
               onPressed: () async {
-                final id = await StaffCardReader.readOnce();
+                final id = await readCard(c, title: 'Tap or scan the card');
                 if (id != null) ctl.text = id;
               },
             ),

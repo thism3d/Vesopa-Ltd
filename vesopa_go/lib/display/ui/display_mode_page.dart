@@ -24,6 +24,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import '../../nfc/card_read_sheet.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -40,7 +41,6 @@ import '../../data/models.dart' show money;
 import '../../data/session.dart';
 import '../../modes/mode_settings.dart';
 import '../../data/lan/lan_service.dart';
-import '../../nfc/staff_card.dart';
 import '../../ui/pages/connection_page.dart';
 import '../../ui/pages/scan_sheet.dart';
 import '../../ui/sounds.dart';
@@ -169,7 +169,12 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
   }
 
   Future<void> _tapMemberCard() async {
-    final code = await StaffCardReader.readOnce();
+    final code = await readCard(
+      context,
+      title: 'Tap your card',
+      hint: 'Hold your member, loyalty or gift card against the back of this screen',
+      cameraHint: 'Show the code on your card or pass to the camera',
+    );
     if (code != null) _passToTill(code);
   }
 
