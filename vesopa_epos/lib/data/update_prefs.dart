@@ -96,6 +96,11 @@ const whatsNewByVersion = <String, List<String>>{
     'End of Day has All tills: one X or Z for the whole venue.',
     'The Z report takes cashback, paid in and cash refunds off the cash expected, as the X always did.',
   ],
+  '1.16.54': [
+    'Tables now show on every till: a table opened on one till appears on the others.',
+    'Each till has its own X and Z. Settings, Local network has a switch to add one report for all tills.',
+    'A phone or tablet running Vesopa Go as a Card terminal can take this till\'s card payments (Settings, Card payments).',
+  ],
 };
 
 /// The notes to show once after an update to [VesopaBrand.appVersion], or

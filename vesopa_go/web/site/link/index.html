@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Connect a screen to Vesopa Go</title>
+<link rel="icon" href="/favicon.png">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .link-code { font-size: clamp(34px, 11vw, 64px); font-weight: 900; letter-spacing: .14em; font-variant-numeric: tabular-nums; margin: 8px 0 20px; }
+  .link-none { color: #9a9b93; }
+</style>
+</head>
+<body>
+<main class="doc">
+  <h1>Connect a screen</h1>
+  <p>This is the code on your new screen or TV:</p>
+  <p class="link-code" id="code" aria-live="polite">&nbsp;</p>
+
+  <h2>With Vesopa Go</h2>
+  <ol>
+    <li>On a phone or tablet that is already signed in to your venue, open <strong>Vesopa Go</strong>.</li>
+    <li>Go to <strong>Settings</strong>, then <strong>Connect a screen or TV</strong>.</li>
+    <li>Scan the code on the screen with it, or type the code above.</li>
+    <li>Choose what the screen is for: a customer display, a kitchen screen, a till or a card terminal.</li>
+  </ol>
+
+  <h2>With the back office</h2>
+  <ol>
+    <li>Sign in at <a href="https://backoffice.vesopaepos.com">backoffice.vesopaepos.com</a>.</li>
+    <li>Open <strong>Devices</strong> and find <strong>Terminals</strong>.</li>
+    <li>Type the code under <strong>Connect a screen or TV by its code</strong> and press Connect.</li>
+  </ol>
+
+  <p class="muted">A code lasts ten minutes. The screen shows a new one by itself when it runs out.</p>
+</main>
+<script>
+  // The code out of the address, shown in two groups. Nothing is sent anywhere.
+  (function () {
+    var raw = (new URLSearchParams(location.search).get('c') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+    var el = document.getElementById('code');
+    if (raw.length === 8) {
+      el.textContent = raw.slice(0, 4) + ' ' + raw.slice(4);
+    } else {
+      el.textContent = 'On the screen';
+      el.className += ' link-none';
+    }
+  })();
+</script>
+</body>
+</html>

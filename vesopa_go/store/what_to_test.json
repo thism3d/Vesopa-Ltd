@@ -1,6 +1,6 @@
 {
   "_comment": "One place for what testers read on each build: TestFlight's What to Test (tool/testflight.py) and Play's release notes (tool/play_upload.py). Change it with the version in pubspec.yaml; a build whose version is not this one says so in its notes instead of repeating an old release's.",
-  "version": "1.2.52",
-  "what_to_test": "Send food to the kitchen from Go at a venue whose kitchen station is set to Printer: Save Table or Pay. The ticket should print on the till's kitchen printer within a few seconds, marked Vesopa Go. Needs the till on the matching update. Also: on a phone, page keys sit together at the top with each page's products underneath.",
-  "release_notes": "Orders from Go now print on the till's kitchen printer. On a phone, the page buttons sit together at the top."
+  "version": "1.2.62",
+  "what_to_test": "1. Read a staff card, a gift card and a member card: each shows a reading screen, with the camera as another way in. 2. Sign in on Android: the sign-in page should return to Vesopa Go by itself. 3. On a second device choose Connect with a code, then on a signed-in device open Settings, Connect a screen or TV and scan it. 4. Switch one device to Card terminal (Settings), then on another device choose Settings, Send card payments to a card terminal, and take a card sale. 5. On an Android TV: the app should open on a code, and the remote's arrows and OK should move and press. 6. Customer display, Settings, Adverts on this device: add pictures and a film from the device.",
+  "release_notes": "A reading screen for staff, gift and member cards, with the camera too. Sign-in returns to the app on Android. Connect a screen or TV by scanning its code. A new Card terminal mode: one device takes card payments for another. Works with a TV remote. Adverts from the device's own files. Rename card readers. Bigger product photo preview."
 }
