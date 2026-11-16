@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,7 +25,8 @@ void main() {
   test('an unknown or missing accent falls back to Vesopa lime', () {
     expect(GoPalette.byId(null), GoPalette.lime);
     expect(GoPalette.byId('tartan'), GoPalette.lime);
-    expect(GoPalette.byId('sky').name, 'Sky');
+    expect(GoPalette.byId('pink').name, 'Hot Pink');
+    expect(GoPalette.all.map((p) => p.id), ['lime', 'volt', 'neon', 'mint', 'aqua', 'pink', 'pearl']);
   });
 
   test('every accent reads: deep ink on Day, and the key\'s own ink on the key', () {
@@ -36,6 +37,7 @@ void main() {
         expect(_contrast(p.deep, Colors.white), greaterThanOrEqualTo(4.5), reason: '${p.name} deep on white');
       }
       expect(_contrast(p.on, p.colour), greaterThanOrEqualTo(4.5), reason: '${p.name} ink on its key');
+      expect(_contrast(p.colour, Tp.ink), greaterThanOrEqualTo(4.5), reason: '${p.name} on Night black');
     }
   });
 
@@ -58,11 +60,39 @@ void main() {
     ColoredBox box() => tester.widget<ColoredBox>(find.byKey(const Key('swatch')));
     expect(box().color, GoPalette.lime.colour);
 
-    final sky = GoPalette.byId('sky');
+    final sky = GoPalette.byId('aqua');
     await captured.read(accentProvider.notifier).set(sky);
     await tester.pumpAndSettle();
     expect(Tp.palette, sky);
     expect(box().color, sky.colour);
-    expect((await SharedPreferences.getInstance()).getString('go_accent'), 'sky');
+    expect((await SharedPreferences.getInstance()).getString('go_accent'), 'aqua');
+  });
+
+  testWidgets('the first time, the welcome page asks for a colour once', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late WidgetRef captured;
+    await tester.pumpWidget(ProviderScope(
+      child: Consumer(builder: (context, ref, _) {
+        captured = ref;
+        ref.watch(accentAskedProvider);
+        Tp.palette = ref.watch(accentProvider);
+        return MaterialApp(theme: Tp.theme(Brightness.dark), home: const AccentWelcomePage());
+      }),
+    ));
+    await tester.pumpAndSettle();
+    expect(captured.read(accentAskedProvider), isFalse);
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('accent-pink')));
+    await tester.pumpAndSettle();
+    expect(find.text('Continue with Hot Pink'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('accent-continue')));
+    await tester.pumpAndSettle();
+    expect(captured.read(accentAskedProvider), isTrue);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('go_accent'), 'pink');
+    expect(prefs.getBool('go_accent_asked'), isTrue);
   });
 }

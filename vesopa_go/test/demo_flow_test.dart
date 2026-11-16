@@ -21,7 +21,7 @@ void main() {
     // frame (intro_tour.dart), so pumpAndSettle can settle.
     tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
     addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({'go_accent_asked': true});
     Journal.persist = false;
 
     Future<void> tap(Finder f) async {

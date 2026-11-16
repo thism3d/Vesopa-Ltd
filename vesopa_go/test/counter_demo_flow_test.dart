@@ -26,7 +26,7 @@ void main() {
       tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
       addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
       FlutterSecureStorage.setMockInitialValues({});
-      SharedPreferences.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({'go_accent_asked': true});
       Journal.persist = false;
 
       await tester.pumpWidget(const ProviderScope(child: GoApp()));

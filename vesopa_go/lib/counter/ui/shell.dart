@@ -566,32 +566,7 @@ class _AccentPicker extends ConsumerWidget {
         const SizedBox(height: 2),
         Text(current.name, style: TextStyle(color: context.goMuted)),
         const SizedBox(height: 10),
-        Wrap(spacing: 12, runSpacing: 12, children: [
-          for (final p in GoPalette.all)
-            Semantics(
-              button: true,
-              selected: p == current,
-              label: p.name,
-              child: InkResponse(
-                onTap: () => ref.read(accentProvider.notifier).set(p),
-                radius: 30,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: Tp.target,
-                  height: Tp.target,
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: p == current ? context.goText : Colors.transparent, width: 2.5),
-                  ),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(color: p.colour, shape: BoxShape.circle),
-                    child: p == current ? Icon(Icons.check_rounded, color: p.on, size: 26) : null,
-                  ),
-                ),
-              ),
-            ),
-        ]),
+        const Align(alignment: Alignment.centerLeft, child: AccentSwatches()),
       ]),
     );
   }

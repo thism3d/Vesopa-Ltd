@@ -75,6 +75,7 @@ class GoApp extends ConsumerWidget {
     final phase = ref.watch(tapProvider.select((s) => s.phase));
     // The device's accent (Settings, Appearance), in place before any colour is read.
     Tp.palette = ref.watch(accentProvider);
+    final asked = ref.watch(accentAskedProvider);
     // Read the day's sales from storage now, not at the first payment.
     ref.watch(journalProvider.select((j) => j.loaded));
     // Every paid bill, the counter's and the tables', goes in the day's journal
@@ -127,6 +128,9 @@ class GoApp extends ConsumerWidget {
           Phase.welcome when demoOnly => const Scaffold(key: ValueKey('boot'), body: Center(child: GoMark(size: 72))),
           Phase.welcome => const LiteWelcomePage(key: ValueKey('welcome')),
           Phase.setup => const SetupPage(key: ValueKey('setup')),
+          // The first time Go opens, before the PIN: pick a colour (dark, as the PIN pad).
+          Phase.locked when asked == null => const Scaffold(key: ValueKey('boot'), body: Center(child: GoMark(size: 72))),
+          Phase.locked when asked == false => Theme(key: const ValueKey('accent'), data: Tp.theme(Brightness.dark), child: const AccentWelcomePage()),
           // The PIN pad stays dark, as the till's.
           Phase.locked => orMode(Theme(key: const ValueKey('locked'), data: Tp.theme(Brightness.dark), child: const LiteLockPage())),
           // Beside tills, the sale also goes to any customer display following this device.

@@ -1,4 +1,4 @@
-/// Vesopa Go's look.
+﻿/// Vesopa Go's look.
 ///
 /// The till's own palette (vesopa_epos/lib/ui/theme.dart, design A "Till
 /// exact", chosen by the owner 2026-10-27): lime #A5C715 on chrome #111111,
@@ -31,17 +31,21 @@ class GoPalette {
   final Color deep;
   final Color on;
 
-  static const lime = GoPalette('lime', 'Vesopa lime', Color(0xFFA5C715), Color(0xFF6E8A0E), Color(0xFF10130A));
+  static const lime = GoPalette('lime', 'Vesopa Lime', Color(0xFFA5C715), Color(0xFF6E8A0E), Color(0xFF10130A));
 
-  /// Lime first, as the till. No red (it means declined and void) and no amber
-  /// (it means an order is waiting), so a key never looks like a warning.
+  /// "Neon on black" (owner, 2026-11-16): neon colours that sit beside the
+  /// brand lime on black, yellow-green round to aqua, plus hot pink and a
+  /// black-and-white Pearl. Lime first, as the till. No red (it means declined
+  /// and void) and no amber (an order is waiting), so a key never looks like a
+  /// warning. The website offers the same list (web/site/js/accent.js).
   static const all = <GoPalette>[
     lime,
-    GoPalette('mint', 'Mint', Color(0xFF2BD9A0), Color(0xFF0F7A57), Color(0xFF06261B)),
-    GoPalette('sky', 'Sky', Color(0xFF4DB6FF), Color(0xFF1A6FB0), Color(0xFF04182A)),
-    GoPalette('violet', 'Violet', Color(0xFFA78BFA), Color(0xFF6D4BD8), Color(0xFF160A33)),
-    GoPalette('coral', 'Coral', Color(0xFFFF7A59), Color(0xFFB8441F), Color(0xFF2A0C03)),
-    GoPalette('pink', 'Pink', Color(0xFFFF6FB5), Color(0xFFB8236E), Color(0xFF2A0617)),
+    GoPalette('volt', 'Volt', Color(0xFFC8F31D), Color(0xFF5C7200), Color(0xFF131A00)),
+    GoPalette('neon', 'Neon Green', Color(0xFF3EE86B), Color(0xFF17793A), Color(0xFF03230E)),
+    GoPalette('mint', 'Mint', Color(0xFF2EE6A6), Color(0xFF0E7A57), Color(0xFF04261A)),
+    GoPalette('aqua', 'Aqua', Color(0xFF22D3EE), Color(0xFF0E7490), Color(0xFF032A33)),
+    GoPalette('pink', 'Hot Pink', Color(0xFFFF2D95), Color(0xFFC0156C), Color(0xFF2B0016)),
+    GoPalette('pearl', 'Pearl', Color(0xFFE8ECDF), Color(0xFF3A3F35), Color(0xFF10130A)),
   ];
 
   static GoPalette byId(String? id) => all.where((p) => p.id == id).firstOrNull ?? lime;
