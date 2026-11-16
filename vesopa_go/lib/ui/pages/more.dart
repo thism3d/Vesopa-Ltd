@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'link_screen_page.dart';
 
+import '../../advisor/advisor_page.dart' show VesopaAiTile;
 import '../../data/api.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
@@ -126,6 +127,8 @@ class _MorePageState extends ConsumerState<MorePage> {
         ),
       ),
       const SizedBox(height: 12),
+      // Vesopa AI (2026-11-16): managers only, first thing on More.
+      const VesopaAiTile(),
       _TapToPayCard(status: _tapStatus),
       if (!ref.watch(tapProvider.select((s) => s.demo))) const AddPrintersTile(),
       const SizedBox(height: 12),

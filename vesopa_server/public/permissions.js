@@ -32,6 +32,7 @@ let CATALOGUE = { till: [], backoffice: [] };
 /** Which nav button belongs to which permission. Absent means always shown. */
 const NAV_PERMISSION = {
   dashboard: 'dashboard.view',
+  vesopa_ai: 'ai.advisor',
   run_report: 'reports.financial_summary',
   report: 'reports.report',
   product_sales: 'reports.product_sales',

@@ -302,6 +302,7 @@ function bars(el, rows, color) {
  */
 const ROUTES = {
   dashboard: '/dashboard',
+  vesopa_ai: '/vesopa-ai',
   report: '/report',
   sales_explorer: '/sales-explorer',
   till_report: '/till-report',
@@ -1344,6 +1345,7 @@ function makeSortable(tbody, path) {
 const VIEW_LOADERS = {
     price_levels: loadPriceLevels,
     dashboard: loadDashboard,
+    vesopa_ai: loadVesopaAi,
     report: loadReports,
     sales_explorer: loadExplorer,
     till_report: loadTillReport,
@@ -8147,7 +8149,11 @@ async function start() {
 
   // Land on whatever the URL asks for, so a refresh or a bookmarked page
   // reopens where the user left off.
-  show(viewForPath(location.pathname), { push: false });
+  // Somebody invited to Vesopa AI holds nothing else (2026-11-16): they land
+  // on it rather than on a dashboard they cannot read.
+  let landing = viewForPath(location.pathname);
+  if (landing === 'dashboard' && typeof may === 'function' && !may('dashboard.view') && may('ai.advisor')) landing = 'vesopa_ai';
+  show(landing, { push: false });
 
   // Fold the rail once the current view is known, so the group holding it is
   // the one section left open — and give it a way to be searched, which is

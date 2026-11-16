@@ -1,0 +1,1639 @@
+{
+ "me": {
+  "name": "Meirion Owner",
+  "venue": "Vesopa Kitchen",
+  "role": "Owner",
+  "via": "backoffice",
+  "can": {
+   "profit": true,
+   "staff": true,
+   "invite": true
+  },
+  "sites": [
+   {
+    "id": 1,
+    "name": "Bar"
+   },
+   {
+    "id": 2,
+    "name": "Lounge"
+   }
+  ],
+  "all_sites": true,
+  "model": null,
+  "read_only": true
+ },
+ "briefing": {
+  "intent": "briefing",
+  "headline": "Yesterday took £60.00, down 65.9% on The Sunday before (Sun 8 Nov).",
+  "summary": "Yesterday took £60.00, down 65.9% on The Sunday before (Sun 8 Nov).",
+  "why": [
+   "6 bills at £10.00 a bill (8 at £22.00 the week before).",
+   "Best seller: Lager with £60.00.",
+   "Today so far: £40.00 (down 81.8% on the same time last week). This week so far: £40.00 (down 81.8%)."
+  ],
+  "next": [
+   "Reorder Burger today: they sell and there are none left. Orders are placed in Stock Control, Orders & Deliveries.",
+   "Ask why yesterday was down: Vesopa AI splits it into customers, spend, hours and products."
+  ],
+  "facts": [
+   {
+    "id": "y_takings",
+    "label": "Yesterday's takings",
+    "value": 6000,
+    "unit": "money",
+    "display": "£60.00"
+   },
+   {
+    "id": "y_before",
+    "label": "Takings, The Sunday before (Sun 8 Nov)",
+    "value": 17600,
+    "unit": "money",
+    "display": "£176.00"
+   },
+   {
+    "id": "y_change",
+    "label": "Yesterday against the same day last week",
+    "value": -65.9,
+    "unit": "percent",
+    "display": "-65.9%"
+   },
+   {
+    "id": "y_bills",
+    "label": "Yesterday's bills",
+    "value": 6,
+    "unit": "count",
+    "display": "6"
+   },
+   {
+    "id": "y_average",
+    "label": "Yesterday's average spend",
+    "value": 1000,
+    "unit": "money",
+    "display": "£10.00"
+   },
+   {
+    "id": "t_takings",
+    "label": "Today so far",
+    "value": 4000,
+    "unit": "money",
+    "display": "£40.00"
+   },
+   {
+    "id": "t_before",
+    "label": "Takings, Same time last Monday (Mon 9 Nov, to 15:00)",
+    "value": 22000,
+    "unit": "money",
+    "display": "£220.00"
+   },
+   {
+    "id": "t_change",
+    "label": "Today against the same time last week",
+    "value": -81.8,
+    "unit": "percent",
+    "display": "-81.8%"
+   },
+   {
+    "id": "w_takings",
+    "label": "This week so far",
+    "value": 4000,
+    "unit": "money",
+    "display": "£40.00"
+   },
+   {
+    "id": "w_before",
+    "label": "Takings, Same point last week (Mon 9 Nov to Mon 9 Nov 15:00)",
+    "value": 22000,
+    "unit": "money",
+    "display": "£220.00"
+   },
+   {
+    "id": "w_change",
+    "label": "This week against the same point last week",
+    "value": -81.8,
+    "unit": "percent",
+    "display": "-81.8%"
+   },
+   {
+    "id": "y_gp",
+    "label": "Yesterday's gross profit (costed products)",
+    "value": 3800,
+    "unit": "money",
+    "display": "£38.00"
+   },
+   {
+    "id": "y_margin",
+    "label": "Yesterday's gross margin",
+    "value": 76,
+    "unit": "pct",
+    "display": "76%"
+   },
+   {
+    "id": "top0",
+    "label": "Lager takings yesterday",
+    "value": 6000,
+    "unit": "money",
+    "display": "£60.00"
+   },
+   {
+    "id": "out_count",
+    "label": "Out of stock and selling",
+    "value": 1,
+    "unit": "count",
+    "display": "1"
+   },
+   {
+    "id": "soon_count",
+    "label": "Running out within 3 days",
+    "value": 0,
+    "unit": "count",
+    "display": "0"
+   },
+   {
+    "id": "voids_y",
+    "label": "Voids yesterday",
+    "value": 0,
+    "unit": "money",
+    "display": "£0.00"
+   },
+   {
+    "id": "voids_before",
+    "label": "Voids, The Sunday before (Sun 8 Nov)",
+    "value": 0,
+    "unit": "money",
+    "display": "£0.00"
+   }
+  ],
+  "alerts": [
+   {
+    "level": "warn",
+    "title": "Yesterday was down 65.9%",
+    "body": "£60.00 against £176.00 on the Sunday before (Sun 8 Nov).",
+    "ask": "Why did sales drop yesterday?"
+   },
+   {
+    "level": "bad",
+    "title": "1 selling product is out of stock",
+    "body": "Burger",
+    "ask": "What stock should I reorder?"
+   }
+  ],
+  "tiles": [
+   {
+    "id": "y_takings",
+    "label": "Yesterday",
+    "value": 6000,
+    "change": -65.9,
+    "sub": "6 bills"
+   },
+   {
+    "id": "t_takings",
+    "label": "Today so far",
+    "value": 4000,
+    "change": -81.8,
+    "sub": "4 bills"
+   },
+   {
+    "id": "w_takings",
+    "label": "This week",
+    "value": 4000,
+    "change": -81.8,
+    "sub": "4 bills"
+   },
+   {
+    "id": "y_average",
+    "label": "Average spend",
+    "value": 1000,
+    "change": -54.5,
+    "sub": "yesterday"
+   }
+  ],
+  "charts": [
+   {
+    "type": "ranked",
+    "title": "Yesterday's best sellers",
+    "unit": "money",
+    "rows": [
+     {
+      "label": "Lager",
+      "value": 6000,
+      "meta": "12 sold"
+     }
+    ]
+   }
+  ],
+  "meta": {
+   "period": "Yesterday (Sun 15 Nov)",
+   "from": "2026-11-15 00:00:00",
+   "to": "2026-11-16 00:00:00",
+   "site": "All sites",
+   "definition": "Takings: closed bills, VAT included, after discounts and before refunds. The same figure as the Dashboard's Takings.",
+   "freshness": "Latest sale: 2026-11-16 12:13. Figures as of 2026-11-16 15:00.",
+   "last_sale": "2026-11-15 13:15:00",
+   "compare": "The Sunday before (Sun 8 Nov)"
+  },
+  "records": [
+   {
+    "kind": "bills",
+    "label": "Yesterday's bills",
+    "from": "2026-11-15 00:00:00",
+    "to": "2026-11-16 00:00:00"
+   },
+   {
+    "kind": "bills",
+    "label": "Today's bills",
+    "from": "2026-11-16 00:00:00",
+    "to": "2026-11-16 15:00:00"
+   }
+  ],
+  "follow_ups": [
+   "Why did sales drop yesterday?",
+   "What should I focus on tomorrow?",
+   "What stock should I reorder?",
+   "Which products make the most profit?",
+   "How is my team performing?",
+   "Compare this week with last week"
+  ],
+  "source": "rules",
+  "generated_at": "2026-11-16 15:00:00",
+  "sites": [
+   {
+    "id": 1,
+    "name": "Bar"
+   },
+   {
+    "id": 2,
+    "name": "Lounge"
+   }
+  ]
+ },
+ "answers": {
+  "Why did sales drop today?": {
+   "intent": "compare",
+   "headline": "Takings were £180.00 lower (-81.8%): £40.00 against £220.00.",
+   "summary": "Takings were £180.00 lower (-81.8%): £40.00 against £220.00.",
+   "why": [
+    "Mostly fewer customers: 4 bills against 10, which moved takings down £132.00. Spend per bill (£10.00 against £22.00) moved them down £48.00.",
+    "The quietest change was 12:00 (-£180.00).",
+    "Products down the most: Burger (-£120.00), Lager (-£60.00).",
+    "Burger sold before, sold nothing this time and now show no stock, so they may have run out rather than lost demand.",
+    "By member of staff: Alex (-£220.00). This often follows who was on shift rather than how well they sold."
+   ],
+   "next": [
+    "Check stock of Burger and reorder in Stock Control, Orders & Deliveries.",
+    "Fewer customers came in. If 12:00 is often quiet, a promotion or a staffing change for that hour is worth trying."
+   ],
+   "facts": [
+    {
+     "id": "takings",
+     "label": "Takings, Today (Mon 16 Nov, to 15:00)",
+     "value": 4000,
+     "unit": "money",
+     "display": "£40.00"
+    },
+    {
+     "id": "takings_before",
+     "label": "Takings, Same time last Monday (Mon 9 Nov, to 15:00)",
+     "value": 22000,
+     "unit": "money",
+     "display": "£220.00"
+    },
+    {
+     "id": "takings_delta",
+     "label": "Difference",
+     "value": -18000,
+     "unit": "money",
+     "display": "-£180.00"
+    },
+    {
+     "id": "takings_change",
+     "label": "Change",
+     "value": -81.8,
+     "unit": "percent",
+     "display": "-81.8%"
+    },
+    {
+     "id": "bills",
+     "label": "Bills, Today (Mon 16 Nov, to 15:00)",
+     "value": 4,
+     "unit": "count",
+     "display": "4"
+    },
+    {
+     "id": "bills_before",
+     "label": "Bills, Same time last Monday (Mon 9 Nov, to 15:00)",
+     "value": 10,
+     "unit": "count",
+     "display": "10"
+    },
+    {
+     "id": "average",
+     "label": "Average spend, Today (Mon 16 Nov, to 15:00)",
+     "value": 1000,
+     "unit": "money",
+     "display": "£10.00"
+    },
+    {
+     "id": "average_before",
+     "label": "Average spend, Same time last Monday (Mon 9 Nov, to 15:00)",
+     "value": 2200,
+     "unit": "money",
+     "display": "£22.00"
+    },
+    {
+     "id": "bills_effect",
+     "label": "Part of the difference from the number of bills",
+     "value": -13200,
+     "unit": "money",
+     "display": "-£132.00"
+    },
+    {
+     "id": "spend_effect",
+     "label": "Part of the difference from spend per bill",
+     "value": -4800,
+     "unit": "money",
+     "display": "-£48.00"
+    },
+    {
+     "id": "hour_0",
+     "label": "12:00 difference",
+     "value": -18000,
+     "unit": "money",
+     "display": "-£180.00"
+    },
+    {
+     "id": "product_0",
+     "label": "Burger difference",
+     "value": -12000,
+     "unit": "money",
+     "display": "-£120.00"
+    },
+    {
+     "id": "product_1",
+     "label": "Lager difference",
+     "value": -6000,
+     "unit": "money",
+     "display": "-£60.00"
+    },
+    {
+     "id": "stockout_0",
+     "label": "Burger stock now",
+     "value": 0,
+     "unit": "count",
+     "display": "0"
+    },
+    {
+     "id": "staff_0",
+     "label": "Alex difference",
+     "value": -22000,
+     "unit": "money",
+     "display": "-£220.00"
+    },
+    {
+     "id": "voids",
+     "label": "Voids, Today (Mon 16 Nov, to 15:00)",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "voids_before",
+     "label": "Voids, Same time last Monday (Mon 9 Nov, to 15:00)",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "discounts",
+     "label": "Discounts, Today (Mon 16 Nov, to 15:00)",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "discounts_before",
+     "label": "Discounts, Same time last Monday (Mon 9 Nov, to 15:00)",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    }
+   ],
+   "charts": [
+    {
+     "type": "pair",
+     "title": "Takings by hour, Today (Mon 16 Nov, to 15:00) against Same time last Monday (Mon 9 Nov, to 15:00)",
+     "unit": "money",
+     "rows": [
+      {
+       "label": "12:00",
+       "value": 4000,
+       "compare": 22000
+      }
+     ],
+     "legend": [
+      "This period",
+      "Compared with"
+     ]
+    },
+    {
+     "type": "diverging",
+     "title": "Products that moved the most",
+     "unit": "money",
+     "rows": [
+      {
+       "label": "Burger",
+       "value": -12000
+      },
+      {
+       "label": "Lager",
+       "value": -6000
+      }
+     ]
+    }
+   ],
+   "meta": {
+    "period": "Today (Mon 16 Nov, to 15:00)",
+    "from": "2026-11-16 00:00:00",
+    "to": "2026-11-16 15:00:00",
+    "site": "All sites",
+    "definition": "Takings: closed bills, VAT included, after discounts and before refunds. The same figure as the Dashboard's Takings. Compared with Same time last Monday (Mon 9 Nov, to 15:00).",
+    "freshness": "Latest sale in this period: 2026-11-16 12:13",
+    "last_sale": "2026-11-16 12:13:00",
+    "compare": "Same time last Monday (Mon 9 Nov, to 15:00)",
+    "compare_from": "2026-11-09 00:00:00",
+    "compare_to": "2026-11-09 15:00:00"
+   },
+   "records": [
+    {
+     "kind": "bills",
+     "label": "Bills in Today (Mon 16 Nov, to 15:00)",
+     "from": "2026-11-16 00:00:00",
+     "to": "2026-11-16 15:00:00"
+    },
+    {
+     "kind": "bills",
+     "label": "Bills in Same time last Monday (Mon 9 Nov, to 15:00)",
+     "from": "2026-11-09 00:00:00",
+     "to": "2026-11-09 15:00:00"
+    },
+    {
+     "kind": "lines",
+     "label": "Products sold in Today (Mon 16 Nov, to 15:00)",
+     "from": "2026-11-16 00:00:00",
+     "to": "2026-11-16 15:00:00"
+    }
+   ],
+   "follow_ups": [
+    "What were the best sellers?",
+    "What stock should I reorder?",
+    "How is the team doing?",
+    "What should I focus on tomorrow?"
+   ],
+   "source": "rules",
+   "question": "Why did sales drop today?",
+   "asked_at": "2026-11-16 15:00:00",
+   "understood": true
+  },
+  "Compare this week with last week": {
+   "intent": "compare",
+   "headline": "Takings were £260.00 lower (-86.7%): £40.00 against £300.00.",
+   "summary": "Takings were £260.00 lower (-86.7%): £40.00 against £300.00.",
+   "why": [
+    "Mostly fewer customers: 4 bills against 17, which moved takings down £229.45. Spend per bill (£10.00 against £17.65) moved them down £30.55.",
+    "The quietest change was 12:00 (-£180.00), 13:00 (-£60.00), 19:00 (-£20.00).",
+    "Products down the most: Lager (-£120.00), Burger (-£120.00), Wine (-£20.00).",
+    "Burger sold before, sold nothing this time and now show no stock, so they may have run out rather than lost demand.",
+    "By member of staff: Alex (-£280.00), Sam (-£20.00). This often follows who was on shift rather than how well they sold."
+   ],
+   "next": [
+    "Check stock of Burger and reorder in Stock Control, Orders & Deliveries.",
+    "Fewer customers came in. If 12:00 is often quiet, a promotion or a staffing change for that hour is worth trying."
+   ],
+   "facts": [
+    {
+     "id": "takings",
+     "label": "Takings, This week (Mon 16 Nov to now, 15:00)",
+     "value": 4000,
+     "unit": "money",
+     "display": "£40.00"
+    },
+    {
+     "id": "takings_before",
+     "label": "Takings, Last week (Mon 9 Nov to Sun 15 Nov)",
+     "value": 30000,
+     "unit": "money",
+     "display": "£300.00"
+    },
+    {
+     "id": "takings_delta",
+     "label": "Difference",
+     "value": -26000,
+     "unit": "money",
+     "display": "-£260.00"
+    },
+    {
+     "id": "takings_change",
+     "label": "Change",
+     "value": -86.7,
+     "unit": "percent",
+     "display": "-86.7%"
+    },
+    {
+     "id": "bills",
+     "label": "Bills, This week (Mon 16 Nov to now, 15:00)",
+     "value": 4,
+     "unit": "count",
+     "display": "4"
+    },
+    {
+     "id": "bills_before",
+     "label": "Bills, Last week (Mon 9 Nov to Sun 15 Nov)",
+     "value": 17,
+     "unit": "count",
+     "display": "17"
+    },
+    {
+     "id": "average",
+     "label": "Average spend, This week (Mon 16 Nov to now, 15:00)",
+     "value": 1000,
+     "unit": "money",
+     "display": "£10.00"
+    },
+    {
+     "id": "average_before",
+     "label": "Average spend, Last week (Mon 9 Nov to Sun 15 Nov)",
+     "value": 1765,
+     "unit": "money",
+     "display": "£17.65"
+    },
+    {
+     "id": "bills_effect",
+     "label": "Part of the difference from the number of bills",
+     "value": -22945,
+     "unit": "money",
+     "display": "-£229.45"
+    },
+    {
+     "id": "spend_effect",
+     "label": "Part of the difference from spend per bill",
+     "value": -3055,
+     "unit": "money",
+     "display": "-£30.55"
+    },
+    {
+     "id": "hour_0",
+     "label": "12:00 difference",
+     "value": -18000,
+     "unit": "money",
+     "display": "-£180.00"
+    },
+    {
+     "id": "hour_1",
+     "label": "13:00 difference",
+     "value": -6000,
+     "unit": "money",
+     "display": "-£60.00"
+    },
+    {
+     "id": "hour_2",
+     "label": "19:00 difference",
+     "value": -2000,
+     "unit": "money",
+     "display": "-£20.00"
+    },
+    {
+     "id": "product_0",
+     "label": "Lager difference",
+     "value": -12000,
+     "unit": "money",
+     "display": "-£120.00"
+    },
+    {
+     "id": "product_1",
+     "label": "Burger difference",
+     "value": -12000,
+     "unit": "money",
+     "display": "-£120.00"
+    },
+    {
+     "id": "product_2",
+     "label": "Wine difference",
+     "value": -2000,
+     "unit": "money",
+     "display": "-£20.00"
+    },
+    {
+     "id": "stockout_0",
+     "label": "Burger stock now",
+     "value": 0,
+     "unit": "count",
+     "display": "0"
+    },
+    {
+     "id": "staff_0",
+     "label": "Alex difference",
+     "value": -28000,
+     "unit": "money",
+     "display": "-£280.00"
+    },
+    {
+     "id": "staff_1",
+     "label": "Sam difference",
+     "value": -2000,
+     "unit": "money",
+     "display": "-£20.00"
+    },
+    {
+     "id": "voids",
+     "label": "Voids, This week (Mon 16 Nov to now, 15:00)",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "voids_before",
+     "label": "Voids, Last week (Mon 9 Nov to Sun 15 Nov)",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "discounts",
+     "label": "Discounts, This week (Mon 16 Nov to now, 15:00)",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "discounts_before",
+     "label": "Discounts, Last week (Mon 9 Nov to Sun 15 Nov)",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    }
+   ],
+   "charts": [
+    {
+     "type": "pair",
+     "title": "Takings by hour, This week (Mon 16 Nov to now, 15:00) against Last week (Mon 9 Nov to Sun 15 Nov)",
+     "unit": "money",
+     "rows": [
+      {
+       "label": "12:00",
+       "value": 4000,
+       "compare": 22000
+      },
+      {
+       "label": "13:00",
+       "value": 0,
+       "compare": 6000
+      },
+      {
+       "label": "14:00",
+       "value": 0,
+       "compare": 0
+      },
+      {
+       "label": "15:00",
+       "value": 0,
+       "compare": 0
+      },
+      {
+       "label": "16:00",
+       "value": 0,
+       "compare": 0
+      },
+      {
+       "label": "17:00",
+       "value": 0,
+       "compare": 0
+      },
+      {
+       "label": "18:00",
+       "value": 0,
+       "compare": 0
+      },
+      {
+       "label": "19:00",
+       "value": 0,
+       "compare": 2000
+      }
+     ],
+     "legend": [
+      "This period",
+      "Compared with"
+     ]
+    },
+    {
+     "type": "diverging",
+     "title": "Products that moved the most",
+     "unit": "money",
+     "rows": [
+      {
+       "label": "Lager",
+       "value": -12000
+      },
+      {
+       "label": "Burger",
+       "value": -12000
+      },
+      {
+       "label": "Wine",
+       "value": -2000
+      }
+     ]
+    }
+   ],
+   "meta": {
+    "period": "This week (Mon 16 Nov to now, 15:00)",
+    "from": "2026-11-16 00:00:00",
+    "to": "2026-11-16 15:00:00",
+    "site": "All sites",
+    "definition": "Takings: closed bills, VAT included, after discounts and before refunds. The same figure as the Dashboard's Takings. Compared with Last week (Mon 9 Nov to Sun 15 Nov).",
+    "freshness": "Latest sale in this period: 2026-11-16 12:13",
+    "last_sale": "2026-11-16 12:13:00",
+    "compare": "Last week (Mon 9 Nov to Sun 15 Nov)",
+    "compare_from": "2026-11-09 00:00:00",
+    "compare_to": "2026-11-16 00:00:00"
+   },
+   "records": [
+    {
+     "kind": "bills",
+     "label": "Bills in This week (Mon 16 Nov to now, 15:00)",
+     "from": "2026-11-16 00:00:00",
+     "to": "2026-11-16 15:00:00"
+    },
+    {
+     "kind": "bills",
+     "label": "Bills in Last week (Mon 9 Nov to Sun 15 Nov)",
+     "from": "2026-11-09 00:00:00",
+     "to": "2026-11-16 00:00:00"
+    },
+    {
+     "kind": "lines",
+     "label": "Products sold in This week (Mon 16 Nov to now, 15:00)",
+     "from": "2026-11-16 00:00:00",
+     "to": "2026-11-16 15:00:00"
+    }
+   ],
+   "follow_ups": [
+    "What were the best sellers?",
+    "What stock should I reorder?",
+    "How is the team doing?",
+    "What should I focus on tomorrow?"
+   ],
+   "source": "rules",
+   "question": "Compare this week with last week",
+   "asked_at": "2026-11-16 15:00:00",
+   "understood": true
+  },
+  "What were the best sellers this week?": {
+   "intent": "products",
+   "headline": "Lager led this week (Mon 16 Nov to now, 15:00) with £40.00 from 8 sold.",
+   "summary": "Lager led this week (Mon 16 Nov to now, 15:00) with £40.00 from 8 sold.",
+   "why": [],
+   "next": [
+    "Keep the best sellers in stock and on the first page of the till screen. Ask \"what stock should I reorder\" to check."
+   ],
+   "facts": [
+    {
+     "id": "product_takings",
+     "label": "Product takings",
+     "value": 4000,
+     "unit": "money",
+     "display": "£40.00"
+    },
+    {
+     "id": "products_sold",
+     "label": "Different products sold",
+     "value": 1,
+     "unit": "count",
+     "display": "1"
+    },
+    {
+     "id": "p0_takings",
+     "label": "Lager takings",
+     "value": 4000,
+     "unit": "money",
+     "display": "£40.00"
+    },
+    {
+     "id": "p0_qty",
+     "label": "Lager quantity",
+     "value": 8,
+     "unit": "count",
+     "display": "8"
+    },
+    {
+     "id": "top3_share",
+     "label": "Share of product takings from the top three",
+     "value": 100,
+     "unit": "pct",
+     "display": "100%"
+    }
+   ],
+   "charts": [
+    {
+     "type": "ranked",
+     "title": "Best sellers by takings",
+     "unit": "money",
+     "rows": [
+      {
+       "label": "Lager",
+       "value": 4000,
+       "meta": "8 sold"
+      }
+     ]
+    }
+   ],
+   "meta": {
+    "period": "This week (Mon 16 Nov to now, 15:00)",
+    "from": "2026-11-16 00:00:00",
+    "to": "2026-11-16 15:00:00",
+    "site": "All sites",
+    "definition": "Product takings: line price times quantity, less the line's discount, VAT included. Modifiers are not counted as products.",
+    "freshness": "No sales in this period",
+    "last_sale": null
+   },
+   "records": [
+    {
+     "kind": "lines",
+     "label": "Products sold in This week (Mon 16 Nov to now, 15:00)",
+     "from": "2026-11-16 00:00:00",
+     "to": "2026-11-16 15:00:00"
+    }
+   ],
+   "follow_ups": [
+    "Which products make the most profit?",
+    "What stock should I reorder?",
+    "What are the slowest sellers?"
+   ],
+   "source": "rules",
+   "question": "What were the best sellers this week?",
+   "asked_at": "2026-11-16 15:00:00",
+   "understood": true
+  },
+  "What are the slowest sellers this week?": {
+   "intent": "products",
+   "headline": "The slowest sellers in this week (Mon 16 Nov to now, 15:00) start with Lager (£40.00).",
+   "summary": "The slowest sellers in this week (Mon 16 Nov to now, 15:00) start with Lager (£40.00).",
+   "why": [],
+   "next": [
+    "Slow sellers take a key on the till and space in the cellar. Consider a promotion, a better spot on the screen, or taking them off."
+   ],
+   "facts": [
+    {
+     "id": "product_takings",
+     "label": "Product takings",
+     "value": 4000,
+     "unit": "money",
+     "display": "£40.00"
+    },
+    {
+     "id": "products_sold",
+     "label": "Different products sold",
+     "value": 1,
+     "unit": "count",
+     "display": "1"
+    },
+    {
+     "id": "p0_takings",
+     "label": "Lager takings",
+     "value": 4000,
+     "unit": "money",
+     "display": "£40.00"
+    },
+    {
+     "id": "p0_qty",
+     "label": "Lager quantity",
+     "value": 8,
+     "unit": "count",
+     "display": "8"
+    }
+   ],
+   "charts": [
+    {
+     "type": "ranked",
+     "title": "Slowest sellers by takings",
+     "unit": "money",
+     "rows": [
+      {
+       "label": "Lager",
+       "value": 4000,
+       "meta": "8 sold"
+      }
+     ]
+    }
+   ],
+   "meta": {
+    "period": "This week (Mon 16 Nov to now, 15:00)",
+    "from": "2026-11-16 00:00:00",
+    "to": "2026-11-16 15:00:00",
+    "site": "All sites",
+    "definition": "Product takings: line price times quantity, less the line's discount, VAT included. Modifiers are not counted as products.",
+    "freshness": "No sales in this period",
+    "last_sale": null
+   },
+   "records": [
+    {
+     "kind": "lines",
+     "label": "Products sold in This week (Mon 16 Nov to now, 15:00)",
+     "from": "2026-11-16 00:00:00",
+     "to": "2026-11-16 15:00:00"
+    }
+   ],
+   "follow_ups": [
+    "Which products make the most profit?",
+    "What stock should I reorder?",
+    "What were the best sellers?"
+   ],
+   "source": "rules",
+   "question": "What are the slowest sellers this week?",
+   "asked_at": "2026-11-16 15:00:00",
+   "understood": true
+  },
+  "What stock should I reorder?": {
+   "intent": "stock",
+   "headline": "1 selling product is out of stock and 1 will run out within a week.",
+   "summary": "1 selling product is out of stock and 1 will run out within a week.",
+   "why": [
+    "Out now: Burger (sells 0.64 a day).",
+    "Running out: Lager in 5 days (around Sat 21 Nov).",
+    "Fastest movers: Lager (2 a day), Burger (0.64 a day), Wine (0.04 a day).",
+    "1 product has stock but no sales in 28 days, £36.00 at cost: Cider."
+   ],
+   "next": [
+    "Place the suggested orders in Stock Control, Orders & Deliveries. Vesopa AI does not order anything itself: you check and approve every order.",
+    "Run a promotion on slow stock or stop buying it: Cider."
+   ],
+   "facts": [
+    {
+     "id": "out",
+     "label": "Out of stock and selling",
+     "value": 1,
+     "unit": "count",
+     "display": "1"
+    },
+    {
+     "id": "soon",
+     "label": "Running out within 7 days",
+     "value": 1,
+     "unit": "count",
+     "display": "1"
+    },
+    {
+     "id": "reorder",
+     "label": "Products to reorder",
+     "value": 2,
+     "unit": "count",
+     "display": "2"
+    },
+    {
+     "id": "slow",
+     "label": "Products in stock with no sales in 28 days",
+     "value": 1,
+     "unit": "count",
+     "display": "1"
+    },
+    {
+     "id": "slow_value",
+     "label": "Value of that stock at cost",
+     "value": 3600,
+     "unit": "money",
+     "display": "£36.00"
+    },
+    {
+     "id": "r0_stock",
+     "label": "Burger in stock",
+     "value": 0,
+     "unit": "count",
+     "display": "0"
+    },
+    {
+     "id": "r0_rate",
+     "label": "Burger sold per day",
+     "value": 0.64,
+     "unit": "count",
+     "display": "0.64"
+    },
+    {
+     "id": "r0_cover",
+     "label": "Burger days of cover",
+     "value": 0,
+     "unit": "days",
+     "display": "0 days"
+    },
+    {
+     "id": "r0_order",
+     "label": "Burger suggested order",
+     "value": 9,
+     "unit": "count",
+     "display": "9"
+    },
+    {
+     "id": "r1_stock",
+     "label": "Lager in stock",
+     "value": 10,
+     "unit": "count",
+     "display": "10"
+    },
+    {
+     "id": "r1_rate",
+     "label": "Lager sold per day",
+     "value": 2,
+     "unit": "count",
+     "display": "2"
+    },
+    {
+     "id": "r1_cover",
+     "label": "Lager days of cover",
+     "value": 5,
+     "unit": "days",
+     "display": "5 days"
+    },
+    {
+     "id": "r1_order",
+     "label": "Lager suggested order",
+     "value": 18,
+     "unit": "count",
+     "display": "18"
+    }
+   ],
+   "charts": [
+    {
+     "type": "table",
+     "title": "Suggested reorders",
+     "unit": "count",
+     "columns": [
+      "Product",
+      "In stock",
+      "Per day",
+      "Days left",
+      "Order"
+     ],
+     "rows": [
+      {
+       "label": "Burger",
+       "cells": [
+        0,
+        0.64,
+        0,
+        9
+       ]
+      },
+      {
+       "label": "Lager",
+       "cells": [
+        10,
+        2,
+        5,
+        18
+       ]
+      }
+     ]
+    }
+   ],
+   "meta": {
+    "period": "Last 28 days of sales, stock as counted now",
+    "site": "All sites",
+    "definition": "Stock prediction: the current count over the last 28 days' average daily sales. Suggested order brings it back to 14 days of cover.",
+    "freshness": "Stock counts as they are now (2026-11-16 15:00)",
+    "from": null,
+    "to": null
+   },
+   "records": [
+    {
+     "kind": "stock",
+     "label": "Every product with a stock count"
+    }
+   ],
+   "follow_ups": [
+    "What are the slowest sellers?",
+    "Which products make the most profit?",
+    "What should I focus on tomorrow?"
+   ],
+   "source": "rules",
+   "question": "What stock should I reorder?",
+   "asked_at": "2026-11-16 15:00:00",
+   "understood": true
+  },
+  "Which products make the most profit in the last 7 days?": {
+   "intent": "profit",
+   "headline": "Gross profit was £63.33 at a 76% margin, on the products that have a cost price.",
+   "summary": "Gross profit was £63.33 at a 76% margin, on the products that have a cost price.",
+   "why": [
+    "Lager made the most profit: £63.33 at 76%."
+   ],
+   "next": [
+    "Promote high-margin products like Lager: keep them on the first page of the till and suggest them at the table."
+   ],
+   "facts": [
+    {
+     "id": "gross_profit",
+     "label": "Gross profit (products with a cost price)",
+     "value": 6333,
+     "unit": "money",
+     "display": "£63.33"
+    },
+    {
+     "id": "gross_profit_before",
+     "label": "Gross profit, The 7 days before",
+     "value": 9967,
+     "unit": "money",
+     "display": "£99.67"
+    },
+    {
+     "id": "gp_change",
+     "label": "Change in gross profit",
+     "value": -36.5,
+     "unit": "percent",
+     "display": "-36.5%"
+    },
+    {
+     "id": "margin",
+     "label": "Gross margin",
+     "value": 76,
+     "unit": "pct",
+     "display": "76%"
+    },
+    {
+     "id": "coverage",
+     "label": "Share of takings (ex VAT) with a cost price",
+     "value": 100,
+     "unit": "pct",
+     "display": "100%"
+    },
+    {
+     "id": "uncosted",
+     "label": "Products sold with no cost price",
+     "value": 0,
+     "unit": "count",
+     "display": "0"
+    },
+    {
+     "id": "b0_profit",
+     "label": "Lager gross profit",
+     "value": 6333,
+     "unit": "money",
+     "display": "£63.33"
+    },
+    {
+     "id": "b0_margin",
+     "label": "Lager margin",
+     "value": 76,
+     "unit": "pct",
+     "display": "76%"
+    }
+   ],
+   "charts": [
+    {
+     "type": "ranked",
+     "title": "Most profitable products",
+     "unit": "money",
+     "rows": [
+      {
+       "label": "Lager",
+       "value": 6333,
+       "meta": "76% margin"
+      }
+     ]
+    }
+   ],
+   "meta": {
+    "period": "Last 7 days (Tue 10 Nov to now)",
+    "from": "2026-11-10 00:00:00",
+    "to": "2026-11-16 15:00:00",
+    "site": "All sites",
+    "definition": "Gross profit: product takings without VAT, less quantity times the product's cost price. Only products with a cost price are counted.",
+    "freshness": "No sales in this period",
+    "last_sale": null,
+    "compare": "The 7 days before",
+    "coverage": 100
+   },
+   "records": [
+    {
+     "kind": "lines",
+     "label": "Products sold in Last 7 days (Tue 10 Nov to now), with cost",
+     "from": "2026-11-10 00:00:00",
+     "to": "2026-11-16 15:00:00",
+     "cost": true
+    }
+   ],
+   "follow_ups": [
+    "Which products sell at a loss?",
+    "Compare profit with last week",
+    "What were the best sellers?"
+   ],
+   "source": "rules",
+   "question": "Which products make the most profit in the last 7 days?",
+   "asked_at": "2026-11-16 15:00:00",
+   "understood": true
+  },
+  "How is my team performing this week?": {
+   "intent": "staff",
+   "headline": "Jo took the most in this week (Mon 16 Nov to now, 15:00): £40.00 from 4 bills.",
+   "summary": "Jo took the most in this week (Mon 16 Nov to now, 15:00): £40.00 from 4 bills.",
+   "why": [
+    "Takings follow shifts and sections: someone on a busy Saturday night will always take more. Average spend and voids say more about how someone sells."
+   ],
+   "next": [
+    "Share the average spend with the team: it is the figure each person can improve."
+   ],
+   "facts": [
+    {
+     "id": "staff_count",
+     "label": "Staff who closed bills",
+     "value": 1,
+     "unit": "count",
+     "display": "1"
+    },
+    {
+     "id": "s0_takings",
+     "label": "Jo takings",
+     "value": 4000,
+     "unit": "money",
+     "display": "£40.00"
+    },
+    {
+     "id": "s0_bills",
+     "label": "Jo bills",
+     "value": 4,
+     "unit": "count",
+     "display": "4"
+    },
+    {
+     "id": "s0_average",
+     "label": "Jo average spend",
+     "value": 1000,
+     "unit": "money",
+     "display": "£10.00"
+    },
+    {
+     "id": "s0_before",
+     "label": "Jo takings, Same point last week (Mon 9 Nov to Mon 9 Nov 15:00)",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    }
+   ],
+   "charts": [
+    {
+     "type": "ranked",
+     "title": "Takings by member of staff",
+     "unit": "money",
+     "rows": [
+      {
+       "label": "Jo",
+       "value": 4000,
+       "meta": "4 bills, £10.00 avg"
+      }
+     ]
+    }
+   ],
+   "meta": {
+    "period": "This week (Mon 16 Nov to now, 15:00)",
+    "from": "2026-11-16 00:00:00",
+    "to": "2026-11-16 15:00:00",
+    "site": "All sites",
+    "definition": "Takings by the member of staff who closed each bill. Voids are from the void log (lines removed after they were rung up).",
+    "freshness": "No sales in this period",
+    "last_sale": null,
+    "compare": "Same point last week (Mon 9 Nov to Mon 9 Nov 15:00)"
+   },
+   "records": [
+    {
+     "kind": "bills",
+     "label": "Bills in This week (Mon 16 Nov to now, 15:00)",
+     "from": "2026-11-16 00:00:00",
+     "to": "2026-11-16 15:00:00"
+    },
+    {
+     "kind": "voids",
+     "label": "Voids in This week (Mon 16 Nov to now, 15:00)",
+     "from": "2026-11-16 00:00:00",
+     "to": "2026-11-16 15:00:00"
+    }
+   ],
+   "follow_ups": [
+    "Compare the team with last week",
+    "Why did sales drop?",
+    "Which site performed best?"
+   ],
+   "source": "rules",
+   "question": "How is my team performing this week?",
+   "asked_at": "2026-11-16 15:00:00",
+   "understood": true
+  },
+  "Which site performed best this week?": {
+   "intent": "sites",
+   "headline": "Bar performed best in this week (Mon 16 Nov to now, 15:00) with £40.00.",
+   "summary": "Bar performed best in this week (Mon 16 Nov to now, 15:00) with £40.00.",
+   "why": [
+    "Bar: £40.00, down 81.8% on same point last week (Mon 9 Nov to Mon 9 Nov 15:00), £10.00 a bill."
+   ],
+   "next": [],
+   "facts": [
+    {
+     "id": "site0_takings",
+     "label": "Bar takings",
+     "value": 4000,
+     "unit": "money",
+     "display": "£40.00"
+    },
+    {
+     "id": "site0_before",
+     "label": "Bar takings, Same point last week (Mon 9 Nov to Mon 9 Nov 15:00)",
+     "value": 22000,
+     "unit": "money",
+     "display": "£220.00"
+    },
+    {
+     "id": "site0_change",
+     "label": "Bar change",
+     "value": -81.8,
+     "unit": "percent",
+     "display": "-81.8%"
+    },
+    {
+     "id": "site0_bills",
+     "label": "Bar bills",
+     "value": 4,
+     "unit": "count",
+     "display": "4"
+    },
+    {
+     "id": "site0_average",
+     "label": "Bar average spend",
+     "value": 1000,
+     "unit": "money",
+     "display": "£10.00"
+    },
+    {
+     "id": "site1_takings",
+     "label": "Lounge takings",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "site1_before",
+     "label": "Lounge takings, Same point last week (Mon 9 Nov to Mon 9 Nov 15:00)",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "site1_change",
+     "label": "Lounge change",
+     "value": null,
+     "unit": "percent",
+     "display": "not known"
+    },
+    {
+     "id": "site1_bills",
+     "label": "Lounge bills",
+     "value": 0,
+     "unit": "count",
+     "display": "0"
+    },
+    {
+     "id": "site1_average",
+     "label": "Lounge average spend",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    }
+   ],
+   "charts": [
+    {
+     "type": "pairbars",
+     "title": "Takings by site, This week (Mon 16 Nov to now, 15:00) against Same point last week (Mon 9 Nov to Mon 9 Nov 15:00)",
+     "unit": "money",
+     "rows": [
+      {
+       "label": "Bar",
+       "value": 4000,
+       "compare": 22000
+      },
+      {
+       "label": "Lounge",
+       "value": 0,
+       "compare": 0
+      }
+     ],
+     "legend": [
+      "This period",
+      "Compared with"
+     ]
+    }
+   ],
+   "meta": {
+    "period": "This week (Mon 16 Nov to now, 15:00)",
+    "from": "2026-11-16 00:00:00",
+    "to": "2026-11-16 15:00:00",
+    "site": "All sites",
+    "definition": "Takings by site: each sale counts for the site its till belongs to.",
+    "freshness": "No sales in this period",
+    "last_sale": null,
+    "compare": "Same point last week (Mon 9 Nov to Mon 9 Nov 15:00)"
+   },
+   "records": [
+    {
+     "kind": "bills",
+     "label": "Bills in This week (Mon 16 Nov to now, 15:00)",
+     "from": "2026-11-16 00:00:00",
+     "to": "2026-11-16 15:00:00"
+    }
+   ],
+   "follow_ups": [
+    "Why did sales drop?",
+    "How is the team doing?",
+    "What were the best sellers?"
+   ],
+   "source": "rules",
+   "question": "Which site performed best this week?",
+   "asked_at": "2026-11-16 15:00:00",
+   "understood": true
+  },
+  "What should I focus on tomorrow?": {
+   "intent": "focus",
+   "headline": "Tomorrow is Tuesday. There were no sales on the last four Tuesdays to go on.",
+   "summary": "Tomorrow is Tuesday. There were no sales on the last four Tuesdays to go on.",
+   "why": [],
+   "next": [
+    "Stock looks fine for a usual day. Check the bookings and the weather: they move a day more than anything else."
+   ],
+   "facts": [
+    {
+     "id": "tomorrow_avg",
+     "label": "Average takings on the last 0 Tuesdays",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "tomorrow_bills",
+     "label": "Average bills on those Tuesdays",
+     "value": 0,
+     "unit": "count",
+     "display": "0"
+    },
+    {
+     "id": "weeks_traded",
+     "label": "Tuesdays with sales in the last four weeks",
+     "value": 0,
+     "unit": "count",
+     "display": "0"
+    },
+    {
+     "id": "week0",
+     "label": "Takings Tue 10 Nov",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "week1",
+     "label": "Takings Tue 3 Nov",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "week2",
+     "label": "Takings Tue 27 Oct",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    },
+    {
+     "id": "week3",
+     "label": "Takings Tue 20 Oct",
+     "value": 0,
+     "unit": "money",
+     "display": "£0.00"
+    }
+   ],
+   "charts": [
+    {
+     "type": "bar",
+     "title": "Takings on the last four Tuesdays",
+     "unit": "money",
+     "rows": [
+      {
+       "label": "Tue 20 Oct",
+       "value": 0
+      },
+      {
+       "label": "Tue 27 Oct",
+       "value": 0
+      },
+      {
+       "label": "Tue 3 Nov",
+       "value": 0
+      },
+      {
+       "label": "Tue 10 Nov",
+       "value": 0
+      }
+     ]
+    }
+   ],
+   "meta": {
+    "period": "The last four Tuesdays (Tue 20 Oct to Tue 10 Nov)",
+    "site": "All sites",
+    "definition": "Takings: closed bills, VAT included, after discounts and before refunds. The same figure as the Dashboard's Takings. Tomorrow's outlook is the average of the same weekday over the last four weeks; it is a guide, not a forecast of bookings or weather.",
+    "freshness": "Sales to now; stock counts as they are now",
+    "from": "2026-10-20 00:00:00",
+    "to": "2026-11-11 00:00:00"
+   },
+   "records": [
+    {
+     "kind": "bills",
+     "label": "Bills on Tue 10 Nov",
+     "from": "2026-11-10 00:00:00",
+     "to": "2026-11-11 00:00:00"
+    },
+    {
+     "kind": "bills",
+     "label": "Bills on Tue 3 Nov",
+     "from": "2026-11-03 00:00:00",
+     "to": "2026-11-04 00:00:00"
+    },
+    {
+     "kind": "bills",
+     "label": "Bills on Tue 27 Oct",
+     "from": "2026-10-27 00:00:00",
+     "to": "2026-10-28 00:00:00"
+    },
+    {
+     "kind": "bills",
+     "label": "Bills on Tue 20 Oct",
+     "from": "2026-10-20 00:00:00",
+     "to": "2026-10-21 00:00:00"
+    }
+   ],
+   "follow_ups": [
+    "What stock should I reorder?",
+    "How did today compare with last week?",
+    "How is the team doing?"
+   ],
+   "source": "rules",
+   "question": "What should I focus on tomorrow?",
+   "asked_at": "2026-11-16 15:00:00",
+   "understood": true
+  }
+ },
+ "records": {
+  "kind": "bills",
+  "site": "All sites",
+  "columns": [
+   "Closed",
+   "Till",
+   "Staff",
+   "Table",
+   "Covers",
+   "Total",
+   "Discount"
+  ],
+  "rows": [
+   [
+    "2026-11-16 12:10",
+    "BAR1",
+    "Jo",
+    "",
+    2,
+    "£10.00",
+    "£0.00"
+   ],
+   [
+    "2026-11-16 12:11",
+    "BAR1",
+    "Jo",
+    "",
+    2,
+    "£10.00",
+    "£0.00"
+   ],
+   [
+    "2026-11-16 12:12",
+    "BAR1",
+    "Jo",
+    "",
+    2,
+    "£10.00",
+    "£0.00"
+   ],
+   [
+    "2026-11-16 12:13",
+    "BAR1",
+    "Jo",
+    "",
+    2,
+    "£10.00",
+    "£0.00"
+   ]
+  ],
+  "truncated": false
+ }
+}

@@ -8234,3 +8234,134 @@ tr.ls-off td { opacity: .55; }
 @keyframes stripe-shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .stripe-skeleton { animation: none; } }
 
+
+/* ---- Vesopa AI (2026-11-16) -----------------------------------------------
+ * The back office's own cards, pills, chips and chart colours. The one new
+ * mark is the small lime "AI" tile, the Vesopa lime on the brand ink, so
+ * Vesopa AI reads as part of the back office and not as a template bolted on.
+ * Every colour is a token, so Day and Night both work.
+ */
+.nav.nav-ai::after {
+  content: 'AI'; margin-left: 8px; padding: 1px 6px; border-radius: 6px;
+  font-size: 10px; font-weight: 800; letter-spacing: .04em;
+  background: var(--brand); color: var(--on-brand); vertical-align: 1px;
+}
+.vai-title-mark, .vai-mark {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; margin-right: 10px;
+  border-radius: 9px; background: var(--brand); color: var(--on-brand);
+  font-size: 12px; font-weight: 800; letter-spacing: .04em; vertical-align: 3px;
+}
+.vai-mark { width: 44px; height: 44px; font-size: 15px; margin: 0 0 12px; }
+.vai-head { align-items: flex-start; }
+.vai-head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.vai-tabs { max-width: 100%; overflow-x: auto; }
+.vai-kicker { display: block; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--brand-deep); margin-bottom: 6px; }
+.vai-headline { font-size: 20px; line-height: 1.3; margin: 0 0 10px; }
+.vai-hero { border-left: 4px solid var(--brand); }
+.vai-hero .vai-headline { font-size: 24px; }
+.vai-why { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--text); line-height: 1.5; }
+.vai-h4 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.vai-next { margin: 0; padding-left: 20px; display: grid; gap: 6px; line-height: 1.5; }
+.vai-nextbox { background: var(--brand-soft); border-radius: 10px; padding: 4px 16px 14px; margin-top: 14px; }
+.vai-brief, .vai-section { display: grid; gap: 14px; }
+.vai-tiles { margin-bottom: 0; }
+.vai-two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.vai-alerts { display: grid; gap: 8px; }
+.vai-alert {
+  display: grid; grid-template-columns: 10px 1fr auto; gap: 12px; align-items: center; text-align: left;
+  width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--card); color: var(--text); font: inherit; cursor: pointer;
+}
+.vai-alert:hover { background: var(--surface-2); }
+.vai-alert strong { display: block; margin-bottom: 2px; }
+.vai-alert-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--amber); }
+.vai-alert.bad .vai-alert-dot { background: var(--red); }
+.vai-alert.good .vai-alert-dot { background: var(--green); }
+.vai-alert-go { color: var(--brand-deep); font-weight: 700; font-size: 13px; white-space: nowrap; }
+.vai-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.vai-chip { border: 0; cursor: pointer; padding: 7px 12px; font-size: 13px; white-space: normal; text-align: left; }
+.vai-chip:hover { background: var(--brand); color: var(--on-brand); }
+.vai-askbar { display: flex; gap: 8px; }
+.vai-askbar input { flex: 1; min-width: 0; font-size: 16px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--input-bg, var(--card)); color: var(--text); }
+.vai-askbar input:focus { outline: 2px solid var(--brand); outline-offset: 0; }
+.vai-ask { display: grid; grid-template-columns: 260px 1fr; gap: 14px; align-items: start; }
+.vai-history { position: sticky; top: 12px; max-height: calc(100vh - 140px); overflow: auto; }
+.vai-convos { display: grid; gap: 4px; }
+.vai-convo { display: grid; gap: 2px; text-align: left; padding: 9px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 13.5px; cursor: pointer; }
+.vai-convo:hover, .vai-convo.active { background: var(--brand-soft); }
+.vai-convo > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vai-chat { display: grid; gap: 12px; min-width: 0; }
+.vai-thread { display: grid; gap: 12px; }
+.vai-q { display: flex; justify-content: flex-end; }
+.vai-q span { max-width: 80%; background: var(--brand); color: var(--on-brand); padding: 10px 14px; border-radius: 14px 14px 4px 14px; font-weight: 600; }
+.vai-a { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius, 12px); padding: var(--card-pad, 20px); min-width: 0; }
+.vai-composer { position: sticky; bottom: 10px; box-shadow: var(--shadow); }
+.vai-empty { text-align: center; padding: 36px 20px; }
+.vai-empty .vai-mark { margin: 0 auto 12px; }
+.vai-chartbox { margin-top: 16px; }
+.vai-chart-title { font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 8px; }
+.vai-chart { min-height: 40px; }
+.vai-meta { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; font-size: 13px; }
+.vai-meta summary { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; cursor: pointer; list-style: none; }
+.vai-meta summary::-webkit-details-marker { display: none; }
+.vai-meta .pill { text-transform: none; }
+.vai-meta-more { color: var(--brand-deep); font-weight: 700; margin-left: auto; }
+.vai-meta dl { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; margin: 12px 0 0; }
+.vai-meta dt { color: var(--muted); }
+.vai-meta dd { margin: 0; }
+.vai-records { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.vai-legend { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.vai-key { width: 10px; height: 10px; border-radius: 3px; margin-left: 8px; }
+.vai-key.now, .vai-pair-bars .now { background: var(--chart-1); }
+.vai-key.before, .vai-pair-bars .before { background: var(--track, var(--line)); }
+.vai-pairs { display: flex; gap: 6px; align-items: flex-end; height: 170px; overflow-x: auto; padding-bottom: 2px; }
+.vai-pair { flex: 1 0 34px; display: grid; grid-template-rows: 1fr auto; gap: 4px; height: 100%; }
+.vai-pair-bars { display: flex; gap: 2px; align-items: flex-end; }
+.vai-pair-bars span { flex: 1; height: var(--h); min-height: 2px; border-radius: 3px 3px 0 0; }
+.vai-pair-label { font-size: 11px; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vai-div { display: grid; gap: 6px; }
+.vai-div-row { display: grid; grid-template-columns: minmax(80px, 34%) 1fr 90px; gap: 10px; align-items: center; font-size: 13px; }
+.vai-div-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vai-div-track { position: relative; height: 10px; background: var(--surface-2); border-radius: 5px; }
+.vai-div-track::after { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--line); }
+.vai-div-track span { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+.vai-div-track .pos { left: 50%; background: var(--chart-1); }
+.vai-div-track .neg { right: 50%; background: var(--chart-6); }
+.vai-div-value { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.vai-div-value.neg { color: var(--red); }
+.vai-table-wrap { overflow-x: auto; }
+.vai-table { font-size: 13px; }
+.vai-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.vai-table td { padding: 7px 8px; border-bottom: 1px solid var(--line); }
+.vai-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vai-modal { max-height: 86vh; }
+.vai-inv-form { display: grid; gap: 10px; margin-top: 14px; }
+.vai-inv-form label { display: grid; gap: 4px; font-size: 13px; }
+.vai-inv-form fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px 12px; display: grid; gap: 6px; }
+.vai-inv-form legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+.vai-check { display: flex !important; gap: 8px; align-items: center; }
+.vai-loading { display: flex; gap: 12px; align-items: center; }
+.vai-spark { width: 18px; height: 18px; border-radius: 6px; background: var(--brand); animation: vai-pulse 1.1s ease-in-out infinite; }
+.vai-typing { display: flex; gap: 5px; padding: 6px 0; }
+.vai-typing span { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); animation: vai-pulse 1s ease-in-out infinite; }
+.vai-typing span:nth-child(2) { animation-delay: .15s; }
+.vai-typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes vai-pulse { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .vai-spark, .vai-typing span { animation: none; } }
+.vai-accept { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px; background: var(--bg); }
+.vai-accept-card { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px; }
+.vai-accept-card form { display: grid; gap: 10px; margin-top: 12px; }
+.vai-accept-card label { display: grid; gap: 4px; font-size: 13px; }
+.vai-accept-card input { padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--input-bg, var(--card)); color: var(--text); font-size: 16px; }
+@media (max-width: 980px) {
+  .vai-two, .vai-ask { grid-template-columns: 1fr; }
+  .vai-history { position: static; max-height: 220px; order: 2; }
+}
+@media (max-width: 560px) {
+  .vai-hero .vai-headline { font-size: 20px; }
+  .vai-meta dl { grid-template-columns: 1fr; }
+  .vai-meta-more { margin-left: 0; }
+  .vai-div-row { grid-template-columns: 1fr 70px; }
+  .vai-div-track { grid-column: 1 / -1; grid-row: 2; }
+  .vai-q span { max-width: 92%; }
+}
