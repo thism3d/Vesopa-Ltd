@@ -310,6 +310,7 @@
 
         <nav>
           <button class="nav active" data-view="dashboard">Dashboard</button>
+          <button class="nav nav-ai" data-view="vesopa_ai">Vesopa AI</button>
 
           <button class="nav-group" data-group="reports">Reports<span class="caret">▼</span></button>
           <button class="nav" data-view="run_report">Reports</button>
@@ -474,6 +475,28 @@
 
       <main>
         <!-- Dashboard -->
+        <!-- Vesopa AI Business Advisor (2026-11-16): vesopa_ai.js draws it;
+             every figure comes from src/ai_metrics.js. -->
+        <section id="view-vesopa_ai" class="view" hidden>
+          <div class="page-head vai-head">
+            <div><h2><span class="vai-title-mark" aria-hidden="true">AI</span>Vesopa AI</h2><p class="muted small" id="vai-sub">Your business, explained.</p></div>
+            <div class="vai-head-actions">
+              <select id="vai-site" aria-label="Site" hidden></select>
+              <button type="button" class="btn ghost small" id="vai-invite" hidden>Invite people</button>
+            </div>
+          </div>
+          <div class="dash-toolbar">
+            <div class="seg vai-tabs" id="vai-tabs" role="tablist">
+              <button class="seg-btn active" data-tab="brief">Briefing</button>
+              <button class="seg-btn" data-tab="ask">Ask</button>
+              <button class="seg-btn" data-tab="sales">Sales</button>
+              <button class="seg-btn" data-tab="stock">Stock</button>
+              <button class="seg-btn" data-tab="profit">Profit</button>
+              <button class="seg-btn" data-tab="team">Team &amp; sites</button>
+            </div>
+          </div>
+          <div id="vai-root"><div id="vai-body"></div></div>
+        </section>
         <section id="view-dashboard" class="view">
           <div class="page-head">
             <div><h2>Dashboard</h2><p class="muted small" id="who"></p></div>
@@ -5240,6 +5263,7 @@
          may go on doing so: they only reach for them when something is
          rendered, which is always after everything has parsed. -->
     <script src="/charts.js"></script>
+    <script src="/vesopa_ai.js"></script>
     <script src="/screens.js"></script>
     <!-- Before app.js, like screens.js: it defines functions app.js's render
          map refers to, and uses app.js's helpers only from inside them. -->

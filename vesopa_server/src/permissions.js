@@ -97,6 +97,15 @@ const BACKOFFICE_PERMISSIONS = [
     keys: [{ key: 'dashboard.view', label: 'View dashboard' }],
   },
   {
+    group: 'Vesopa AI',
+    keys: [
+      { key: 'ai.advisor', label: 'Vesopa AI' },
+      { key: 'ai.profit', label: 'Vesopa AI: profit and margins' },
+      { key: 'ai.staff', label: 'Vesopa AI: staff performance' },
+      { key: 'ai.invite', label: 'Vesopa AI: invite people' },
+    ],
+  },
+  {
     group: 'Reports',
     keys: [
       { key: 'reports.financial_summary', label: 'Reports' },
@@ -697,10 +706,17 @@ function permissionRoutes({ pool, broadcast, secret }) {
       if (!row) {
         return res.json({ unrestricted: true, permissions: [...BACKOFFICE_KEYS] });
       }
+      // Vesopa AI (2026-11-16) is for the owner and managers: a role named
+      // Owner or Manager saved before the ai.* keys existed still opens it,
+      // as ai_advisor.js already allows on the server.
+      const permissions = parsePermissions(row.permissions);
+      if (/^(owner|manager)$/i.test(String(row.display_name || '').trim())) {
+        for (const k of ['ai.advisor', 'ai.profit', 'ai.staff', 'ai.invite']) if (!permissions.includes(k)) permissions.push(k);
+      }
       res.json({
         unrestricted: false,
         role: row.display_name,
-        permissions: parsePermissions(row.permissions),
+        permissions,
       });
     } catch (e) {
       next(e);
