@@ -13,6 +13,8 @@ import 'package:flutter/material.dart';
 import '../../nfc/card_read_sheet.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../ui/pages/link_screen_page.dart';
+import '../../ui/tv.dart';
 import 'package:vesopa_go/config/constants.dart' show apiBase;
 import 'package:vesopa_go/data/api.dart';
 import 'package:vesopa_go/data/models.dart';
@@ -55,8 +57,16 @@ class _LiteWelcomePageState extends ConsumerState<LiteWelcomePage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _signIn(selectAccount: true);
       });
+    } else if (GoDevice.isTv) {
+      // A television cannot complete a sign-in page: it shows its code.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _connectWithCode();
+      });
     }
   }
+
+  void _connectWithCode() =>
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LinkScreenPage()));
 
   Future<void> _signIn({bool selectAccount = false}) async {
     setState(() {
@@ -94,6 +104,14 @@ class _LiteWelcomePageState extends ConsumerState<LiteWelcomePage> {
           icon: const Icon(Icons.storefront_rounded),
           label: const Text('Register a new venue'),
         ),
+      ),
+      const SizedBox(height: 4),
+      // A screen, a TV or a spare tablet: let in from a device that is already
+      // signed in, with nothing to type (2026-11-16).
+      TextButton.icon(
+        onPressed: _busy ? null : _connectWithCode,
+        icon: const Icon(Icons.qr_code_2_rounded),
+        label: const Text('Connect with a code'),
       ),
       if (_recent.isNotEmpty) ...[
         const SizedBox(height: 18),

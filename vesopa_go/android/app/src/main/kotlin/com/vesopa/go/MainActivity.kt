@@ -33,6 +33,14 @@ import io.flutter.plugin.common.MethodChannel
  */
 class MainActivity : FlutterFragmentActivity() {
     private var waiting: MethodChannel.Result? = null
+
+    private fun isTelevision(): Boolean {
+        val pm = packageManager
+        if (pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK)) return true
+        if (pm.hasSystemFeature("amazon.hardware.fire_tv")) return true
+        val ui = getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager
+        return ui?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    }
     private var receiver: BroadcastReceiver? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -49,6 +57,9 @@ class MainActivity : FlutterFragmentActivity() {
                     "sdk" to android.os.Build.VERSION.SDK_INT,
                     "nfc" to nfcState(),
                     "dojoApp" to pocketInstalled(),
+                    // A television (Android TV, Google TV, Fire TV): a remote, no
+                    // touch, no browser. Go opens as a screen there (lib/ui/tv.dart).
+                    "tv" to isTelevision(),
                 ))
                 // Dojo's SDK once the venue's Dojo account is known
                 // (DojoPocketSdk.kt); the intents below until then.

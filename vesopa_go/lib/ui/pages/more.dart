@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../nfc/card_read_sheet.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'link_screen_page.dart';
 
 import '../../data/api.dart';
 import '../../data/models.dart';
@@ -136,6 +137,18 @@ class _MorePageState extends ConsumerState<MorePage> {
           onTap: _readCard,
         ),
       ),
+      if (!s.demo && s.venue?.mode == VenueMode.connected) ...[
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.qr_code_scanner_rounded),
+            title: const Text('Connect a screen or TV'),
+            subtitle: const Text('Scan the code a new screen shows to add it to this venue'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => connectScreen(context, ref),
+          ),
+        ),
+      ],
       const SizedBox(height: 12),
       Card(
         child: ListTile(

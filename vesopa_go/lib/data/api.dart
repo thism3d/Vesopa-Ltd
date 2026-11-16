@@ -123,6 +123,18 @@ class TapApi {
         'app_version': version,
       });
 
+  /// Scan and connect: a new screen asks for a code to show.
+  Future<Map<String, dynamic>> linkStart({required String device, required String version, bool tv = false}) =>
+      _send('POST', '/api/device/link/start', {'device_name': device, 'app_version': version, 'tv': tv});
+
+  /// The new screen asking whether somebody has let it in yet.
+  Future<Map<String, dynamic>> linkPoll(String code, String secret) =>
+      _send('POST', '/api/device/link/poll', {'code': code, 'secret': secret});
+
+  /// This device, already in the venue, letting a new screen in.
+  Future<Map<String, dynamic>> linkApprove(String code, {required String mode, String? name}) =>
+      _send('POST', '/api/device/link/approve', {'code': code, 'mode': mode, 'name': ?name});
+
   /// A login that runs several sites picks one with the five-minute pass.
   Future<Map<String, dynamic>> commissionSite(String pickToken, Object officeId, {required String device, required String deviceId}) =>
       _send('POST', '/api/terminal/vesopa/commission/site', {

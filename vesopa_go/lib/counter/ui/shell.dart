@@ -14,6 +14,7 @@ library;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../ui/pages/link_screen_page.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/recent_venues.dart';
 import 'package:vesopa_go/data/session.dart';
@@ -317,6 +318,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ]),
       // Customer displays following this device: a Go device or a Windows
       // display shows a code; connect it here (display/data/display_hub.dart).
+      if (s.venue?.mode == VenueMode.connected && !s.demo)
+        _group('Screens and TVs', [
+          ListTile(
+            leading: const Icon(Icons.qr_code_scanner_rounded),
+            title: const Text('Connect a screen or TV'),
+            subtitle: const Text('Scan the code a new screen shows to add it as a display, a kitchen screen, a till or a card terminal.'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => connectScreen(context, ref),
+          ),
+        ]),
       if (s.venue?.mode == VenueMode.connected && !s.demo)
         _group('Customer displays', [
           StreamBuilder<void>(

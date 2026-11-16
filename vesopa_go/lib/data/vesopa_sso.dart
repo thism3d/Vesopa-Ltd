@@ -50,6 +50,20 @@ class VesopaSso {
     // (2026-10-27): that view runs outside the app and the hand-back stalled.
     if (Platform.isIOS) return _authorizeApple(signUp: signUp, selectAccount: selectAccount, verifier: verifier, challenge: challenge, state: state, nonce: nonce);
 
+    // Android signs in the same way since 2026-11-16: the page opens over Go
+    // (a Custom Tab) and answers on Go's own address, so Go comes back to the
+    // front by itself. Before, the browser was left on a page that said "Go
+    // back to Vesopa Go" on a local port (the owner: "why is the fallback not
+    // opening the app back, and why a local port?"). The local port is kept
+    // only for a device with no browser that can open a Custom Tab.
+    if (Platform.isAndroid) {
+      try {
+        return await _authorizeApple(signUp: signUp, selectAccount: selectAccount, verifier: verifier, challenge: challenge, state: state, nonce: nonce);
+      } on _NoSignInPage {
+        // Fall through to the local port.
+      }
+    }
+
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final redirectUri = 'http://127.0.0.1:${server.port}/callback';
     try {
@@ -119,7 +133,8 @@ class VesopaSso {
       answer = await FlutterWebAuth2.authenticate(url: url.toString(), callbackUrlScheme: 'com.vesopa.go')
           .timeout(_wait, onTimeout: () => throw const SsoFailed('Sign-in timed out. Try again.'));
     } on PlatformException catch (e) {
-      throw SsoFailed(e.code == 'CANCELED' ? 'Sign-in was cancelled.' : 'Could not open the Vesopa sign-in page.');
+      if (e.code == 'CANCELED') throw const SsoFailed('Sign-in was cancelled.');
+      throw const _NoSignInPage();
     }
     final q = Uri.parse(answer).queryParameters;
     if (q['state'] != state) throw const SsoFailed('The sign-in answer did not match. Try again.');
@@ -149,4 +164,9 @@ class SsoFailed implements Exception {
   final String message;
   @override
   String toString() => message;
+}
+
+/// The sign-in page could not be opened over the app at all.
+class _NoSignInPage extends SsoFailed {
+  const _NoSignInPage() : super('Could not open the Vesopa sign-in page.');
 }

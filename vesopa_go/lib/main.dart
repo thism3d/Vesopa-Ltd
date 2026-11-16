@@ -38,6 +38,7 @@ import 'ui/splash.dart';
 import 'ui/venue_font.dart';
 import 'ui/pages/setup.dart';
 import 'ui/theme.dart';
+import 'ui/tv.dart';
 
 const demoOnly = bool.fromEnvironment('GO_DEMO_ONLY');
 
@@ -47,7 +48,9 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   GoSounds.load();
   DevicePrefs.load();
-  runApp(const ProviderScope(child: GoApp()));
+  // Whether this is a television, before the first frame: a TV draws its
+  // focus ring from the start and opens on a code, not a sign-in page.
+  GoDevice.load().whenComplete(() => runApp(const ProviderScope(child: GoApp())));
 }
 
 /// The demo venue: The Vesopa Kitchen's menu at the counter, and a floor of
@@ -100,12 +103,14 @@ class GoApp extends ConsumerWidget {
       navigatorKey: goNavigator,
       // Signed on: the licence, offline and idle rules over every page.
       // The start animation over the first screen, then the frame's rules.
-      builder: (context, child) => GoSplash(child: phase == Phase.ready && (!modes || device.mode == DeviceMode.epos) ? GoFrame(child: child!) : child!),
+      builder: (context, child) => TvRemote(
+        child: GoSplash(child: phase == Phase.ready && (!modes || device.mode == DeviceMode.epos) ? GoFrame(child: child!) : child!),
+      ),
       title: appName,
       debugShowCheckedModeBanner: false,
       // In the venue's lettering once it has loaded, as the till is.
-      theme: Tp.theme(Brightness.light, font: ref.watch(venueFontProvider).value),
-      darkTheme: Tp.theme(Brightness.dark, font: ref.watch(venueFontProvider).value),
+      theme: tvFocusTheme(Tp.theme(Brightness.light, font: ref.watch(venueFontProvider).value)),
+      darkTheme: tvFocusTheme(Tp.theme(Brightness.dark, font: ref.watch(venueFontProvider).value)),
       // Light, dark or the device's own (Settings, Appearance).
       themeMode: ref.watch(appearanceProvider),
       home: AnimatedSwitcher(

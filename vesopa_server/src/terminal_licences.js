@@ -842,6 +842,151 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
       } };
   }
 
+  // -------------------------------------------------------------------------
+  // Scan and connect (2026-11-16)
+  // -------------------------------------------------------------------------
+  //
+  // A TV has no browser to sign in with and a remote is no way to type a venue
+  // code, a number and an access key (the owner: "in the Vesopa Go TV app it
+  // should be like scan and connect"). So the screen shows a code and a QR,
+  // and somebody who is already in the venue lets it in: a signed-in Vesopa Go
+  // phone scans it, or it is typed on Terminals in the back office.
+  //
+  //   start    the screen asks for a code. Nothing is created yet.
+  //   approve  a device or a back-office user of the venue says yes: a Go
+  //            licence is made for the screen, exactly as Terminals makes one.
+  //   poll     the screen collects its venue code, number and access key, once,
+  //            and licenses itself with them through /api/terminal/license.
+  //
+  // The code is short because a person may have to read it across a room; the
+  // secret the screen polls with is long and never shown. Both last ten
+  // minutes. Kept in memory: a restart only means the screen asks again.
+  const LINK_MINUTES = 10;
+  const LINK_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const links = new Map(); // code -> { secret, device, until, grant }
+
+  function linkSweep() {
+    const now = Date.now();
+    for (const [code, link] of links) if (link.until < now) links.delete(code);
+  }
+  function linkCode() {
+    const bytes = crypto.randomBytes(8);
+    let out = '';
+    for (let i = 0; i < 8; i += 1) out += LINK_ALPHABET[bytes[i] % LINK_ALPHABET.length];
+    return out;
+  }
+  const cleanCode = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+
+  router.post('/api/device/link/start', express.json(), (req, res) => {
+    const ip = req.ip;
+    if (limiter.blocked(ip)) {
+      return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
+    }
+    linkSweep();
+    if (links.size > 2000) return res.status(503).json({ error: 'Busy. Try again in a minute.' });
+    const body = req.body || {};
+    let code = linkCode();
+    while (links.has(code)) code = linkCode();
+    const secret = crypto.randomBytes(32).toString('hex');
+    links.set(code, {
+      secret,
+      until: Date.now() + LINK_MINUTES * 60 * 1000,
+      device: {
+        name: clamp(body.device_name, 80) || 'Screen',
+        tv: body.tv === true,
+        version: clamp(body.app_version, 32),
+      },
+      grant: null,
+    });
+    res.json({
+      code,
+      secret,
+      // What the QR holds. A phone's camera opens the page; Vesopa Go reads
+      // the code out of it.
+      url: `https://go.vesopa.com/link/?c=${code}`,
+      expires_in: LINK_MINUTES * 60,
+    });
+  });
+
+  /** A venue's device, or one of its back-office users. Either may let a screen in. */
+  async function linkApprover(req, res, next) {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+    let claims;
+    try {
+      claims = jwt.verify(token, secret);
+    } catch {
+      return res.status(401).json({ error: 'Sign in first.' });
+    }
+    try {
+      if (SCOPE_KINDS[claims.scope] && claims.office) {
+        req.office = claims.office;
+        req.linkBy = `device:${claims.commissionedBy || claims.scope}`;
+        return next();
+      }
+      if (claims.officeId && claims.email) {
+        const [[office]] = await pool.query('SELECT contact_email FROM offices WHERE id = ?', [claims.officeId]);
+        if (!office) return res.status(403).json({ error: 'No venue to connect it to.' });
+        req.office = office.contact_email;
+        req.linkBy = claims.email;
+        return next();
+      }
+      return res.status(403).json({ error: 'This sign-in cannot connect a screen.' });
+    } catch (e) {
+      return next(e);
+    }
+  }
+
+  router.post('/api/device/link/approve', express.json(), linkApprover, async (req, res, next) => {
+    try {
+      const ip = req.ip;
+      if (limiter.blocked(ip)) {
+        return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
+      }
+      linkSweep();
+      const body = req.body || {};
+      const code = cleanCode(body.code);
+      const link = links.get(code);
+      if (!link) {
+        limiter.failed(ip);
+        return res.status(404).json({ error: 'That code is not on a screen now. Check it, or get a new one on the screen.' });
+      }
+      if (link.grant) return res.status(409).json({ error: 'That screen is already connected.' });
+
+      const mode = ['epos', 'kitchen', 'display', 'terminal'].includes(body.mode) ? body.mode : 'display';
+      const name = clamp(body.name, 80) || link.device.name;
+      const made = await store.create(req.office, { kind: 'go', name, by: req.linkBy, enforce: true });
+      const row = await store.get(req.office, made.id);
+      const [[venue]] = await pool.query('SELECT id, name FROM offices WHERE contact_email = ?', [req.office]);
+      link.grant = {
+        venue_code: venue ? venue.id : null,
+        terminal_number: row.terminal_no,
+        access_key: made.key,
+        mode,
+        venue: venue ? venue.name : null,
+      };
+      limiter.passed(ip);
+      res.json({ ok: true, name, mode, venue: venue ? venue.name : null, terminal_number: row.terminal_no });
+    } catch (e) {
+      if (e.status) return res.status(e.status).json({ error: e.message });
+      next(e);
+    }
+  });
+
+  router.post('/api/device/link/poll', express.json(), (req, res) => {
+    linkSweep();
+    const body = req.body || {};
+    const link = links.get(cleanCode(body.code));
+    const given = Buffer.from(String(body.secret || ''));
+    if (!link || given.length !== link.secret.length || !crypto.timingSafeEqual(given, Buffer.from(link.secret))) {
+      return res.status(404).json({ status: 'gone', error: 'This code has run out. Get a new one.' });
+    }
+    if (!link.grant) return res.json({ status: 'waiting', expires_in: Math.max(0, Math.round((link.until - Date.now()) / 1000)) });
+    // Handed over once. The key is the screen's from here.
+    links.delete(cleanCode(body.code));
+    res.json({ status: 'approved', ...link.grant });
+  });
+
   /** A device's own terminal and settings. Also its "last ping". */
   router.get('/api/device/terminal', device, async (req, res, next) => {
     try {
