@@ -302,7 +302,7 @@ class _SuggestSheetState extends State<_SuggestSheet> {
       padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
-          const Icon(Icons.auto_awesome_rounded, color: Tp.lime),
+          Icon(Icons.auto_awesome_rounded, color: Tp.lime),
           const SizedBox(width: 8),
           Text('Suggest a layout', style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
         ]),

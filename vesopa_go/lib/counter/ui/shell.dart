@@ -23,6 +23,7 @@ import 'package:vesopa_go/ui/pages/bill.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
 import 'package:vesopa_go/ui/clerk_chip.dart';
 import 'package:vesopa_go/payments/payment_service.dart';
+import 'package:vesopa_go/ui/accent.dart';
 import 'package:vesopa_go/ui/appearance.dart';
 import 'package:vesopa_go/ui/device_prefs.dart';
 import 'package:vesopa_go/ui/go_frame.dart';
@@ -420,6 +421,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onSelectionChanged: (v) => ref.read(appearanceProvider.notifier).set(v.first),
           ),
         ),
+        const _AccentPicker(),
       ]),
       _group('This device', [
         SwitchListTile(
@@ -545,6 +547,53 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       Center(child: Text('$appName · ${ref.read(tapProvider.notifier).terminalName}', style: t.bodySmall)),
       const AppVersionLine(),
     ]);
+  }
+}
+
+/// The accent this device wears: a row of swatches under Day and Night. The
+/// key to press next (Send, Pay, Tap) takes the chosen colour; table states
+/// keep theirs.
+class _AccentPicker extends ConsumerWidget {
+  const _AccentPicker();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = ref.watch(accentProvider);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Colour', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 2),
+        Text(current.name, style: TextStyle(color: context.goMuted)),
+        const SizedBox(height: 10),
+        Wrap(spacing: 12, runSpacing: 12, children: [
+          for (final p in GoPalette.all)
+            Semantics(
+              button: true,
+              selected: p == current,
+              label: p.name,
+              child: InkResponse(
+                onTap: () => ref.read(accentProvider.notifier).set(p),
+                radius: 30,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: Tp.target,
+                  height: Tp.target,
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: p == current ? context.goText : Colors.transparent, width: 2.5),
+                  ),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(color: p.colour, shape: BoxShape.circle),
+                    child: p == current ? Icon(Icons.check_rounded, color: p.on, size: 26) : null,
+                  ),
+                ),
+              ),
+            ),
+        ]),
+      ]),
+    );
   }
 }
 

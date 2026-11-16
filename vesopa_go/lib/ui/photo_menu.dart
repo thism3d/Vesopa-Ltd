@@ -432,7 +432,7 @@ class _ProductEditSheetState extends ConsumerState<_ProductEditSheet> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                 decoration: BoxDecoration(color: Tp.lime, borderRadius: BorderRadius.circular(999)),
-                child: const Text('Manager', style: TextStyle(color: Tp.onLime, fontWeight: FontWeight.w800, fontSize: 12)),
+                child: Text('Manager', style: TextStyle(color: Tp.onLime, fontWeight: FontWeight.w800, fontSize: 12)),
               ),
             ]),
             const SizedBox(height: 12),

@@ -37,6 +37,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// settings, and restoring an old queue would send a sale twice.
 const Map<String, String> terminalSettings = {
   'go_appearance': 'Appearance',
+  'go_accent': 'Appearance',
   'go_floor_view': 'Appearance',
   'go_full_screen': 'Appearance',
   'go_idle_message': 'Idle',

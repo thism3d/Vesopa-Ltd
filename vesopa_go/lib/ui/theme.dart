@@ -17,11 +17,50 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 
+/// An accent the device can wear instead of lime (Settings, Appearance).
+///
+/// [colour] is the key to press next; [deep] is the same hue dark enough to
+/// read as text or an icon on Day's light ground (4.5:1 or better on white
+/// for every added accent; lime keeps the till's own deep lime, 3.96:1);
+/// [on] is the ink set on a filled [colour] key.
+class GoPalette {
+  const GoPalette(this.id, this.name, this.colour, this.deep, this.on);
+  final String id;
+  final String name;
+  final Color colour;
+  final Color deep;
+  final Color on;
+
+  static const lime = GoPalette('lime', 'Vesopa lime', Color(0xFFA5C715), Color(0xFF6E8A0E), Color(0xFF10130A));
+
+  /// Lime first, as the till. No red (it means declined and void) and no amber
+  /// (it means an order is waiting), so a key never looks like a warning.
+  static const all = <GoPalette>[
+    lime,
+    GoPalette('mint', 'Mint', Color(0xFF2BD9A0), Color(0xFF0F7A57), Color(0xFF06261B)),
+    GoPalette('sky', 'Sky', Color(0xFF4DB6FF), Color(0xFF1A6FB0), Color(0xFF04182A)),
+    GoPalette('violet', 'Violet', Color(0xFFA78BFA), Color(0xFF6D4BD8), Color(0xFF160A33)),
+    GoPalette('coral', 'Coral', Color(0xFFFF7A59), Color(0xFFB8441F), Color(0xFF2A0C03)),
+    GoPalette('pink', 'Pink', Color(0xFFFF6FB5), Color(0xFFB8236E), Color(0xFF2A0617)),
+  ];
+
+  static GoPalette byId(String? id) => all.where((p) => p.id == id).firstOrNull ?? lime;
+}
+
 class Tp {
-  static const lime = Color(0xFFA5C715);
-  static const limeDeep = Color(0xFF6E8A0E);
+  /// The accent this device wears, set by the accent provider before every
+  /// build of the app (lib/ui/accent.dart). Lime unless changed.
+  static GoPalette palette = GoPalette.lime;
+
+  static Color get lime => palette.colour;
+  static Color get limeDeep => palette.deep;
+  static Color get onLime => palette.on;
+
+  /// The brand's own lime, whatever the accent: the table states keep their
+  /// colours so "mains away" reads the same on every device in the venue.
+  static const brandLime = Color(0xFFA5C715);
+
   static const ink = Color(0xFF111111);
-  static const onLime = Color(0xFF10130A);
   static const inkCard = Color(0xFF1A1A18);
   static const inkRaised = Color(0xFF232320);
   static const inkLine = Color(0xFF33332F);
@@ -43,7 +82,7 @@ class Tp {
         TableState.free => const Color(0xFF7D8570),
         TableState.seated => blue,
         TableState.ordered => amber,
-        TableState.mains => lime,
+        TableState.mains => brandLime,
         TableState.bill => const Color(0xFFBB6BD9),
         TableState.paid => const Color(0xFF2BB673),
       };
@@ -120,7 +159,7 @@ class Tp {
         fillColor: scheme.surfaceContainer,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: scheme.outlineVariant)),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: scheme.outlineVariant)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: lime, width: 2)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: lime, width: 2)),
       ),
       snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
     );

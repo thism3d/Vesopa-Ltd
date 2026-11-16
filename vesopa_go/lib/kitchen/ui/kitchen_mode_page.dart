@@ -580,7 +580,7 @@ class _OpenBoard extends ConsumerWidget {
             key: ValueKey('t-${ticket.id}'),
             // Left: done (the main action, as Mail's archive); right: rush.
             background: _SwipeBack(colour: _amber, icon: Icons.bolt_rounded, label: ticket.rushed ? 'Unrush' : 'Rush', left: true),
-            secondaryBackground: const _SwipeBack(colour: Tp.lime, icon: Icons.check_rounded, label: 'Done', left: false),
+            secondaryBackground: _SwipeBack(colour: Tp.lime, icon: Icons.check_rounded, label: 'Done', left: false),
             confirmDismiss: (dir) async {
               HapticFeedback.mediumImpact();
               if (dir == DismissDirection.startToEnd) {
@@ -808,7 +808,7 @@ class _TicketCard extends ConsumerWidget {
                         ),
                     ]),
                   ),
-                  if (l.made) const Icon(Icons.check_rounded, color: Tp.lime, size: 20),
+                  if (l.made) Icon(Icons.check_rounded, color: Tp.lime, size: 20),
                 ]),
               ),
             ),
@@ -911,7 +911,7 @@ class _TicketCard extends ConsumerWidget {
               },
             ),
           ListTile(
-            leading: const Icon(Icons.check_circle_rounded, color: Tp.lime),
+            leading: Icon(Icons.check_circle_rounded, color: Tp.lime),
             title: const Text('Mark it done'),
             onTap: () {
               Navigator.pop(c);

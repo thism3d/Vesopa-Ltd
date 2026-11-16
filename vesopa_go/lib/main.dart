@@ -32,6 +32,7 @@ import 'modes/mode_chooser_page.dart';
 import 'modes/terminal_mode_page.dart';
 import 'payments/go_terminal.dart';
 import 'data/session.dart';
+import 'ui/accent.dart';
 import 'ui/appearance.dart';
 import 'ui/device_prefs.dart';
 import 'ui/go_frame.dart';
@@ -72,6 +73,8 @@ class GoApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final phase = ref.watch(tapProvider.select((s) => s.phase));
+    // The device's accent (Settings, Appearance), in place before any colour is read.
+    Tp.palette = ref.watch(accentProvider);
     // Read the day's sales from storage now, not at the first payment.
     ref.watch(journalProvider.select((j) => j.loaded));
     // Every paid bill, the counter's and the tables', goes in the day's journal
