@@ -261,6 +261,11 @@ function registerReader(account, { code, label, location }, opts = {}) {
   });
 }
 
+/** A reader's name, as the venue wants to read it: "Bar", "Front door". */
+function renameReader(account, id, label, opts = {}) {
+  return call('POST', `/v1/terminal/readers/${encodeURIComponent(id)}`, { ...opts, account, body: { label } });
+}
+
 function retrieveReader(account, id, opts = {}) {
   return call('GET', `/v1/terminal/readers/${encodeURIComponent(id)}`, { ...opts, account });
 }
@@ -368,6 +373,7 @@ module.exports = {
   listReaders,
   registerReader,
   retrieveReader,
+  renameReader,
   processOnReader,
   cancelReaderAction,
   presentTestCard,

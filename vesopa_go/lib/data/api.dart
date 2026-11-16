@@ -275,6 +275,8 @@ class TapApi {
   Future<Map<String, dynamic>> stripeReaders() => _send('GET', '/api/till/stripe/readers');
   Future<Map<String, dynamic>> stripeAddReader({String code = '', String label = '', bool simulated = false}) =>
       _send('POST', '/api/till/stripe/readers', {'registration_code': code, 'label': label, 'simulated': simulated});
+  Future<Map<String, dynamic>> stripeRenameReader(String reader, String label) =>
+      _send('POST', '/api/till/stripe/readers/${Uri.encodeComponent(reader)}/label', {'label': label});
   Future<Map<String, dynamic>> stripeReaderPayment(String reader, int amountMinor, {String? reference}) =>
       _send('POST', '/api/till/stripe/reader-payments', {'reader': reader, 'amount_minor': amountMinor, 'reference': ?reference});
   Future<Map<String, dynamic>> stripeReaderPaymentState(String id, String reader) =>

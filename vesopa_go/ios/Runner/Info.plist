@@ -72,6 +72,11 @@
 	<string>Sign in to Vesopa Go with Face ID instead of your PIN.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>A manager can choose a photo for a product on the menu.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Vesopa Go prints receipts on your venue's receipt printer over the local network.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

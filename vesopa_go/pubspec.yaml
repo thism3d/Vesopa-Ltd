@@ -42,6 +42,8 @@ dependencies:
   share_plus: ^13.3.1
   flutter_svg: ^2.3.2
   video_player: ^2.14.1
+  # Adverts kept on the device (lib/display/data/local_adverts.dart).
+  path_provider: ^2.1.5
   mek_stripe_terminal: ^5.7.3
   permission_handler: ^13.0.2
   pay: ^3.3.0

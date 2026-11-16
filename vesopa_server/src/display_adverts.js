@@ -59,6 +59,29 @@ function sniff(buf) {
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BYTES, files: 1 } });
 
+/**
+ * An advert's address, checked: http or https only, nothing with a login in
+ * it, and what it is (a picture or a film) read off its ending where it has
+ * one. Null for anything else.
+ */
+function advertLink(value) {
+  let u;
+  try {
+    u = new URL(String(value || '').trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  if (u.username || u.password) return null;
+  if (u.href.length > 600) return null;
+  const name = decodeURIComponent(u.pathname.split('/').pop() || '');
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const kind = ['mp4', 'mov', 'm4v', 'webm', 'm3u8'].includes(ext)
+    ? 'video'
+    : ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext) ? 'image' : null;
+  return { url: u.href, kind, name };
+}
+
 function displayAdvertRoutes({ pool, secret, auth }) {
   const router = express.Router();
   const edit = [auth, attachAccess({ pool }), requirePermission('programming.devices')];
@@ -77,7 +100,12 @@ function displayAdvertRoutes({ pool, secret, auth }) {
         created_by VARCHAR(191) NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         KEY office_position (office, position)
-      )`).catch((e) => { ready = null; throw e; });
+      )`)
+      // An advert by its address rather than an upload (2026-11-16): a film on
+      // the venue's own network drive or media box, or a picture on the web.
+      .then(() => pool.query('ALTER TABLE epos_display_adverts ADD COLUMN link_url VARCHAR(600) NULL')
+        .catch((e) => { if (e.code !== 'ER_DUP_FIELDNAME') throw e; }))
+      .catch((e) => { ready = null; throw e; });
     return ready;
   }
 
@@ -93,7 +121,8 @@ function displayAdvertRoutes({ pool, secret, auth }) {
     id: r.id,
     kind: r.kind,
     title: r.title || null,
-    url: `/uploads/display-adverts/${r.file_name}`,
+    url: r.link_url || `/uploads/display-adverts/${r.file_name}`,
+    link: !!r.link_url,
     bytes: Number(r.byte_size) || 0,
     seconds: Number(r.seconds) || 10,
   });
@@ -145,6 +174,33 @@ function displayAdvertRoutes({ pool, secret, auth }) {
     });
   });
 
+  /**
+   * An advert by its address. The display fetches it itself, so an address on
+   * the venue's own network (http://192.168.1.20/adverts/match.mp4) plays on
+   * the displays in that building and nowhere else, which is the point.
+   */
+  router.post('/api/display-adverts/link', ...edit, express.json(), async (req, res, next) => {
+    try {
+      const b = req.body || {};
+      const link = advertLink(b.url);
+      if (!link) return res.status(400).json({ error: 'Give the full address of a picture or a film, starting http:// or https://.' });
+      const kind = b.kind === 'video' || b.kind === 'image' ? b.kind : link.kind;
+      if (!kind) return res.status(400).json({ error: 'Say whether the address is a picture or a film.' });
+      const office = await officeOf(req);
+      await ensure();
+      const [[count]] = await pool.query('SELECT COUNT(*) AS n, COALESCE(MAX(position), 0) AS top FROM epos_display_adverts WHERE office = ?', [office]);
+      if (Number(count.n) >= MAX_ADVERTS) return res.status(409).json({ error: `A venue can keep ${MAX_ADVERTS} adverts. Delete one first.` });
+      const id = crypto.randomBytes(16).toString('hex');
+      const title = String(b.title || link.name || '').slice(0, 160) || null;
+      const seconds = Math.min(120, Math.max(3, Number(b.seconds || 10) || 10));
+      await pool.query(
+        `INSERT INTO epos_display_adverts (id, office, file_name, kind, title, byte_size, position, seconds, created_by, link_url)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+        [id, office, `link-${id.slice(0, 12)}`, kind, title, Number(count.top) + 1, seconds, String(req.user.email || '').slice(0, 191), link.url]);
+      res.status(201).json(view({ id, kind, title, file_name: '', byte_size: 0, seconds, link_url: link.url }));
+    } catch (e) { next(e); }
+  });
+
   router.put('/api/display-adverts/order', ...edit, express.json(), async (req, res, next) => {
     try {
       const office = await officeOf(req);
@@ -161,11 +217,12 @@ function displayAdvertRoutes({ pool, secret, auth }) {
     try {
       const office = await officeOf(req);
       await ensure();
-      const [[row]] = await pool.query('SELECT file_name FROM epos_display_adverts WHERE id = ? AND office = ?', [String(req.params.id).slice(0, 32), office]);
+      const [[row]] = await pool.query('SELECT file_name, link_url FROM epos_display_adverts WHERE id = ? AND office = ?', [String(req.params.id).slice(0, 32), office]);
       if (!row) return res.status(404).json({ error: 'That advert has gone already.' });
       await pool.query('DELETE FROM epos_display_adverts WHERE id = ? AND office = ?', [String(req.params.id).slice(0, 32), office]);
       try {
-        fs.unlinkSync(path.join(UPLOAD_DIR, row.file_name));
+        // An address has no file of ours behind it.
+        if (!row.link_url) fs.unlinkSync(path.join(UPLOAD_DIR, row.file_name));
       } catch {
         // already gone: the row was the thing that mattered
       }
@@ -192,4 +249,4 @@ function displayAdvertRoutes({ pool, secret, auth }) {
   return router;
 }
 
-module.exports = { displayAdvertRoutes, sniff };
+module.exports = { displayAdvertRoutes, sniff, advertLink };

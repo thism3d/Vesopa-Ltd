@@ -114,6 +114,37 @@ class _StripeReaderPageState extends ConsumerState<StripeReaderPage> {
     }
   }
 
+  /// A reader's name, changed by a manager: "Bar", "Front door" (2026-11-16).
+  Future<void> _rename(Map<String, dynamic> reader) async {
+    if (await askManager(context, ref, why: 'Rename a card reader') == null || !mounted) return;
+    final field = TextEditingController(text: '${reader['label'] ?? ''}');
+    final name = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Reader name'),
+        content: TextField(
+          controller: field,
+          autofocus: true,
+          maxLength: 60,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Name, such as Bar', helperText: 'Every device at the venue shows this name.'),
+          onSubmitted: (v) => Navigator.pop(c, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, field.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || name == reader['label'] || !mounted) return;
+    try {
+      await ref.read(apiProvider).stripeRenameReader('${reader['id']}', name);
+      await _load();
+    } on TapApiError catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
@@ -153,10 +184,17 @@ class _StripeReaderPageState extends ConsumerState<StripeReaderPage> {
                   child: RadioListTile<String>(
                     key: ValueKey('reader-${r['id']}'),
                     value: '${r['id']}',
-                    secondary: Icon(
-                      r['status'] == 'online' ? Icons.check_circle_rounded : Icons.wifi_off_rounded,
-                      color: r['status'] == 'online' ? Tp.green : Tp.amber,
-                    ),
+                    secondary: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(
+                        r['status'] == 'online' ? Icons.check_circle_rounded : Icons.wifi_off_rounded,
+                        color: r['status'] == 'online' ? Tp.green : Tp.amber,
+                      ),
+                      IconButton(
+                        tooltip: 'Rename',
+                        onPressed: () => _rename(r),
+                        icon: const Icon(Icons.edit_rounded),
+                      ),
+                    ]),
                     title: Text('${r['label']}', style: const TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: Text(
                       '${r['simulated'] == true ? 'Stripe test reader' : _deviceName('${r['device_type']}')} · '

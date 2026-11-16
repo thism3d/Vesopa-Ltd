@@ -356,6 +356,18 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
     } catch (e) { fail(res, e, next); }
   });
 
+  /** Rename a reader (2026-11-16): the name every device at the venue then shows. */
+  router.post('/till/stripe/readers/:id/label', terminal, async (req, res, next) => {
+    try {
+      const row = await tapReady(req, res);
+      if (!row) return;
+      const label = String((req.body || {}).label || '').trim().slice(0, 60);
+      if (!label) return res.status(400).json({ error: 'Type a name for the reader.' });
+      const r = await client.renameReader(row.account_id, req.params.id, label, client.optsFor(row));
+      res.json(readerView(r));
+    } catch (e) { fail(res, e, next); }
+  });
+
   router.post('/till/stripe/reader-payments', terminal, async (req, res, next) => {
     try {
       const row = await tapReady(req, res);

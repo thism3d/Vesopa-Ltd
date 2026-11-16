@@ -284,11 +284,48 @@ class _ProductEditSheetState extends ConsumerState<_ProductEditSheet> {
   Uint8List? _newBytes;
   bool _saving = false;
 
+  String? _original;
+
   @override
   void initState() {
     super.initState();
-    _photo = photoOf(ref.read(tapProvider), widget.product);
+    _photo = _original = photoOf(ref.read(tapProvider), widget.product);
   }
+
+  bool get _hasPhoto => _newBytes != null || (_photo != null && _photo!.isNotEmpty);
+  bool get _changed => _newBytes != null || _photo != _original;
+
+  Widget _picture(BoxFit fit) =>
+      _newBytes != null ? Image.memory(_newBytes!, fit: fit) : _Photo(url: _photo, tint: Tp.lime);
+
+  /// The whole photo, to pinch and look at closely.
+  void _seeWhole() => showDialog<void>(
+        context: context,
+        builder: (c) => Dialog.fullscreen(
+          backgroundColor: Colors.black,
+          child: Stack(children: [
+            Positioned.fill(
+              child: InteractiveViewer(
+                maxScale: 5,
+                child: Center(
+                  child: _newBytes != null
+                      ? Image.memory(_newBytes!, fit: BoxFit.contain)
+                      : Image.network(photoUrl(_photo!), fit: BoxFit.contain, errorBuilder: (_, _, _) => const Icon(Icons.broken_image_rounded, color: Colors.white54, size: 64)),
+                ),
+              ),
+            ),
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: IconButton.filledTonal(tooltip: 'Close', onPressed: () => Navigator.pop(c), icon: const Icon(Icons.close_rounded)),
+                ),
+              ),
+            ),
+          ]),
+        ),
+      );
 
   @override
   void dispose() {
@@ -317,14 +354,25 @@ class _ProductEditSheetState extends ConsumerState<_ProductEditSheet> {
         height: 420,
         child: all.isEmpty
             ? const Center(child: Text('The venue has no menu photos yet.'))
-            : GridView.count(
-                crossAxisCount: 4,
+            : GridView.extent(
+                maxCrossAxisExtent: 132,
                 padding: const EdgeInsets.all(12),
                 mainAxisSpacing: 8,
                 crossAxisSpacing: 8,
                 children: [
                   for (final u in all)
-                    InkWell(onTap: () => Navigator.pop(c, u), child: _Photo(url: u, tint: Tp.lime, radius: 10)),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => Navigator.pop(c, u),
+                      child: Stack(fit: StackFit.expand, children: [
+                        _Photo(url: u, tint: Tp.lime, radius: 10),
+                        if (u == _photo)
+                          const Align(
+                            alignment: Alignment.topRight,
+                            child: Padding(padding: EdgeInsets.all(4), child: Icon(Icons.check_circle_rounded, color: Tp.lime)),
+                          ),
+                      ]),
+                    ),
                 ],
               ),
       ),
@@ -388,13 +436,81 @@ class _ProductEditSheetState extends ConsumerState<_ProductEditSheet> {
               ),
             ]),
             const SizedBox(height: 12),
-            AspectRatio(
-              aspectRatio: 16 / 10,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: _newBytes != null ? Image.memory(_newBytes!, fit: BoxFit.cover) : _Photo(url: _photo, tint: Tp.lime),
+            // The photo as it is now, and beside it how the key will look on
+            // the sale screen, so a bad crop is seen before it is saved
+            // (the owner, 2026-11-16: "products images preview").
+            Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  label: 'See the whole photo',
+                  child: GestureDetector(
+                    onTap: _hasPhoto ? _seeWhole : null,
+                    child: AspectRatio(
+                      aspectRatio: 16 / 10,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Stack(fit: StackFit.expand, children: [
+                          _picture(BoxFit.cover),
+                          if (_hasPhoto)
+                            const Positioned(
+                              right: 8,
+                              bottom: 8,
+                              child: _Pill(icon: Icons.zoom_out_map_rounded, label: 'View'),
+                            ),
+                          if (_changed)
+                            const Positioned(left: 8, top: 8, child: _Pill(icon: Icons.fiber_new_rounded, label: 'Not saved yet')),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 12),
+              Column(mainAxisSize: MainAxisSize.min, children: [
+                Text('On the key', style: t.bodySmall),
+                const SizedBox(height: 4),
+                SizedBox(
+                  width: 96,
+                  height: 96,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Stack(fit: StackFit.expand, children: [
+                      _picture(BoxFit.cover),
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          color: Colors.black.withValues(alpha: 0.55),
+                          child: Text(
+                            widget.product.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700, height: 1.15),
+                          ),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
+              ]),
+            ]),
+            if (_changed)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _saving
+                      ? null
+                      : () => setState(() {
+                            _newBytes = null;
+                            _photo = _original;
+                          }),
+                  icon: const Icon(Icons.undo_rounded, size: 18),
+                  label: const Text('Put the old photo back'),
+                ),
+              ),
             const SizedBox(height: 12),
             Row(children: [
               for (final (icon, label, onTap) in [
@@ -429,4 +545,22 @@ class _ProductEditSheetState extends ConsumerState<_ProductEditSheet> {
       ),
     );
   }
+}
+
+/// A small label over a photo.
+class _Pill extends StatelessWidget {
+  const _Pill({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(999)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+        ]),
+      );
 }

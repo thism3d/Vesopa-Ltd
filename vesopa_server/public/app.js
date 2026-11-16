@@ -14226,6 +14226,29 @@ async function loadLicences() {
 
 /** Pictures and films for Go customer displays (src/display_adverts.js). */
 let displayAdverts = [];
+// An advert by its address (a network drive, a media box, the web).
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'display-advert-link') return;
+  e.preventDefault();
+  const url = ($('display-advert-url').value || '').trim();
+  if (!url) return toast('Type the address of a picture or a film first.', 'error');
+  try {
+    await api('/display-adverts/link', {
+      method: 'POST',
+      body: JSON.stringify({
+        url,
+        kind: $('display-advert-kind').value || undefined,
+        seconds: $('display-advert-seconds').value || '10',
+      }),
+    });
+    $('display-advert-url').value = '';
+    toast('Added. Go customer displays play it from their next round.');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+  loadDisplayAdverts();
+});
+
 async function loadDisplayAdverts() {
   let data;
   try {
@@ -14243,7 +14266,7 @@ async function loadDisplayAdverts() {
         ? '<video src="' + esc(a.url) + '" muted playsinline preload="metadata" style="width:180px;height:101px;object-fit:cover;border-radius:10px;background:#000"></video>'
         : '<img src="' + esc(a.url) + '" alt="" style="width:180px;height:101px;object-fit:cover;border-radius:10px;background:#eee">')
       + '<figcaption class="small" style="margin-top:4px">' + esc(a.title || (a.kind === 'video' ? 'Film' : 'Picture'))
-      + '<br><span class="muted">' + (a.kind === 'video' ? 'film' : a.seconds + ' s') + ' · ' + Math.max(1, Math.round(a.bytes / 1024 / 1024)) + ' MB</span>'
+      + '<br><span class="muted">' + (a.kind === 'video' ? 'film' : a.seconds + ' s') + ' · ' + (a.link ? 'by address' : Math.max(1, Math.round(a.bytes / 1024 / 1024)) + ' MB') + '</span>'
       + '<br><button class="btn small ghost" data-advert-move="' + i + '" data-dir="-1"' + (i === 0 ? ' disabled' : '') + ' aria-label="Earlier">&larr;</button>'
       + '<button class="btn small ghost" data-advert-move="' + i + '" data-dir="1"' + (i === displayAdverts.length - 1 ? ' disabled' : '') + ' aria-label="Later">&rarr;</button>'
       + '<button class="btn small danger-ghost" data-advert-delete="' + esc(a.id) + '">Delete</button></figcaption></figure>'

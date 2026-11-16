@@ -34,6 +34,7 @@ import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'dart:convert';
+import 'dart:io';
 
 import '../../config/constants.dart';
 import '../../data/api.dart';
@@ -48,6 +49,7 @@ import '../../ui/theme.dart';
 import '../data/basket_feed.dart';
 import '../data/control.dart';
 import '../data/display_options.dart';
+import '../data/local_adverts.dart';
 import '../data/till_link.dart';
 
 const _ease = Cubic(0.2, 0, 0, 1);
@@ -72,6 +74,27 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
   String? _lastResult;
   DateTime _lastChange = DateTime.now();
   List<_Advert> _adverts = const [];
+
+  /// Pictures and films kept on this device (data/local_adverts.dart).
+  List<LocalAdvert> _local = const [];
+  bool _localOnly = false;
+
+  /// What plays: the venue's, then this device's own; or only its own.
+  List<_Advert> get _playing => [
+        if (!_localOnly || _local.isEmpty) ..._adverts,
+        for (final a in _local) _Advert(url: a.path, video: a.video, seconds: a.seconds, file: true),
+      ];
+
+  Future<void> _loadLocal() async {
+    final list = await LocalAdverts.load();
+    final only = await LocalAdverts.only();
+    if (mounted) {
+      setState(() {
+        _local = list;
+        _localOnly = only;
+      });
+    }
+  }
   Timer? _tick;
   Timer? _status;
 
@@ -157,6 +180,7 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
     link.start();
     _status = Timer.periodic(const Duration(seconds: 15), (_) => _sendStatus());
     unawaited(_loadAdverts());
+    unawaited(_loadLocal());
   }
 
   /// A customer's member card or pass, passed to the till this screen follows.
@@ -188,7 +212,7 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
     final report = DisplayStatusReport(
       appVersion: 'Vesopa Go',
       following: _paidTo ?? '',
-      advertCount: _adverts.length,
+      advertCount: _playing.length,
       width: size?.width.round() ?? 0,
       height: size?.height.round() ?? 0,
       link: _link?.route ?? 'cloud',
@@ -359,6 +383,16 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
           flag('Discounts', 'Discounts and savings on the bill.', o.showDiscount, (v) => o.copyWith(showDiscount: v)),
           flag('Member buttons', 'Tap a member card or scan a pass on the waiting screen.', o.memberButtons, (v) => o.copyWith(memberButtons: v)),
           ListTile(
+            leading: const Icon(Icons.perm_media_rounded),
+            title: const Text('Adverts on this device'),
+            subtitle: const Text('Play pictures and films from this device\'s files and photos.'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () async {
+              await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LocalAdvertsPage()));
+              unawaited(_loadLocal());
+            },
+          ),
+          ListTile(
             title: const Text('Dim adverts while waiting'),
             subtitle: Text(o.idleDim == 0 ? 'Off' : '${o.idleDim} per cent darker'),
           ),
@@ -441,7 +475,7 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
       ]),
       ConnSection('This screen', [
         ConnRow(Icons.aspect_ratio_rounded, 'Size', size == null ? '' : '${size.width.round()} × ${size.height.round()} points', neutral: true),
-        ConnRow(Icons.slideshow_rounded, 'Adverts', _adverts.isEmpty ? 'None (back office > Devices > Customer display adverts)' : '${_adverts.length} playing when idle', neutral: true),
+        ConnRow(Icons.slideshow_rounded, 'Adverts', _playing.isEmpty ? 'None (back office > Devices > Customer display adverts, or Settings > Adverts on this device)' : '${_playing.length} playing when idle${_local.isEmpty ? '' : ', ${_local.length} from this device'}', neutral: true),
       ]),
     ];
   }
@@ -467,7 +501,7 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
       screen = _CardScreen(card: _basket.card!, basket: _basket, options: _options);
     } else if (_idle) {
       screen = _Idle(
-        adverts: _adverts,
+        adverts: _playing,
         venue: venue,
         control: _control,
         dim: _options.idleDim,
@@ -477,7 +511,7 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
     } else if (_basket.state == 'paid') {
       screen = _ThankYou(basket: _basket, words: _control?.thankYou ?? 'Thank you');
     } else {
-      screen = _Bill(basket: _basket, control: _control, adverts: _adverts, venue: venue, showDiscount: _options.showDiscount);
+      screen = _Bill(basket: _basket, control: _control, adverts: _playing, venue: venue, showDiscount: _options.showDiscount);
     }
     return Scaffold(
       backgroundColor: const Color(0xFF0B0E0A),
@@ -528,10 +562,13 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
 }
 
 class _Advert {
-  const _Advert({required this.url, required this.video, required this.seconds});
+  const _Advert({required this.url, required this.video, required this.seconds, this.file = false});
+
+  /// A web address, or a path on this device when [file].
   final String url;
   final bool video;
   final int seconds;
+  final bool file;
 }
 
 /// Waiting for a till: the code, in type that can be read across a counter.
@@ -889,7 +926,7 @@ class _SlidesState extends State<_Slides> {
   @override
   void didUpdateWidget(_Slides old) {
     super.didUpdateWidget(old);
-    if (old.adverts.length != widget.adverts.length) {
+    if (old.adverts.length != widget.adverts.length || (widget.adverts.isNotEmpty && old.adverts.isNotEmpty && old.adverts.last.url != widget.adverts.last.url)) {
       _i = 0;
       _show();
     }
@@ -909,7 +946,7 @@ class _SlidesState extends State<_Slides> {
     if (widget.adverts.isEmpty) return;
     final a = widget.adverts[_i % widget.adverts.length];
     if (a.video) {
-      final v = VideoPlayerController.networkUrl(Uri.parse(a.url));
+      final v = a.file ? VideoPlayerController.file(File(a.url)) : VideoPlayerController.networkUrl(Uri.parse(a.url));
       try {
         await v.initialize();
         await v.setVolume(0);
@@ -959,7 +996,9 @@ class _SlidesState extends State<_Slides> {
         ? (v != null && v.value.isInitialized
             ? FittedBox(fit: BoxFit.cover, child: SizedBox(width: v.value.size.width, height: v.value.size.height, child: VideoPlayer(v)))
             : const ColoredBox(color: Colors.black))
-        : Image.network(a.url, fit: BoxFit.cover, errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black));
+        : (a.file
+            ? Image.file(File(a.url), fit: BoxFit.cover, errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black))
+            : Image.network(a.url, fit: BoxFit.cover, errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black)));
     // A customer can swipe through them, either way.
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
