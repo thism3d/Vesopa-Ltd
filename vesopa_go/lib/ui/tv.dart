@@ -123,7 +123,7 @@ class _MoveOrScroll extends Action<DirectionalFocusIntent> {
 /// every button, tile and field. Applied on a TV only.
 ThemeData tvFocusTheme(ThemeData base) {
   if (!GoDevice.isTv) return base;
-  const ring = BorderSide(color: Tp.lime, width: 3);
+  final ring = BorderSide(color: Tp.lime, width: 3);
   WidgetStateProperty<BorderSide?> side(BorderSide? rest) =>
       WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.focused) ? ring : rest);
   final lime = Tp.lime.withValues(alpha: 0.28);
