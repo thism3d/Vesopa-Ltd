@@ -243,7 +243,7 @@ class _VesopaSignInButtonState extends State<VesopaSignInButton> {
                 decoration: BoxDecoration(color: Tp.ink, borderRadius: BorderRadius.circular(11)),
                 alignment: Alignment.center,
                 child: widget.busy
-                    ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2.2, color: Tp.lime))
+                    ? SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2.2, color: Tp.lime))
                     : const CustomPaint(size: Size(26, 26), painter: VesopaMarkPainter()),
               ),
               Expanded(

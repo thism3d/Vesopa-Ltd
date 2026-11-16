@@ -586,7 +586,7 @@ class _PairCode extends StatelessWidget {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.connected_tv_rounded, size: 64, color: Tp.lime),
+            Icon(Icons.connected_tv_rounded, size: 64, color: Tp.lime),
             const SizedBox(height: 20),
             Text('Connect this display to a till', textAlign: TextAlign.center, style: t.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 10),
@@ -799,7 +799,7 @@ class _ThankYou extends StatelessWidget {
             duration: const Duration(milliseconds: 700),
             curve: Curves.elasticOut,
             builder: (context, v, child) => Transform.scale(scale: v, child: child),
-            child: const Icon(Icons.favorite_rounded, size: 96, color: Tp.lime),
+            child: Icon(Icons.favorite_rounded, size: 96, color: Tp.lime),
           ),
           const SizedBox(height: 20),
           Text(words, textAlign: TextAlign.center, style: t.displaySmall?.copyWith(fontWeight: FontWeight.w900)),

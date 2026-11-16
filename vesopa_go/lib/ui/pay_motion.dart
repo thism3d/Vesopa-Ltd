@@ -78,7 +78,7 @@ class _TapPromptState extends State<TapPrompt> with TickerProviderStateMixin {
                   animation: _waves,
                   builder: (_, _) => Transform.translate(
                     offset: Offset(0, -6 * math.sin(_waves.value * 2 * math.pi)),
-                    child: const Icon(Icons.keyboard_double_arrow_up_rounded, size: 40, color: Tp.lime),
+                    child: Icon(Icons.keyboard_double_arrow_up_rounded, size: 40, color: Tp.lime),
                   ),
                 ),
               const Spacer(),
@@ -105,10 +105,10 @@ class _TapPromptState extends State<TapPrompt> with TickerProviderStateMixin {
                   Container(
                     width: 120,
                     height: 120,
-                    decoration: const BoxDecoration(color: Tp.lime, shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: Tp.lime, shape: BoxShape.circle),
                     child: waiting
                         ? Icon(machine ? Icons.point_of_sale_rounded : Icons.contactless_rounded, size: 64, color: Tp.onLime)
-                        : const Padding(padding: EdgeInsets.all(34), child: CircularProgressIndicator(strokeWidth: 5, color: Tp.onLime)),
+                        : Padding(padding: EdgeInsets.all(34), child: CircularProgressIndicator(strokeWidth: 5, color: Tp.onLime)),
                   ),
                 ]),
               ),

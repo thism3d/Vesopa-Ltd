@@ -123,7 +123,7 @@ class _GoSplashState extends State<GoSplash> with SingleTickerProviderStateMixin
                               Positioned(
                                 right: 18 - 12 * (1 - details),
                                 top: 20,
-                                child: Opacity(opacity: details, child: const Icon(Icons.contactless_rounded, color: Tp.onLime, size: 30)),
+                                child: Opacity(opacity: details, child: Icon(Icons.contactless_rounded, color: Tp.onLime, size: 30)),
                               ),
                               // The Vesopa wordmark printed onto the card left to
                               // right, then Go slides in beside it (owner,
@@ -149,7 +149,7 @@ class _GoSplashState extends State<GoSplash> with SingleTickerProviderStateMixin
                                     opacity: go,
                                     child: Transform.translate(
                                       offset: Offset(-8 * (1 - go), 0),
-                                      child: const Text(
+                                      child: Text(
                                         'Go',
                                         style: TextStyle(
                                           color: Tp.onLime,

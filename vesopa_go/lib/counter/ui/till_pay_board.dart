@@ -203,7 +203,7 @@ class _TillPayBoardState extends State<TillPayBoard> {
       ],
       Expanded(child: _TenderKey(key: const ValueKey('pay-card'), label: a.cardLabel, colour: Tp.lime, ink: Tp.onLime,
           // Apple (HIG, review 5.5): the Tap to Pay on iPhone button carries wave.3.right.circle.
-          mark: a.cardLabel.startsWith('Tap to Pay') ? const TapToPayMark(size: 30, color: Tp.onLime) : null,
+          mark: a.cardLabel.startsWith('Tap to Pay') ? TapToPayMark(size: 30, color: Tp.onLime) : null,
           onTap: () => _then(() => a.card(_amount.clamp(1, _due))))),
     ]);
 

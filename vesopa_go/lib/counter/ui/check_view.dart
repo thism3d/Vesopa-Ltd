@@ -119,7 +119,7 @@ class _Paper extends StatelessWidget {
               CircleAvatar(
                 radius: 20,
                 backgroundColor: Tp.lime,
-                child: Text(member.name.trim().isEmpty ? '?' : member.name.trim()[0].toUpperCase(), style: const TextStyle(color: Tp.onLime, fontWeight: FontWeight.w900)),
+                child: Text(member.name.trim().isEmpty ? '?' : member.name.trim()[0].toUpperCase(), style: TextStyle(color: Tp.onLime, fontWeight: FontWeight.w900)),
               ),
               const SizedBox(width: 12),
               Expanded(

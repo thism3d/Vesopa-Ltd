@@ -367,9 +367,9 @@ class _ProductEditSheetState extends ConsumerState<_ProductEditSheet> {
                       child: Stack(fit: StackFit.expand, children: [
                         _Photo(url: u, tint: Tp.lime, radius: 10),
                         if (u == _photo)
-                          const Align(
+                          Align(
                             alignment: Alignment.topRight,
-                            child: Padding(padding: EdgeInsets.all(4), child: Icon(Icons.check_circle_rounded, color: Tp.lime)),
+                            child: Padding(padding: const EdgeInsets.all(4), child: Icon(Icons.check_circle_rounded, color: Tp.lime)),
                           ),
                       ]),
                     ),
@@ -432,7 +432,7 @@ class _ProductEditSheetState extends ConsumerState<_ProductEditSheet> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                 decoration: BoxDecoration(color: Tp.lime, borderRadius: BorderRadius.circular(999)),
-                child: const Text('Manager', style: TextStyle(color: Tp.onLime, fontWeight: FontWeight.w800, fontSize: 12)),
+                child: Text('Manager', style: TextStyle(color: Tp.onLime, fontWeight: FontWeight.w800, fontSize: 12)),
               ),
             ]),
             const SizedBox(height: 12),

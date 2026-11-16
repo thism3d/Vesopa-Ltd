@@ -124,7 +124,7 @@ class _OrderPageState extends ConsumerState<OrderPage> {
           backgroundColor: Tp.amber,
           duration: const Duration(seconds: 3),
           content: Text('${p.name} contains ${p.allergens.join(', ')}. Check with the customer.',
-              style: const TextStyle(color: Tp.onLime, fontWeight: FontWeight.w700)),
+              style: TextStyle(color: Tp.onLime, fontWeight: FontWeight.w700)),
         ));
     }
   }

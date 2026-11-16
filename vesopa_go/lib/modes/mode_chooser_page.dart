@@ -19,12 +19,12 @@ import 'device_mode.dart';
 class ModeChooserPage extends ConsumerWidget {
   const ModeChooserPage({super.key});
 
-  static const _tints = {
-    DeviceMode.epos: Tp.lime,
-    DeviceMode.kitchen: Color(0xFFFF9F0A), // Apple's system orange
-    DeviceMode.display: Color(0xFF0A84FF), // Apple's system blue
-    DeviceMode.terminal: Color(0xFF30D158), // Apple's system green
-  };
+  static Map<DeviceMode, Color> get _tints => {
+        DeviceMode.epos: Tp.lime,
+        DeviceMode.kitchen: const Color(0xFFFF9F0A), // Apple's system orange
+        DeviceMode.display: const Color(0xFF0A84FF), // Apple's system blue
+        DeviceMode.terminal: const Color(0xFF30D158), // Apple's system green
+      };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

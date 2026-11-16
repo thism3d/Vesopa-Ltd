@@ -218,6 +218,19 @@
     var dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: 0xa5c715, size: 0.03, transparent: true, opacity: 0.7, depthWrite: false }));
     scene.add(dust);
 
+    // The visitor's colour (js/accent.js): the light, the card, the rings and the dust.
+    function tint(hex) {
+      var c = new THREE.Color(hex);
+      rim.color.copy(c);
+      card.material.color.copy(c);
+      card.material.emissive.copy(c).multiplyScalar(0.25);
+      for (var t = 0; t < rings.length; t++) rings[t].material.color.copy(c);
+      dust.material.color.copy(c);
+    }
+    var startColour = getComputedStyle(document.documentElement).getPropertyValue('--lime').trim();
+    if (startColour) tint(startColour);
+    document.addEventListener('vesopa:accent', function (e) { tint(e.detail.colour); });
+
     // Layout: the pair to the right of the words on a wide screen, above them on a narrow one.
     var narrow = false;
     function resize() {

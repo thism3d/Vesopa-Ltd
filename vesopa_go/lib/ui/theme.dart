@@ -1,4 +1,4 @@
-/// Vesopa Go's look.
+﻿/// Vesopa Go's look.
 ///
 /// The till's own palette (vesopa_epos/lib/ui/theme.dart, design A "Till
 /// exact", chosen by the owner 2026-10-27): lime #A5C715 on chrome #111111,
@@ -17,11 +17,54 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 
+/// An accent the device can wear instead of lime (Settings, Appearance).
+///
+/// [colour] is the key to press next; [deep] is the same hue dark enough to
+/// read as text or an icon on Day's light ground (4.5:1 or better on white
+/// for every added accent; lime keeps the till's own deep lime, 3.96:1);
+/// [on] is the ink set on a filled [colour] key.
+class GoPalette {
+  const GoPalette(this.id, this.name, this.colour, this.deep, this.on);
+  final String id;
+  final String name;
+  final Color colour;
+  final Color deep;
+  final Color on;
+
+  static const lime = GoPalette('lime', 'Vesopa Lime', Color(0xFFA5C715), Color(0xFF6E8A0E), Color(0xFF10130A));
+
+  /// "Neon on black" (owner, 2026-11-16): neon colours that sit beside the
+  /// brand lime on black, yellow-green round to aqua, plus hot pink and a
+  /// black-and-white Pearl. Lime first, as the till. No red (it means declined
+  /// and void) and no amber (an order is waiting), so a key never looks like a
+  /// warning. The website offers the same list (web/site/js/accent.js).
+  static const all = <GoPalette>[
+    lime,
+    GoPalette('volt', 'Volt', Color(0xFFC8F31D), Color(0xFF5C7200), Color(0xFF131A00)),
+    GoPalette('neon', 'Neon Green', Color(0xFF3EE86B), Color(0xFF17793A), Color(0xFF03230E)),
+    GoPalette('mint', 'Mint', Color(0xFF2EE6A6), Color(0xFF0E7A57), Color(0xFF04261A)),
+    GoPalette('aqua', 'Aqua', Color(0xFF22D3EE), Color(0xFF0E7490), Color(0xFF032A33)),
+    GoPalette('pink', 'Hot Pink', Color(0xFFFF2D95), Color(0xFFC0156C), Color(0xFF2B0016)),
+    GoPalette('pearl', 'Pearl', Color(0xFFE8ECDF), Color(0xFF3A3F35), Color(0xFF10130A)),
+  ];
+
+  static GoPalette byId(String? id) => all.where((p) => p.id == id).firstOrNull ?? lime;
+}
+
 class Tp {
-  static const lime = Color(0xFFA5C715);
-  static const limeDeep = Color(0xFF6E8A0E);
+  /// The accent this device wears, set by the accent provider before every
+  /// build of the app (lib/ui/accent.dart). Lime unless changed.
+  static GoPalette palette = GoPalette.lime;
+
+  static Color get lime => palette.colour;
+  static Color get limeDeep => palette.deep;
+  static Color get onLime => palette.on;
+
+  /// The brand's own lime, whatever the accent: the table states keep their
+  /// colours so "mains away" reads the same on every device in the venue.
+  static const brandLime = Color(0xFFA5C715);
+
   static const ink = Color(0xFF111111);
-  static const onLime = Color(0xFF10130A);
   static const inkCard = Color(0xFF1A1A18);
   static const inkRaised = Color(0xFF232320);
   static const inkLine = Color(0xFF33332F);
@@ -43,7 +86,7 @@ class Tp {
         TableState.free => const Color(0xFF7D8570),
         TableState.seated => blue,
         TableState.ordered => amber,
-        TableState.mains => lime,
+        TableState.mains => brandLime,
         TableState.bill => const Color(0xFFBB6BD9),
         TableState.paid => const Color(0xFF2BB673),
       };
@@ -120,7 +163,7 @@ class Tp {
         fillColor: scheme.surfaceContainer,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: scheme.outlineVariant)),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: scheme.outlineVariant)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: lime, width: 2)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: lime, width: 2)),
       ),
       snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
     );
