@@ -82,12 +82,41 @@ function reportBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TER
    * Financial Summary does; matching it is worth more than being differently
    * right.
    */
-  async function productSales({ pool, office, from, to, siteName, terminal }) {
-    const { where, params } = win({ office, from, to, terminal });
+  async function productSales({ pool, office, from, to, siteName, terminal, clerk, department, sub_department: subDepartment, product }) {
+    const base = win({ office, from, to, terminal });
+    let where = base.where;
+    const params = [...base.params];
+
+    // The stock taker's filters (Nicky, 2026-11-16): one clerk, one department,
+    // one sub department, and a product by PLU or by part of its name. Each is
+    // optional and they narrow together.
+    if (clerk) {
+      where += ' AND o.clerk_name = ?';
+      params.push(clerk);
+    }
+    if (department) {
+      where += " AND COALESCE(NULLIF(TRIM(p.department_name), ''), 'Unassigned') = ?";
+      params.push(department);
+    }
+    if (subDepartment) {
+      where += " AND COALESCE(NULLIF(TRIM(p.group_name), ''), 'Unassigned') = ?";
+      params.push(subDepartment);
+    }
+    if (product) {
+      if (/^\d+$/.test(product)) {
+        where += ' AND l.plu_id = ?';
+        params.push(product);
+      } else {
+        // Part of a name. INSTR, so nothing typed is ever a wildcard.
+        where += ' AND INSTR(LOWER(l.name), LOWER(?)) > 0';
+        params.push(String(product));
+      }
+    }
 
     const [rows] = await pool.query(
       `SELECT l.name AS name,
               COALESCE(NULLIF(TRIM(p.department_name), ''), 'Unassigned') AS department,
+              COALESCE(NULLIF(TRIM(p.group_name), ''), 'Unassigned')      AS sub_department,
               SUM(l.quantity)                                    AS count,
               SUM(l.unit_price_minor * l.quantity)               AS gross_minor,
               SUM(COALESCE(l.discount_minor, 0))                 AS discount_minor,
@@ -101,7 +130,7 @@ function reportBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TER
                 ON p.pluid = l.plu_id AND p.email = o.email
         WHERE ${where}
           AND COALESCE(l.is_modifier, 0) = 0
-        GROUP BY l.name, department
+        GROUP BY l.name, department, sub_department
         ORDER BY gross_minor DESC`,
       params
     );
@@ -114,6 +143,7 @@ function reportBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TER
       return {
         name: r.name,
         department: r.department,
+        sub_department: r.sub_department || 'Unassigned',
         count: Number(r.count) || 0,
         sales_minor: sales,
         gross_minor: gross,
@@ -145,6 +175,7 @@ function reportBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TER
     const columns = [
       col('name', 'Product'),
       col('department', 'Department'),
+      col('sub_department', 'Sub Department'),
       col('count', 'Qty', 'number'),
       col('sales_minor', 'Sales Total', 'money'),
       col('discount_minor', 'Discount', 'money'),
@@ -592,7 +623,9 @@ function reportBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TER
       group: 'sales',
       description:
         'Every product sold in the window with quantity, discount and net, ' +
-        'and the same figures rolled up by department.',
+        'and the same figures rolled up by department. Narrow it by till, clerk, ' +
+        'department, sub department or product for a stock take.',
+      filters: ['clerk', 'department', 'sub_department', 'product'],
       build: productSales,
     },
     discounts: {

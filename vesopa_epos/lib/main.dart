@@ -965,6 +965,9 @@ final billSyncProvider = Provider<BillSync>((ref) {
 /// The socket is the mechanism; the ten-second poll inside [BillSync] is only
 /// the backstop for a terminal whose socket has quietly died.
 final billSyncRunnerProvider = Provider<void>((ref) {
+  // Not before the till knows its own name: bills pushed under the
+  // placeholder would be held by a terminal that does not exist.
+  if (ref.watch(terminalIdentityProvider).isLoading) return;
   final sync = ref.watch(billSyncProvider);
   ref.listen(syncEventsProvider, (_, next) {
     if (next.value?.type == 'open-bills.updated') unawaited(sync.pull());

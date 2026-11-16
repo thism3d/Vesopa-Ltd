@@ -212,7 +212,31 @@ async function linkAndFind(pool, claims) {
         WHERE LOWER(u.email) = ? LIMIT 1`,
       [email],
     );
-    if (!byEmail.length) return null;
+    if (!byEmail.length) {
+      // Vesopa support signing in for the first time: they have no venue of
+      // their own, so they are given a login at Vesopa's own office. Nobody
+      // else is ever created here.
+      const { supportStaff } = require('./sites');
+      const staff = await supportStaff(pool, email);
+      if (!staff) return null;
+      const [[home]] = await pool.query(
+        "SELECT office_id FROM backoffice_users WHERE role = 'admin' AND office_id IS NOT NULL ORDER BY id DESC LIMIT 1"
+      );
+      if (!home) return null;
+      await pool.execute(
+        `INSERT INTO backoffice_users (email, name, company, approved, office_id, role, vesopa_sub, vesopa_linked_at)
+         VALUES (?, ?, 'Vesopa', 'Y', ?, 'office', ?, NOW())`,
+        [email, staff.name || claims.name || email, home.office_id, sub],
+      );
+      const [made] = await pool.execute(
+        `SELECT ${columns}
+           FROM backoffice_users u LEFT JOIN offices o ON o.id = u.office_id
+          WHERE LOWER(u.email) = ? LIMIT 1`,
+        [email],
+      );
+      if (!made.length) return null;
+      byEmail.push(made[0]);
+    }
     row = byEmail[0];
 
     /*

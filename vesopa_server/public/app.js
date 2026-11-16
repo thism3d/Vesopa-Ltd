@@ -8178,8 +8178,81 @@ async function loadSites() {
     .map((s) => `<option value="${s.id}"${Number(s.id) === Number(data.current) ? ' selected' : ''}>${
       esc(s.name)}${s.status !== 'active' ? ` (${esc(s.status)})` : ''}</option>`)
     .join('');
+  // Vesopa support has every company: a plain menu of fifty names is no way
+  // to find one, so they get a list with a search box instead.
+  supportSites = data.support ? sites : null;
+  $('site-select').hidden = !!supportSites;
+  $('site-open').hidden = !supportSites;
+  if (supportSites) {
+    const here = sites.find((s) => Number(s.id) === Number(data.current));
+    $('site-label').textContent = 'Company (Vesopa support)';
+    $('site-open-name').textContent = here ? here.name : 'Choose a company';
+    supportCurrent = Number(data.current);
+  }
   box.hidden = false;
 }
+
+/** Support's company list, narrowed by what is typed. */
+let supportSites = null;
+let supportCurrent = null;
+function siteListDraw() {
+  const needle = ($('site-find').value || '').trim().toLowerCase();
+  const list = (supportSites || []).filter(
+    (s) => !needle || s.name.toLowerCase().includes(needle) || String(s.email || '').toLowerCase().includes(needle)
+  );
+  $('site-list').innerHTML = list.length
+    ? list
+        .map((s) => `<button type="button" class="site-row" role="option" data-site="${s.id}" aria-selected="${
+          Number(s.id) === supportCurrent}"><span class="site-row-name">${esc(s.name)}${
+          s.demo ? ' <i>demo</i>' : ''}${s.status !== 'active' ? ` <i>${esc(s.status)}</i>` : ''}</span><small>${
+          esc(s.email || '')}</small></button>`)
+        .join('')
+    : '<p class="site-none">No company matches.</p>';
+}
+function sitePopOpen(open) {
+  $('site-pop').hidden = !open;
+  $('site-open').setAttribute('aria-expanded', String(open));
+  if (open) {
+    $('site-find').value = '';
+    siteListDraw();
+    $('site-find').focus();
+  }
+}
+async function siteSwitchTo(officeId) {
+  try {
+    const r = await api('/sites/switch', {
+      method: 'POST',
+      body: JSON.stringify({ office_id: officeId }),
+    });
+    token = r.token;
+    me = { ...me, officeId: r.site.id, officeName: r.site.name, officeEmail: r.site.email };
+    saveSession(localStorage.getItem(SESSION_KEYS.token) != null);
+    location.reload();
+  } catch (err) {
+    toast(err.message, 'error');
+    loadSites();
+  }
+}
+document.addEventListener('click', (e) => {
+  if (!supportSites) return;
+  if (e.target.closest('#site-open')) return sitePopOpen($('site-pop').hidden);
+  const row = e.target.closest('.site-row');
+  if (row) return siteSwitchTo(Number(row.dataset.site));
+  if (!e.target.closest('#site-pop')) sitePopOpen(false);
+});
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'site-find') siteListDraw();
+});
+document.addEventListener('keydown', (e) => {
+  if (!supportSites || $('site-pop').hidden) return;
+  if (e.key === 'Escape') {
+    sitePopOpen(false);
+    $('site-open').focus();
+  } else if (e.key === 'Enter' && e.target.id === 'site-find') {
+    const first = $('site-list').querySelector('.site-row');
+    if (first) siteSwitchTo(Number(first.dataset.site));
+  }
+});
 
 document.addEventListener('change', async (e) => {
   if (e.target.id !== 'site-select') return;
@@ -17951,6 +18024,7 @@ function rrShowFilters(chosen) {
   $('rr-clerk-field').hidden = !wants.has('clerk');
   $('rr-department-field').hidden = !wants.has('department');
   $('rr-product-field').hidden = !wants.has('product');
+  $('rr-subdepartment-field').hidden = !wants.has('sub_department');
   $('rr-groupby-field').hidden = !wants.has('group_by');
   if (wants.has('product')) rrFillProducts();
   rrToggleCustom();
@@ -17982,6 +18056,23 @@ function rrFillReports() {
   // first match is the one the search was for.
   const still = [...$('rr-report').options].some((o) => o.value === current);
   $('rr-report').value = still ? current : first || '';
+}
+
+/** The sub departments on offer: all of them, or those of the chosen department. */
+function rrFillSubDepartments() {
+  const department = $('rr-department').value;
+  const current = $('rr-subdepartment').value;
+  const list = ((rrCatalogue && rrCatalogue.sub_departments) || []).filter(
+    (s) => !department || s.department === department
+  );
+  const seen = new Set();
+  $('rr-subdepartment').innerHTML =
+    '<option value="">All sub departments</option>' +
+    list
+      .filter((s) => !seen.has(s.value) && seen.add(s.value))
+      .map((s) => `<option value="${esc(s.value)}">${esc(s.label)}</option>`)
+      .join('');
+  if ([...$('rr-subdepartment').options].some((o) => o.value === current)) $('rr-subdepartment').value = current;
 }
 
 /** Products for the product filter, fetched once, offered as you type. */
@@ -18021,6 +18112,8 @@ async function loadRunReport() {
       (rrCatalogue.departments || [])
         .map((d) => `<option value="${esc(d.value)}">${esc(d.label)}</option>`)
         .join('');
+    rrFillSubDepartments();
+    $('rr-department').addEventListener('change', rrFillSubDepartments);
     $('rr-search').addEventListener('input', () => {
       rrFillReports();
       rrNameReport();
@@ -18247,6 +18340,7 @@ function rrSpec() {
     filters: {
       clerk: $('rr-clerk').value || undefined,
       department: $('rr-department').value || undefined,
+      sub_department: $('rr-subdepartment-field').hidden ? undefined : $('rr-subdepartment').value || undefined,
       product: $('rr-product-field').hidden ? undefined : rrProductPlu(),
       week_start: $('rr-week-field').hidden ? undefined : $('rr-week').value || undefined,
       group_by: $('rr-groupby-field').hidden ? undefined : $('rr-groupby').value,

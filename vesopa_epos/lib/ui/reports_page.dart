@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/session_repository.dart';
@@ -513,6 +514,9 @@ class _Stat extends StatelessWidget {
 
 /// The key that opens the venue-wide report. Shown once another till is
 /// heard on the local link, so a single-till venue never sees it.
+/// Whether End of Day offers one X or Z for every linked till.
+const allTillsReportsKey = 'till.reports_all_tills';
+
 class _AllTillsKey extends ConsumerStatefulWidget {
   const _AllTillsKey();
 
@@ -523,9 +527,16 @@ class _AllTillsKey extends ConsumerStatefulWidget {
 class _AllTillsKeyState extends ConsumerState<_AllTillsKey> {
   StreamSubscription<void>? _changes;
 
+  /// Each till's X and Z are its own unless the venue turns this on in
+  /// Settings, Local network (Nicky, 2026-11-16).
+  bool _wanted = false;
+
   @override
   void initState() {
     super.initState();
+    unawaited(SharedPreferences.getInstance().then((p) {
+      if (mounted) setState(() => _wanted = p.getBool(allTillsReportsKey) ?? false);
+    }));
     _changes = LanService.instance.changes.listen((_) {
       if (mounted) setState(() {});
     });
@@ -541,7 +552,7 @@ class _AllTillsKeyState extends ConsumerState<_AllTillsKey> {
   Widget build(BuildContext context) {
     final lan = LanService.instance;
     final others = lan.otherTills;
-    if (!lan.linked || others.isEmpty) return const SizedBox.shrink();
+    if (!_wanted || !lan.linked || others.isEmpty) return const SizedBox.shrink();
     final n = others.length + 1;
     return Material(
       color: Pos.brandSoft,

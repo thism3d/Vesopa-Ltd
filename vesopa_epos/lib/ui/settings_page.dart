@@ -4,6 +4,8 @@ import 'dart:io' show File, Platform, Process, ProcessStartMode;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'reports_page.dart' show allTillsReportsKey;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'connected_devices_page.dart' show openConnectedDevices;
@@ -838,10 +840,20 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
   StreamSubscription<void>? _changes;
   Timer? _tick;
   bool _busy = false;
+  bool _allTills = false;
+
+  Future<void> _setAllTills(bool on) async {
+    setState(() => _allTills = on);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(allTillsReportsKey, on);
+  }
 
   @override
   void initState() {
     super.initState();
+    unawaited(SharedPreferences.getInstance().then((p) {
+      if (mounted) setState(() => _allTills = p.getBool(allTillsReportsKey) ?? false);
+    }));
     _changes = LanService.instance.changes.listen((_) {
       if (mounted) setState(() {});
     });
@@ -1118,6 +1130,19 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
               _ => 'The till that has been running longest leads, unless the back office has pinned one.',
             },
             style: TextStyle(fontSize: 13, color: theme.hintColor),
+          ),
+          const SizedBox(height: 10),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.summarize_outlined),
+            title: const Text('X and Z reports count all tills'),
+            subtitle: Text(
+              _allTills
+                  ? 'End of Day also offers All tills: one X or Z for every linked till.'
+                  : 'Each till has its own X and Z. Turn on to add one report for every linked till.',
+            ),
+            value: _allTills,
+            onChanged: _setAllTills,
           ),
           const SizedBox(height: 18),
           Row(
@@ -2926,6 +2951,18 @@ class _TerminalNameRow extends ConsumerWidget {
       ),
     );
     if (typed == null) return;
+    // One name, one till: a table is held by name, so two tills with the same
+    // name would each take the other's tables for its own.
+    final wanted = typed.trim().toLowerCase();
+    final taken = wanted.isNotEmpty &&
+        LanService.instance.otherTills.any((p) => p.name.trim().toLowerCase() == wanted);
+    if (taken) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Another till here is already called "${typed.trim()}". Choose a different name.')),
+      );
+      return;
+    }
     await ref.read(terminalIdentityProvider.notifier).set(typed);
   }
 }

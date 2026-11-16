@@ -389,6 +389,20 @@ async function departmentsOf({ pool, office }) {
   return rows.map((r) => ({ value: r.name, label: r.name }));
 }
 
+/** The sub departments (groups) in the catalogue, each under its department. */
+async function subDepartmentsOf({ pool, office }) {
+  const [rows] = await pool
+    .query(
+      `SELECT DISTINCT TRIM(group_name) AS name, TRIM(COALESCE(department_name, '')) AS department
+         FROM bo_products
+        WHERE email = ? AND group_name IS NOT NULL AND TRIM(group_name) <> ''
+        ORDER BY name`,
+      [office]
+    )
+    .catch(() => [[]]);
+  return rows.map((r) => ({ value: r.name, label: r.name, department: r.department || '' }));
+}
+
 /**
  * Sales broken down by department and sub department, with everything around
  * them that has to reconcile against it.
@@ -818,7 +832,7 @@ const GROUPS = {
  *                  period picker is hidden
  *   group_by    -- 'department' | 'sub_department'
  */
-const FILTERS = ['clerk', 'product', 'department', 'week_start', 'group_by'];
+const FILTERS = ['clerk', 'product', 'department', 'sub_department', 'week_start', 'group_by'];
 
 const helpers = { col, section, money, grouped, sqlDateTime, UNKNOWN_TERMINAL, taxWithin, totalOf };
 
@@ -900,8 +914,9 @@ function filterLines(report) {
   const f = report.filters || {};
   const out = [];
   if (f.clerk) out.push(['Clerk', f.clerk]);
-  if (f.product) out.push(['Product', report.productLabel || `PLU ${f.product}`]);
+  if (f.product) out.push(['Product', report.productLabel || (/^\d+$/.test(f.product) ? `PLU ${f.product}` : f.product)]);
   if (f.department) out.push(['Department', f.department]);
+  if (f.sub_department) out.push(['Sub department', f.sub_department]);
   if (f.group_by) out.push(['Grouped by', f.group_by === 'department' ? 'Department' : 'Sub department']);
   return out;
 }
@@ -1644,6 +1659,7 @@ function reportRoutes({ pool, secret }) {
         terminals: await terminalsInUse({ pool, office }),
         clerks: await clerksInUse({ pool, office }),
         departments: await departmentsOf({ pool, office }),
+        sub_departments: await subDepartmentsOf({ pool, office }),
       });
     } catch (e) {
       next(e);

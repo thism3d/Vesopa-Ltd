@@ -45,6 +45,7 @@ const Map<String, String> terminalSettings = {
   'display.paired': 'CustomerDisplay',
   'display.declined': 'CustomerDisplay',
   'vesopa_lan_manual': 'LocalLink',
+  'till.reports_all_tills': 'LocalLink',
   'till.order_alerts': 'Orders',
   'till.order_chime': 'Orders',
   'till.order_chime_repeat': 'Orders',

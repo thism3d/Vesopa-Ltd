@@ -93,6 +93,89 @@ async function mayManage(db, userId, officeId) {
   return sites.find((s) => Number(s.id) === Number(officeId)) || null;
 }
 
+// ---------------------------------------------------------------------------
+// Vesopa support (2026-11-16)
+// ---------------------------------------------------------------------------
+//
+// Nicky: "a master user for technical support. So it be me logging in and able
+// to select any company from my login and able to do any changes for that
+// customer." A Vesopa member of staff on the list below sees every company in
+// the site picker. The session keeps their own name and email, so the activity
+// log shows who made each change, and each visit is written to
+// bo_support_visits.
+
+/** The people this starts with. More are added as rows, not as code. */
+const FIRST_SUPPORT_STAFF = [
+  ['support@vesopa.com', 'Nicky Tidbell'],
+  ['muzahid@vesopa.com', 'Muzahid Islam'],
+];
+
+let supportReady = null;
+function ensureSupportTables(db) {
+  if (!supportReady) {
+    supportReady = (async () => {
+      await db.query(
+        `CREATE TABLE IF NOT EXISTS bo_support_staff (
+           email VARCHAR(191) NOT NULL PRIMARY KEY,
+           name VARCHAR(191) NULL,
+           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+         )`
+      );
+      await db.query(
+        `CREATE TABLE IF NOT EXISTS bo_support_visits (
+           id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+           email VARCHAR(191) NOT NULL,
+           office_id INT NOT NULL,
+           office_name VARCHAR(255) NULL,
+           at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+           KEY by_office (office_id, at)
+         )`
+      );
+      const [[have]] = await db.query('SELECT COUNT(*) AS n FROM bo_support_staff');
+      if (!Number(have.n)) {
+        for (const [email, name] of FIRST_SUPPORT_STAFF) {
+          await db.query('INSERT IGNORE INTO bo_support_staff (email, name) VALUES (?, ?)', [email, name]);
+        }
+      }
+    })().catch((e) => {
+      supportReady = null;
+      throw e;
+    });
+  }
+  return supportReady;
+}
+
+/** The support row for an email, or null. */
+async function supportStaff(db, email) {
+  const clean = String(email || '').trim().toLowerCase();
+  if (!clean) return null;
+  try {
+    await ensureSupportTables(db);
+    const [[row]] = await db.query('SELECT email, name FROM bo_support_staff WHERE LOWER(email) = ?', [clean]);
+    return row || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether this login is Vesopa support: on the list, or the platform admin. */
+async function isSupport(db, userId) {
+  const [[me]] = await db.query('SELECT email, role FROM backoffice_users WHERE id = ?', [userId]);
+  if (!me) return false;
+  if (me.role === 'admin') return true;
+  return !!(await supportStaff(db, me.email));
+}
+
+/** Every company, for support: live ones first, by name. */
+async function everyOffice(db) {
+  const [rows] = await db.query(
+    `SELECT id, name, contact_email, status, demo_of FROM offices
+      WHERE status <> 'archived'
+      ORDER BY (demo_of IS NOT NULL), name`
+  );
+  return rows.map((o) => ({ ...o, home: false, demo: o.demo_of != null }));
+}
+
 /**
  * A session for another site, for the same person.
  *
@@ -117,15 +200,21 @@ function siteRoutes({ pool, broadcast, secret }) {
   /** The sites this login may manage, and which one this session is in. */
   router.get('/sites', auth, async (req, res, next) => {
     try {
-      const sites = await sitesFor(pool, req.user.sub);
+      const own = await sitesFor(pool, req.user.sub);
+      const support = await isSupport(pool, req.user.sub);
+      let sites = own;
+      if (support) {
+        const mine = new Map(own.map((s) => [Number(s.id), s]));
+        sites = (await everyOffice(pool)).map((o) => mine.get(Number(o.id)) || o);
+      }
       res.json({
         current: req.user.officeId ?? null,
+        support,
         sites: sites.map((s) => ({
-          id: s.id, name: s.name, status: s.status, home: s.home,
-          // The back office paints a practice venue in amber and says so on
-          // every page: the worst outcome here is somebody believing they are
-          // in training when they are selling, or the other way about.
+          id: s.id, name: s.name, status: s.status, home: !!s.home,
           demo: !!s.demo,
+          // Two companies can share a name; support tells them apart by this.
+          ...(support ? { email: s.contact_email } : {}),
         })),
       });
     } catch (e) {
@@ -143,7 +232,18 @@ function siteRoutes({ pool, broadcast, secret }) {
       if (!Number.isInteger(officeId) || officeId <= 0) {
         return res.status(400).json({ error: 'Which site?' });
       }
-      const site = await mayManage(pool, req.user.sub, officeId);
+      let site = await mayManage(pool, req.user.sub, officeId);
+      if (!site && (await isSupport(pool, req.user.sub))) {
+        site = (await everyOffice(pool)).find((o) => Number(o.id) === officeId) || null;
+        if (site) {
+          await pool
+            .query('INSERT INTO bo_support_visits (email, office_id, office_name) VALUES (?, ?, ?)', [
+              String(req.user.email || '').slice(0, 191), site.id, site.name,
+            ])
+            .catch(() => {});
+          console.log(`[support] ${req.user.email} opened ${site.name} (${site.id})`);
+        }
+      }
       if (!site) {
         return res.status(403).json({ error: 'This login cannot manage that site.' });
       }
@@ -223,6 +323,8 @@ module.exports = {
   siteRoutes,
   sitesFor,
   mayManage,
+  isSupport,
+  supportStaff,
   atSite,
   resolveTillSite,
   sitePickToken,

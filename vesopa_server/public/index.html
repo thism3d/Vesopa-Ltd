@@ -275,8 +275,17 @@
         <!-- Which site this session is managing. Shown only to a login with
              more than one site; see src/sites.js. -->
         <div class="site-switch" id="site-switch" hidden>
-          <label for="site-select">Site</label>
+          <label for="site-select" id="site-label">Site</label>
           <select id="site-select" aria-label="Which site you are managing"></select>
+          <!-- Vesopa support: every company, with a search box (src/sites.js). -->
+          <button type="button" class="site-open" id="site-open" aria-haspopup="listbox" aria-expanded="false" hidden>
+            <span class="site-open-name" id="site-open-name"></span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="site-pop" id="site-pop" hidden>
+            <input type="search" id="site-find" placeholder="Find a company" autocomplete="off" aria-label="Find a company">
+            <div class="site-list" id="site-list" role="listbox" aria-label="Companies"></div>
+          </div>
         </div>
 
         <!-- In the rail, so it is on every page rather than on the one page
@@ -657,6 +666,9 @@
               </label>
               <label id="rr-department-field" hidden>Department
                 <select id="rr-department"></select>
+              </label>
+              <label id="rr-subdepartment-field" hidden>Sub department
+                <select id="rr-subdepartment"></select>
               </label>
               <label id="rr-product-field" hidden>Product
                 <input type="text" id="rr-product" list="rr-product-list" placeholder="Name or PLU" autocomplete="off">

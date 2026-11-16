@@ -170,7 +170,13 @@ class _PosShellState extends ConsumerState<PosShell> {
     // And the venue's shared open bills, for the same reason and at the same
     // moment: before sign-in there is no venue whose tables this terminal
     // could be showing. A no-op on a till that is not commissioned for it.
-    ref.read(billSyncRunnerProvider);
+    //
+    // Listened to, not read once (2026-11-16, Pontardawe: "can't get the table
+    // plan to sync"). A provider nobody listens to is never rebuilt, so the
+    // sync that started in the till's first moment kept the placeholder name
+    // "Till" for the whole day. Two tills both pushing as "Till" each took the
+    // other's tables for its own and never drew them.
+    ref.listenManual<void>(billSyncRunnerProvider, (_, _) {});
     _display = ref.read(customerDisplayProvider);
     unawaited(_announceThisMachine());
     unawaited(_readCardRules());
