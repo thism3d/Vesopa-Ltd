@@ -30,6 +30,9 @@ import '../theme.dart';
 import '../tv.dart';
 import 'scan_sheet.dart';
 
+/// What a screen was let in as, kept until the setup page has opened it there.
+const linkedModeKey = 'go_linked_mode';
+
 /// The code as it is read aloud: two groups of four.
 String spokenLinkCode(String code) => code.length == 8 ? '${code.substring(0, 4)} ${code.substring(4)}' : code;
 
@@ -121,7 +124,7 @@ class _LinkScreenPageState extends ConsumerState<LinkScreenPage> {
       final mode = '${r['mode'] ?? ''}';
       if (mode.isNotEmpty) {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('go_device_mode', mode);
+        await prefs.setString(linkedModeKey, mode);
       }
       final done = await ref.read(apiProvider).licenseWithKey(
             venueCode: '${r['venue_code']}',

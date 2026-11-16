@@ -1093,6 +1093,23 @@ tr.new { animation: flash 1.6s ease-out; }
 .site-row i { font-style: normal; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; opacity: .7; margin-left: 6px; }
 .site-none { margin: 10px; font-size: 13px; color: var(--rail-group); }
 
+/* Connect a screen by its code, under the Terminals list. */
+.link-screen {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(140px, 180px) minmax(160px, 200px) auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.link-screen input { text-transform: uppercase; letter-spacing: .12em; font-variant-numeric: tabular-nums; }
+@media (max-width: 860px) {
+  .link-screen { grid-template-columns: 1fr 1fr; }
+  .link-screen > div { grid-column: 1 / -1; }
+  .link-screen .btn { grid-column: 1 / -1; }
+}
+
 .rail-find {
   margin: 0 12px 8px;
   position: relative;

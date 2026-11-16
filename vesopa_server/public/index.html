@@ -4276,6 +4276,26 @@
             <h3 style="margin-top:0">Terminals</h3>
             <p class="muted small">Each terminal is licensed once with the venue code, its number and an access key, and its settings stay here, so a reinstall or an update never loses them.</p>
             <div id="terminals-list"></div>
+            <!-- Scan and connect (src/terminal_licences.js): a TV or a spare
+                 tablet shows a code; typed here, it joins this venue. -->
+            <form id="link-screen" class="link-screen" autocomplete="off">
+              <div>
+                <strong>Connect a screen or TV by its code</strong>
+                <p class="muted small" style="margin:2px 0 0">Open Vesopa Go on the screen and choose Connect with a code. A TV shows it straight away. Type the eight characters here.</p>
+              </div>
+              <label>Code
+                <input type="text" id="link-code" inputmode="latin" maxlength="9" placeholder="ABCD 2345" aria-label="The code on the screen">
+              </label>
+              <label>It is a
+                <select id="link-mode">
+                  <option value="display">Customer display</option>
+                  <option value="kitchen">Kitchen screen</option>
+                  <option value="epos">Till</option>
+                  <option value="terminal">Card terminal</option>
+                </select>
+              </label>
+              <button type="submit" class="btn primary" id="link-go">Connect</button>
+            </form>
           </div>
 
           <div class="card rd-card">

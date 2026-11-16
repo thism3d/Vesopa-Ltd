@@ -14,6 +14,7 @@ library;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../payments/go_terminal.dart';
 import '../../ui/pages/link_screen_page.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/recent_venues.dart';
@@ -326,6 +327,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             subtitle: const Text('Scan the code a new screen shows to add it as a display, a kitchen screen, a till or a card terminal.'),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () => connectScreen(context, ref),
+          ),
+          ListTile(
+            leading: const Icon(Icons.contactless_rounded),
+            title: const Text('Send card payments to a card terminal'),
+            subtitle: Text(GoTerminalChoice.current == null
+                ? 'Another device running Vesopa Go as a Card terminal takes the tap.'
+                : 'Card payments go to ${GoTerminalChoice.current!.name}.'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () async {
+              await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const GoTerminalPickPage()));
+              if (mounted) setState(() {});
+            },
           ),
         ]),
       if (s.venue?.mode == VenueMode.connected && !s.demo)

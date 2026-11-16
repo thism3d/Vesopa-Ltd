@@ -14301,6 +14301,28 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+// Connect a screen or TV by the code it shows (Devices, Terminals).
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'link-screen') return;
+  e.preventDefault();
+  const code = ($('link-code').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code.length !== 8) return toast('The code is eight letters and numbers, as the screen shows it.', 'error');
+  $('link-go').disabled = true;
+  try {
+    const r = await api('/device/link/approve', {
+      method: 'POST',
+      body: JSON.stringify({ code, mode: $('link-mode').value }),
+    });
+    $('link-code').value = '';
+    toast(`${r.name || 'The screen'} is connected as terminal ${r.terminal_number}. It opens in a few seconds.`);
+    if (typeof loadTerminals === 'function') loadTerminals();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    $('link-go').disabled = false;
+  }
+});
+
 /** What each Vesopa Go device runs as (src/go_modes.js): the venue decides. */
 async function loadGoModes() {
   let data;

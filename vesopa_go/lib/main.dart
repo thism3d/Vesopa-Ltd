@@ -29,6 +29,8 @@ import 'display/ui/display_mode_page.dart';
 import 'kitchen/ui/kitchen_mode_page.dart';
 import 'modes/device_mode.dart';
 import 'modes/mode_chooser_page.dart';
+import 'modes/terminal_mode_page.dart';
+import 'payments/go_terminal.dart';
 import 'data/session.dart';
 import 'ui/appearance.dart';
 import 'ui/device_prefs.dart';
@@ -50,6 +52,7 @@ void main() {
   DevicePrefs.load();
   // Whether this is a television, before the first frame: a TV draws its
   // focus ring from the start and opens on a code, not a sign-in page.
+  GoTerminalChoice.load();
   GoDevice.load().whenComplete(() => runApp(const ProviderScope(child: GoApp())));
 }
 
@@ -96,6 +99,7 @@ class GoApp extends ConsumerWidget {
         null => const ModeChooserPage(key: ValueKey('mode-choose')),
         DeviceMode.kitchen => const KitchenModePage(key: ValueKey('mode-kitchen')),
         DeviceMode.display => const DisplayModePage(key: ValueKey('mode-display')),
+        DeviceMode.terminal => const TerminalModePage(key: ValueKey('mode-terminal')),
         DeviceMode.epos => epos,
       };
     }

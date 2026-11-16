@@ -18,6 +18,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:vesopa_go/ui/adaptive.dart';
 import 'package:vesopa_go/display/data/display_feed.dart' show displayCardProvider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../payments/go_terminal.dart';
 import 'package:pay/pay.dart' show Pay;
 import 'package:vesopa_go/data/api.dart';
 import 'package:vesopa_go/data/models.dart';
@@ -336,18 +337,33 @@ class _PayPageState extends ConsumerState<PayPage> {
     _cancelling = false;
     PaymentOutcome outcome;
     try {
-      outcome = await payments.take(
-        amountMinor: _cardAmount,
-        tipMinor: tip,
-        billRef: bill.id,
-        clerk: ref.read(tapProvider).clerk?.name,
-        via: via,
-        onStep: (st) {
-          _toDisplay(st, via);
-          if (mounted) setState(() => _step = st);
-        },
-        control: control,
-      );
+      final terminal = via == 'machine' ? GoTerminalChoice.current : null;
+      void onStep(PayStep st) {
+        _toDisplay(st, via);
+        if (mounted) setState(() => _step = st);
+      }
+
+      outcome = terminal != null
+          // Another device running Go as a Card terminal (Settings).
+          ? await takeOnGoTerminal(
+              ref.read(apiProvider),
+              terminal: terminal,
+              amountMinor: _cardAmount + tip,
+              from: ref.read(tapProvider.notifier).terminalName,
+              billRef: bill.id,
+              clerk: ref.read(tapProvider).clerk?.name,
+              onStep: onStep,
+              control: control,
+            )
+          : await payments.take(
+              amountMinor: _cardAmount,
+              tipMinor: tip,
+              billRef: bill.id,
+              clerk: ref.read(tapProvider).clerk?.name,
+              via: via,
+              onStep: onStep,
+              control: control,
+            );
     } catch (e) {
       // Never left on the payment screen (2026-11-08): whatever went wrong,
       // the clerk gets the result screen with Try again and other ways to pay.

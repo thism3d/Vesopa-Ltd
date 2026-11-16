@@ -18,6 +18,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'link_screen_page.dart' show linkedModeKey;
 
 import '../../data/models.dart';
 import '../../data/session.dart';
@@ -41,6 +43,20 @@ class _SetupPageState extends ConsumerState<SetupPage> with TickerProviderStateM
   late final AnimationController _loop = AnimationController(vsync: this, duration: const Duration(milliseconds: 3600))..repeat();
   late final AnimationController _enter = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..forward();
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Let in by its code (Connect with a code): whoever let it in already
+    // said what it is for, and a TV's remote should not have to choose again.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      final linked = DeviceMode.parse(prefs.getString(linkedModeKey));
+      if (linked == null || !mounted) return;
+      await prefs.remove(linkedModeKey);
+      await _pick(VenueMode.connected, linked);
+    });
+  }
 
   @override
   void didChangeDependencies() {

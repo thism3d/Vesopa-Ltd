@@ -18,7 +18,9 @@ import '../data/session.dart';
 enum DeviceMode {
   epos('EPOS', 'Take orders and payments at the counter and the tables.', Icons.point_of_sale_rounded),
   kitchen('Vesopa Kitchen', 'Show the kitchen its tickets, and mark them done.', Icons.soup_kitchen_rounded),
-  display('Customer display', 'Show the customer their bill, adverts and how to pay.', Icons.connected_tv_rounded);
+  display('Customer display', 'Show the customer their bill, adverts and how to pay.', Icons.connected_tv_rounded),
+  // A card machine for the venue's tills (2026-11-16, lib/modes/terminal_mode_page.dart).
+  terminal('Card terminal', 'Take card payments sent from a till. Nothing is rung up here.', Icons.contactless_rounded);
 
   const DeviceMode(this.label, this.detail, this.icon);
   final String label;
@@ -29,6 +31,7 @@ enum DeviceMode {
         'epos' => DeviceMode.epos,
         'kitchen' => DeviceMode.kitchen,
         'display' => DeviceMode.display,
+        'terminal' => DeviceMode.terminal,
         _ => null,
       };
 }

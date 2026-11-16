@@ -135,6 +135,44 @@ class TapApi {
   Future<Map<String, dynamic>> linkApprove(String code, {required String mode, String? name}) =>
       _send('POST', '/api/device/link/approve', {'code': code, 'mode': mode, 'name': ?name});
 
+  // Card terminal mode (vesopa_server src/go_terminal.js).
+
+  /// The terminal: "I am here", answered with the payment waiting for it.
+  Future<Map<String, dynamic>> terminalHello({required String deviceId, required String name, String? gateway, bool ready = true, String? why}) =>
+      _send('POST', '/api/go/terminal/hello', {'device_id': deviceId, 'name': name, 'gateway': ?gateway, 'ready': ready, 'why': ?why});
+
+  /// The terminal: where a payment has got to, and how it ended.
+  Future<Map<String, dynamic>> terminalUpdate(
+    String id, {
+    required String deviceId,
+    required String status,
+    String? step,
+    String? paymentId,
+    String? message,
+    String? gateway,
+    bool uncertain = false,
+  }) =>
+      _send('POST', '/api/go/terminal/requests/$id/update', {
+        'device_id': deviceId,
+        'status': status,
+        'step': ?step,
+        'payment_id': ?paymentId,
+        'message': ?message,
+        'gateway': ?gateway,
+        'uncertain': uncertain,
+      });
+
+  /// The till: the venue's card terminals awake now, this device left out.
+  Future<Map<String, dynamic>> terminalsAwake(String deviceId) =>
+      _send('GET', '/api/go/terminals?device_id=${Uri.encodeQueryComponent(deviceId)}');
+
+  /// The till: send a terminal an amount.
+  Future<Map<String, dynamic>> terminalPay({required String deviceId, required int amountMinor, String? reference, required String from, String? clerk}) =>
+      _send('POST', '/api/go/terminal/pay', {'device_id': deviceId, 'amount_minor': amountMinor, 'reference': ?reference, 'from': from, 'clerk': ?clerk});
+
+  Future<Map<String, dynamic>> terminalRequest(String id) => _send('GET', '/api/go/terminal/requests/$id');
+  Future<Map<String, dynamic>> terminalCancel(String id) => _send('POST', '/api/go/terminal/requests/$id/cancel');
+
   /// A login that runs several sites picks one with the five-minute pass.
   Future<Map<String, dynamic>> commissionSite(String pickToken, Object officeId, {required String device, required String deviceId}) =>
       _send('POST', '/api/terminal/vesopa/commission/site', {

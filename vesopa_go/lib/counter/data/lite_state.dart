@@ -2,6 +2,7 @@
 /// the device's own settings.
 library;
 
+import '../../payments/go_terminal.dart' show GoTerminalChoice;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -118,6 +119,7 @@ String cardVia(LiteSettings settings, TapConfig config, {bool tablet = false}) {
   // Teya's Tap to Pay is only in Teya's own app: a Teya venue pays on its
   // machines. A Stripe venue chooses like a Dojo one, its reader standing in
   // for the card machine (owner, 2026-11-07).
+  if (GoTerminalChoice.current != null) return 'machine';
   if (config.teya.enabled && config.tapProvider != 'stripe') return 'machine';
   if (settings.cardVia == 'tap' || settings.cardVia == 'machine') return settings.cardVia;
   if (tablet && defaultTargetPlatform == TargetPlatform.iOS) return 'machine';

@@ -31,7 +31,8 @@ const { requireTerminal } = require('./auth');
 const licences = require('./licences');
 const { attachAccess, requirePermission } = require('./permissions');
 
-const MODES = ['ask', 'epos', 'kitchen', 'display'];
+// 'terminal' since 2026-11-16: a card terminal for the venue's tills (src/go_terminal.js).
+const MODES = ['ask', 'epos', 'kitchen', 'display', 'terminal'];
 const clamp = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
 
 function goModeRoutes({ pool, secret, auth }) {
@@ -91,7 +92,7 @@ function goModeRoutes({ pool, secret, auth }) {
     try {
       const device = await deviceOf(req);
       const running = clamp((req.body || {}).running, 12);
-      if (!device || !['epos', 'kitchen', 'display'].includes(running)) return res.status(400).json({ error: 'Which mode?' });
+      if (!device || !['epos', 'kitchen', 'display', 'terminal'].includes(running)) return res.status(400).json({ error: 'Which mode?' });
       await ensure();
       await pool.query(
         `INSERT INTO bo_go_device_modes (office, device_id, mode, running, running_at)
@@ -273,7 +274,7 @@ function goModeRoutes({ pool, secret, auth }) {
 }
 
 function label(mode) {
-  return ({ ask: 'Ask on the device', epos: 'EPOS', kitchen: 'Vesopa Kitchen', display: 'Customer display' })[mode] || mode;
+  return ({ ask: 'Ask on the device', epos: 'EPOS', kitchen: 'Vesopa Kitchen', display: 'Customer display', terminal: 'Card terminal' })[mode] || mode;
 }
 
 module.exports = { goModeRoutes, MODES };

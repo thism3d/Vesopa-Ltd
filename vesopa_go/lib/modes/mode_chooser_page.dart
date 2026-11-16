@@ -23,6 +23,7 @@ class ModeChooserPage extends ConsumerWidget {
     DeviceMode.epos: Tp.lime,
     DeviceMode.kitchen: Color(0xFFFF9F0A), // Apple's system orange
     DeviceMode.display: Color(0xFF0A84FF), // Apple's system blue
+    DeviceMode.terminal: Color(0xFF30D158), // Apple's system green
   };
 
   @override
