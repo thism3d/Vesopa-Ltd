@@ -1464,15 +1464,55 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
   // ---- A new venue, from the app ---------------------------------------------------
 
   /**
-   * "Register a new venue" in Vesopa Tap: a Vesopa ID token (verified email)
-   * becomes an office on Vesopa Tap alone, its first back-office user, and
-   * this phone as its first till. One venue per email; the account has no
-   * usable password (it signs in with Vesopa). Dojo starts on sandbox until
-   * the venue connects its own account in the back office.
+   * A new venue on Vesopa Go: its office, its first back-office user (no
+   * usable password; it signs in with Vesopa) and Go's settings. One venue
+   * per email. Used by the app's register below and by go.vesopa.com's
+   * sign-up (go_onboarding.js), so both make a venue the same way.
+   */
+  async function createVenue({ email, personName, venueName, businessType, postcode }) {
+    email = String(email || '').trim().toLowerCase();
+    if (!email) throw new TapError(403, 'Your Vesopa account needs a confirmed email address.');
+    const name = String(venueName || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+    if (name.length < 2) throw new TapError(400, 'Give the venue a name.');
+    const pc = String(postcode || '').trim().toUpperCase().slice(0, 10);
+    const type = String(businessType || '').trim().slice(0, 60);
+    const conn = await pool.getConnection();
+    try {
+      const [[user]] = await conn.query('SELECT id FROM backoffice_users WHERE email = ?', [email]);
+      const [[office]] = await conn.query('SELECT id FROM offices WHERE contact_email = ?', [email]);
+      if (user || office) {
+        throw new TapError(409, 'That Vesopa account already has a venue. Use Continue with Vesopa instead.');
+      }
+      await conn.beginTransaction();
+      const [o] = await conn.execute(
+        "INSERT INTO offices (name, contact_email, plan, status) VALUES (?, ?, 'tap', 'active')", [name, email]);
+      const unusable = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+      await conn.execute(
+        `INSERT INTO backoffice_users (email, password, name, company, approved, role, office_id)
+         VALUES (?, ?, ?, ?, 'Y', 'office', ?)`,
+        [email, unusable, String(personName || name).slice(0, 120), name, o.insertId]);
+      await conn.execute(
+        `INSERT INTO epos_tap_settings (office, enabled, tips_enabled, tip_percents, service_percents, allow_cash, receipt_email, updated_by)
+         VALUES (?, 1, 1, ?, ?, 1, 1, ?)`,
+        [email, DEFAULTS.tip_percents, DEFAULTS.service_percents, `register:${type || 'tap'}${pc ? ' ' + pc : ''}`.slice(0, 255)]);
+      await conn.commit();
+      return { email, name, officeId: o.insertId };
+    } catch (e) {
+      await conn.rollback().catch(() => {});
+      throw e;
+    } finally {
+      conn.release();
+    }
+  }
+  router.createVenue = createVenue;
+
+  /**
+   * "Register a new venue" in Vesopa Go: a Vesopa ID token (verified email)
+   * becomes a venue (createVenue) and this phone its first till. Card payments
+   * are then set up in the app's sign-up (go_onboarding.js): Stripe by default.
    */
   const registered = new Map(); // ip -> [times], a brake on scripted sign-ups
   router.post('/api/tap/register', express.json(), async (req, res, next) => {
-    const conn = await pool.getConnection();
     try {
       const ip = String(req.ip || '');
       const recent = (registered.get(ip) || []).filter((t) => Date.now() - t < 3600e3);
@@ -1488,45 +1528,21 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
       }
       const email = String(claims.email || '').trim().toLowerCase();
       if (!email || claims.email_verified === false) throw new TapError(403, 'Your Vesopa account needs a confirmed email address.');
-      const name = String(b.venue_name || '').trim().replace(/\s+/g, ' ').slice(0, 120);
-      if (name.length < 2) throw new TapError(400, 'Give the venue a name.');
-      const postcode = String(b.postcode || '').trim().toUpperCase().slice(0, 10);
-      const type = String(b.business_type || '').trim().slice(0, 60);
-
-      const [[user]] = await conn.query('SELECT id FROM backoffice_users WHERE email = ?', [email]);
-      const [[office]] = await conn.query('SELECT id FROM offices WHERE contact_email = ?', [email]);
-      if (user || office) {
-        throw new TapError(409, 'That Vesopa account already has a venue. Use Continue with Vesopa instead.');
-      }
-
-      await conn.beginTransaction();
-      const [o] = await conn.execute(
-        "INSERT INTO offices (name, contact_email, plan, status) VALUES (?, ?, 'tap', 'active')", [name, email]);
-      const unusable = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
-      await conn.execute(
-        `INSERT INTO backoffice_users (email, password, name, company, approved, role, office_id)
-         VALUES (?, ?, ?, ?, 'Y', 'office', ?)`,
-        [email, unusable, String(claims.name || name).slice(0, 120), name, o.insertId]);
-      await conn.execute(
-        `INSERT INTO epos_tap_settings (office, enabled, tips_enabled, tip_percents, service_percents, allow_cash, receipt_email, updated_by)
-         VALUES (?, 1, 1, ?, ?, 1, 1, ?)`,
-        [email, DEFAULTS.tip_percents, DEFAULTS.service_percents, `register:${type || 'tap'}${postcode ? ' ' + postcode : ''}`.slice(0, 255)]);
-      await conn.commit();
+      const made = await createVenue({
+        email, personName: claims.name, venueName: b.venue_name, businessType: b.business_type, postcode: b.postcode,
+      });
       registered.set(ip, [...recent, Date.now()]);
 
-      const owner = { officeEmail: email, officeId: o.insertId, email, officeName: name };
+      const owner = { officeEmail: made.email, officeId: made.officeId, email: made.email, officeName: made.name };
       const seatId = signInDevice
         ? await signInDevice(pool, {
-          office: email, kind: 'till', deviceId: String(b.device_id || '').slice(0, 64) || null,
-          deviceName: String(b.name || 'Phone (Vesopa Tap)').slice(0, 120), by: email,
+          office: made.email, kind: 'till', deviceId: String(b.device_id || '').slice(0, 64) || null,
+          deviceName: String(b.name || 'Phone (Vesopa Go)').slice(0, 120), by: made.email,
         })
         : null;
       res.status(201).json({ terminalToken: issueTerminalToken(owner, secret, undefined, seatId), user: owner });
     } catch (e) {
-      await conn.rollback().catch(() => {});
       send(res, e, next);
-    } finally {
-      conn.release();
     }
   });
 

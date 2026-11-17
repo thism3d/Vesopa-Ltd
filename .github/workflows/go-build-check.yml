@@ -1,0 +1,60 @@
+# Vesopa Go compiles, on both phones, before anything goes to testers:
+# flutter analyze, an Android debug app and an unsigned iOS debug app.
+# Runs on every pull request that changes vesopa_go/, and from the Actions tab.
+# Nothing is signed or uploaded, and no secret is used.
+
+name: Go - build check
+
+on:
+  pull_request:
+    paths:
+      - 'vesopa_go/**'
+      - '.github/workflows/go-build-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-build-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+      - name: Analyze
+        working-directory: vesopa_go
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Android debug app
+        working-directory: vesopa_go
+        run: flutter build apk --debug --target-platform android-arm64
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+      - name: iOS debug app, unsigned
+        working-directory: vesopa_go
+        run: |
+          flutter pub get
+          flutter build ios --debug --no-codesign

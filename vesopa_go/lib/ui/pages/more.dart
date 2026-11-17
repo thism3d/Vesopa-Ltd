@@ -22,6 +22,7 @@ import '../go_frame.dart' show VenueMark;
 import 'connection_page.dart';
 import '../gateway_mark.dart';
 import '../app_version.dart';
+import 'onboarding.dart';
 
 class MorePage extends ConsumerStatefulWidget {
   const MorePage({super.key});
@@ -125,6 +126,18 @@ class _MorePageState extends ConsumerState<MorePage> {
                   : 'With Vesopa EPOS'),
         ),
       ),
+      // A venue that signed up in Go or on go.vesopa.com: its identity,
+      // business, bank and licence checks (onboarding.dart).
+      if (!s.demo && s.venue?.mode == VenueMode.standalone)
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.verified_user_rounded),
+            title: const Text('Account checks'),
+            subtitle: const Text('Your identity, business, bank and licence, for live card payments'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const OnboardingPage())),
+          ),
+        ),
       const SizedBox(height: 12),
       _TapToPayCard(status: _tapStatus),
       if (!ref.watch(tapProvider.select((s) => s.demo))) const AddPrintersTile(),

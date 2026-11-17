@@ -14,6 +14,7 @@ import '../../data/session.dart';
 import '../../data/vesopa_sso.dart';
 import '../theme.dart';
 import '../access_key_dialog.dart';
+import 'onboarding.dart';
 import 'sign_in_flow.dart';
 import 'welcome_slides.dart';
 
@@ -266,7 +267,11 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             deviceId: session.deviceId,
           );
       await ref.read(tapProvider.notifier).commissioned(answer);
-      if (mounted) Navigator.of(context).pop();
+      // Straight on to the checks card payments need (Stripe, owner 2026-11-17).
+      if (mounted) {
+        await Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(builder: (_) => const OnboardingPage(justRegistered: true)));
+      }
     } on SsoFailed catch (e) {
       setState(() => _error = e.message);
     } on TapApiError catch (e) {
@@ -320,8 +325,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                 child: Row(children: [
                   Icon(Icons.credit_card_rounded, color: context.goLimeInk),
                   const SizedBox(width: 12),
-                  Expanded(child: Text('Card payments go through your own Dojo account. You connect it in the back office '
-                      'after registering; until then the app runs in test mode.', style: t.bodyMedium)),
+                  Expanded(child: Text('Card payments go through Stripe. Next, Stripe checks your ID and your business: '
+                      'have your passport, driving licence or ID card with you. Until then the app runs in test mode. '
+                      '14 days free, then £29 a month.', style: t.bodyMedium)),
                 ]),
               ),
             ),

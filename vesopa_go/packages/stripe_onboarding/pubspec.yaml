@@ -1,0 +1,21 @@
+name: stripe_onboarding
+description: Stripe's native sign-up screens for Vesopa Go - Identity (ID and selfie), Connect account onboarding and the card sheet - on one channel.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.4
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.vesopa.stripe_onboarding
+        pluginClass: StripeOnboardingPlugin
+      ios:
+        pluginClass: StripeOnboardingPlugin

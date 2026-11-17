@@ -30,7 +30,8 @@ What `staging` and `live` do, in order, stopping at the first thing wrong:
              INSERT IGNORE: added only when the venue has none).
   5. auth    vesopa_auth/schema/schema_028_vesopa_go_client.sql: Go's own client,
              a copy of the till's (adds rows only; nothing if it is there), and
-             VESOPA_AUTH_GO_CLIENT_ID in the app's .env.
+             VESOPA_AUTH_GO_CLIENT_ID in the app's .env; then schema_029: the
+             return address of go.vesopa.com/signup on that client.
   6. restart by name, then /health, /api/tap/config (401: wants a phone) and
              /api/go/vesopa/enabled must answer. If not, the files and .env go
              back from the backup and it restarts again.
@@ -56,6 +57,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SERVER_DIR = REPO / "vesopa_server"
 AUTH_SQL = REPO / "vesopa_auth" / "schema" / "schema_028_vesopa_go_client.sql"
+# go.vesopa.com/signup's return address on Go's client (2026-11-17), run after 028.
+AUTH_SIGNUP_SQL = REPO / "vesopa_auth" / "schema" / "schema_029_vesopa_go_web_signup.sql"
 HOST = os.environ.get("VESOPA_SSH_HOST", "root@34.63.118.67")
 IP = "34.63.118.67"
 USER = "vesopasoftware"
@@ -349,6 +352,10 @@ else
   printf '\\nVESOPA_AUTH_GO_CLIENT_ID={client}\\n' >> .env
 fi""")
     note("  VESOPA_AUTH_GO_CLIENT_ID set in the app's .env")
+    sh("cat > /tmp/schema_029_vesopa_go_web_signup.sql", data=AUTH_SIGNUP_SQL.read_bytes())
+    out = text(f"{db(auth)} -N < /tmp/schema_029_vesopa_go_web_signup.sql; rm -f /tmp/schema_029_vesopa_go_web_signup.sql")
+    m = re.search(r"web sign-up redirects=(\d+)", out)
+    note(f"  go.vesopa.com/signup on Go's client: {m.group(1) if m else '?'} address(es)")
     return client
 
 

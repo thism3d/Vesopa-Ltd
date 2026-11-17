@@ -108,7 +108,7 @@ async function call(method, path, { body, account, v2 = false, idempotencyKey, k
  * Stripe holds losses; merchant configuration for direct charges and
  * customer configuration for Vesopa's licence billing.
  */
-function createAccount({ email, name, country = 'gb', currency = 'gbp' }, opts = {}) {
+function createAccount({ email, name, country = 'gb', currency = 'gbp', identity }, opts = {}) {
   return call('POST', '/v2/core/accounts', {
     ...opts,
     v2: true,
@@ -116,7 +116,9 @@ function createAccount({ email, name, country = 'gb', currency = 'gbp' }, opts =
       contact_email: email || undefined,
       display_name: name || undefined,
       dashboard: 'express',
-      identity: { country },
+      // What a Vesopa Go sign-up already knows (go_onboarding.js): the kind
+      // of business and its name, so Stripe's onboarding asks for less.
+      identity: { country, ...(identity || {}) },
       configuration: {
         merchant: { capabilities: { card_payments: { requested: true } } },
         customer: { capabilities: { automatic_indirect_tax: { requested: true } } },
@@ -172,6 +174,24 @@ function accountSession(account, opts = {}) {
         payouts: on,
         balance_report: on,
         payout_reconciliation_report: on,
+      },
+    },
+  });
+}
+
+/**
+ * Only the onboarding a new Vesopa Go venue needs (go_onboarding.js): Stripe
+ * checks the business, its directors and owners, and the bank account it is
+ * paid into, collected inside the component.
+ */
+function onboardingSession(account, opts = {}) {
+  return call('POST', '/v1/account_sessions', {
+    ...opts,
+    body: {
+      account,
+      components: {
+        account_onboarding: { enabled: true, features: { external_account_collection: true } },
+        notification_banner: { enabled: true, features: { external_account_collection: true } },
       },
     },
   });
@@ -389,6 +409,7 @@ module.exports = {
   retrieveAccount,
   readiness,
   accountSession,
+  onboardingSession,
   loginLink,
   createLocation,
   connectionToken,

@@ -387,7 +387,26 @@ app.use('/api', backofficeRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', dojoSettingsRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Stripe, the third provider beside Dojo and Teya (src/stripe.js): off for
 // every venue until a manager turns it on; connect-recommend-plan.md.
-app.use('/api', stripeRoutes({ pool, broadcast, secret: JWT_SECRET }));
+const stripeVenues = stripeRoutes({ pool, broadcast, secret: JWT_SECRET });
+app.use('/api', stripeVenues);
+// Signing a new venue up from Vesopa Go or go.vesopa.com (src/go_onboarding.js):
+// the owner's identity (Stripe Identity), the business and its bank (Stripe
+// Connect), the licence, and the payment caps until all of it has passed.
+const goOnboarding = require('./go_onboarding').goOnboardingRoutes({
+  pool,
+  broadcast,
+  secret: JWT_SECRET,
+  stripeSettings: stripeVenues.settings,
+  createVenue: (v) => tapPhones.createVenue(v),
+  verifyIdToken: require('./terminal_vesopa').verifyTillToken,
+  goClient: () => ({
+    issuer: (process.env.VESOPA_AUTH_ISSUER || 'https://auth.vesopa.com').replace(/\/+$/, ''),
+    clientId: process.env.VESOPA_AUTH_GO_CLIENT_ID || '',
+  }),
+});
+stripeVenues.capCheck = goOnboarding.capCheck;
+stripeVenues.onStripeEvent = goOnboarding.onStripeEvent;
+app.use('/api', goOnboarding);
 
 // Teya, the second card acquirer (src/teya.js): off for every venue until a
 // manager turns it on. Its payment webhook settles menu orders through
