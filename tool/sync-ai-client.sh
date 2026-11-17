@@ -8,7 +8,6 @@ targets=(
   vesopa_hosting/src/ai/vesopa_ai.js          # cloud.vesopa.com (CommonJS)
   vesopasoftware/server/lib/vesopa_ai.cjs     # vesopasoftware.com (ESM package, so .cjs)
   PontardaweRFC/website/src/vesopa_ai.js      # pontardawerfc.com club helper
-  vesopa_server/src/ai/vesopa_ai.js           # back office: Vesopa AI in Vesopa Go
 )
 for t in "${targets[@]}"; do
   cp "$src" "$repo/$t"
