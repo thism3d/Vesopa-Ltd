@@ -63,6 +63,57 @@ def arm_get(path, token):
     return last
 
 
+KNOWN = {
+    "335a71ee-f200-4cb3-9965-dafc3ab0e01b": "Vesopa, the customer sign-in app (personal accounts only: cannot sign or reach the Store)",
+    "6ef0452e-04ea-4f22-b580-6a93534978f6": "VesopaEPOS, the Store submission app",
+}
+PAIRS = [
+    ("AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET"),
+    ("MS_STORE_CLIENT_ID", "MS_STORE_CLIENT_SECRET"),
+    ("MICROSOFT_APPLICATION_ID", "MICROSOFT_VESOPA_CLIENT_KEY"),
+    ("MICROSOFT_VESOPA_CLIENT_ID", "MICROSOFT_VESOPA_CLIENT_KEY"),
+]
+TENANTS = ["AZURE_TENANT_ID", "MS_STORE_TENANT_ID", "MICROSOFT_TENANT_ID"]
+
+
+def sign_in_pairs():
+    """Try every client id + secret the environment holds, for Azure and Partner
+    Center. Writes sign_pair / store_pair (secret NAMES, id:secret:tenant) to the
+    job's outputs and returns an Azure token from the first that works."""
+    token = None
+    seen = set()
+    for id_name, secret_name in PAIRS:
+        cid = os.environ.get(id_name, "").strip()
+        sec = os.environ.get(secret_name, "").strip()
+        if not cid or not sec or (cid, sec) in seen:
+            continue
+        seen.add((cid, sec))
+        label = KNOWN.get(cid.lower(), "an app not named in this repository")
+        for t_name in TENANTS:
+            tenant = os.environ.get(t_name, "").strip()
+            if not tenant:
+                continue
+            results = {}
+            for scope, what in ((f"{ARM}/.default", "Azure"),
+                                ("https://manage.devcenter.microsoft.com/.default", "Partner Center")):
+                code, tok = http(f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+                                 {"grant_type": "client_credentials", "client_id": cid,
+                                  "client_secret": sec, "scope": scope})
+                results[what] = (code, tok)
+                why = (tok.get("error_description") or "").split(" Trace ID")[0]
+                print(f"  {id_name} + {secret_name} ({label}), tenant {t_name}, {what}: {'ok' if code == 200 else why}")
+            pair = f"{id_name}:{secret_name}:{t_name}"
+            if results["Azure"][0] == 200 and token is None:
+                token = results["Azure"][1]["access_token"]
+                write_out("sign_pair", pair)
+            if results["Partner Center"][0] == 200 and not os.environ.get("_STORE_DONE"):
+                os.environ["_STORE_DONE"] = "1"
+                write_out("store_pair", pair)
+            if results["Azure"][0] == 200 or results["Partner Center"][0] == 200:
+                break
+    return token
+
+
 def main():
     tenant = os.environ.get("AZURE_TENANT_ID", "")
     client = os.environ.get("AZURE_CLIENT_ID", "")
@@ -88,38 +139,13 @@ def main():
         # A bare name: the account's, or else its resource group's.
         account = account or raw
 
+    token = sign_in_pairs()
+    if token is None:
+        fail("No client id and secret in the environment signs in to Azure (see the lines above), so "
+             "nothing can be signed. AZURE_CLIENT_ID / AZURE_CLIENT_SECRET must be the app registration "
+             "that has the 'Trusted Signing Certificate Profile Signer' role on the signing account.")
     if endpoint and account and profile:
         return done(endpoint, account, profile)
-
-    if not (tenant and client and secret):
-        fail("No app registration to ask Azure with (tenant, client id, client secret).")
-    # Each client id the environment holds, tried with the key: for Azure (signing)
-    # and for Partner Center (the Store). Names only are printed.
-    tried = [("AZURE_CLIENT_ID", client)]
-    for name in os.environ.get("CLIENT_ID_CANDIDATES", "").split():
-        v = os.environ.get(name, "").strip()
-        if v and v not in [c for _, c in tried]:
-            tried.append((name, v))
-    token = None
-    store_ok = None
-    for name, cid in tried:
-        for scope, label in ((f"{ARM}/.default", "Azure"), ("https://manage.devcenter.microsoft.com/.default", "Partner Center")):
-            code, tok = http(f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
-                             {"grant_type": "client_credentials", "client_id": cid,
-                              "client_secret": secret, "scope": scope})
-            why = (tok.get("error_description") or "").split(" Trace ID")[0]
-            print(f"  sign-in as {name} for {label}: {'ok' if code == 200 else why}")
-            if code == 200 and label == "Azure" and token is None:
-                token = tok["access_token"]
-                write_out("client_from", os.environ.get("AZURE_CLIENT_FROM", name) if name == "AZURE_CLIENT_ID" else name)
-            if code == 200 and label == "Partner Center" and store_ok is None:
-                store_ok = name
-                write_out("store_client_from", os.environ.get("AZURE_CLIENT_FROM", name) if name == "AZURE_CLIENT_ID" else name)
-    if token is None:
-        fail("No client id signs in to Azure with the client key. The app registration must be an "
-             "organisation app: in Azure portal > App registrations > the app > Authentication, "
-             "Supported account types must include 'Accounts in this organizational directory', and "
-             "the key (Certificates & secrets) must belong to that same app.")
 
     subs = [sub] if sub else []
     if not subs:
