@@ -14,6 +14,8 @@ process.env.NODE_ENV = 'test';
 process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
 process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_fake';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_fake';
+process.env.STRIPE_LIVE_SECRET_KEY = 'sk_live_fake';
+process.env.STRIPE_LIVE_PUBLISHABLE_KEY = 'pk_live_fake';
 
 const stripe = require('../src/stripe_client');
 const { stripeRoutes } = require('../src/stripe');
@@ -76,7 +78,7 @@ function fakeStripe(state) {
       createTerminalPayment: async (acct, p) => { calls.push(['pay', acct, p.amountMinor]); return { id: 'pi_1', client_secret: 'pi_1_secret', status: 'requires_payment_method' }; },
     },
     onboarding: {
-      createIdentitySession: async (a) => { calls.push(['identity', a.office]); return { id: 'vs_1', status: 'requires_input', client_secret: 'vs_1_secret', url: 'https://verify.stripe.com/x' }; },
+      createIdentitySession: async (a, opts) => { calls.push(['identity', a.office, opts && opts.key]); return { id: 'vs_1', status: 'requires_input', client_secret: 'vs_1_secret', url: 'https://verify.stripe.com/x' }; },
       retrieveIdentitySession: async () => ({ id: 'vs_1', status: state.identity || 'requires_input', client_secret: 'vs_1_secret' }),
       identityEphemeralKey: async () => ({ secret: 'ek_test_1' }),
       createCustomer: async () => ({ id: 'cus_1' }),
@@ -162,7 +164,10 @@ function signed(event) {
 
     // The owner's ID and selfie: a mobile sheet gets an ephemeral key.
     r = await call(server, 'POST', '/api/go/onboarding/identity', { token: phone, body: { mobile: true } });
-    ok(r.status === 201 && r.body.id === 'vs_1' && r.body.ephemeral_key_secret === 'ek_test_1' && r.body.publishable_key === 'pk_test_fake', 'identity session for the app');
+    ok(r.status === 201 && r.body.id === 'vs_1' && r.body.ephemeral_key_secret === 'ek_test_1', 'identity session for the app');
+    // On the live account, where native SDKs and Synthetic Identity Protection are on.
+    ok(r.body.publishable_key === 'pk_live_fake' && fake.calls.find((c) => c[0] === 'identity')[2] === 'sk_live_fake', 'identity checked on live Stripe');
+    ok(pool.tables.go_onboarding.get(OFFICE).identity_env === 'live', 'identity mode remembered');
 
     // Stripe: the account is made with what we know, and Stripe becomes the provider.
     r = await call(server, 'POST', '/api/go/onboarding/stripe', { token: phone });

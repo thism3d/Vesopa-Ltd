@@ -224,11 +224,13 @@ function goOnboardingRoutes({
         environment VARCHAR(12) NULL,
         source VARCHAR(12) NULL,
         owner_pin_set TINYINT(1) NOT NULL DEFAULT 0,
+        identity_env VARCHAR(12) NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`)
       // A table made before the owner's PIN (2026-11-17) gets the column.
       .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN owner_pin_set TINYINT(1) NOT NULL DEFAULT 0').catch(() => {}))
+      .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN identity_env VARCHAR(12) NULL').catch(() => {}))
       .catch((e) => { ready = null; throw e; });
     return ready;
   }
@@ -252,6 +254,20 @@ function goOnboardingRoutes({
   /** Which Stripe (sandbox or live) this venue's sign-up runs in. */
   const envOf = (row, stripeRow) => (stripeRow && stripeRow.environment) || (row && row.environment) || sc.environment();
   const optsOf = (env) => ({ key: sc.keyFor(env) });
+
+  /**
+   * The owner's identity is checked on Vesopa's live Stripe account, where
+   * Identity's native SDKs and Synthetic Identity Protection are switched on
+   * (owner, 2026-11-17: "use the live SDK as there synthetic identity is
+   * enabled"), whichever mode the venue's payments are in. A real document
+   * and selfie are needed. GO_IDENTITY_ENV=sandbox in .env sends checks to
+   * the sandbox instead; without live keys on the server they stay there.
+   */
+  const identityEnv = () => {
+    const wanted = String(process.env.GO_IDENTITY_ENV || 'live').toLowerCase();
+    return wanted === 'live' && sc.configuredFor('live') ? 'live' : null;
+  };
+  const identityEnvOf = (row, fallback) => (row && row.identity_env) || identityEnv() || fallback;
 
   // ---- Who is asking ----
 
@@ -294,7 +310,7 @@ function goOnboardingRoutes({
       stripeRow = await stripeSettings.refresh(office, stripeRow).catch(() => stripeRow);
     }
     if (refresh && row && row.identity_session && row.identity_status !== IDENTITY_DONE) {
-      const s = await client.retrieveIdentitySession(row.identity_session, optsOf(env)).catch(() => null);
+      const s = await client.retrieveIdentitySession(row.identity_session, optsOf(identityEnvOf(row, env))).catch(() => null);
       if (s) {
         await save(office, identityFields(s));
         row = await rowFor(office);
@@ -433,11 +449,13 @@ function goOnboardingRoutes({
       const row = await rowFor(req.office);
       if (!row || !row.business_type) throw new OnboardingError(409, 'Tell us about the business first.');
       if (row.identity_status === IDENTITY_DONE) throw new OnboardingError(409, 'Your identity is already verified.');
-      const env = envOf(row, await stripeSettings.settingsFor(req.office));
+      const env = identityEnv() || envOf(row, await stripeSettings.settingsFor(req.office));
       const opts = optsOf(env);
-      // A session waiting for its first try is used again rather than starting over.
+      // A session waiting for its first try is used again rather than starting
+      // over, if it was made in the same Stripe mode.
       let s = null;
-      if (row.identity_session && (row.identity_status === 'requires_input' || !row.identity_status)) {
+      if (row.identity_session && (row.identity_env || null) === env
+        && (row.identity_status === 'requires_input' || !row.identity_status)) {
         s = await client.retrieveIdentitySession(row.identity_session, opts).catch(() => null);
         if (s && (s.status !== 'requires_input' || s.last_error)) s = null;
       }
@@ -445,7 +463,7 @@ function goOnboardingRoutes({
         const returnUrl = /^https:\/\//.test(String((req.body || {}).return_url || '')) ? req.body.return_url : null;
         s = await client.createIdentitySession({ office: req.office, email: req.office, returnUrl }, opts);
       }
-      await save(req.office, identityFields(s));
+      await save(req.office, { ...identityFields(s), identity_env: env });
       const answer = {
         id: s.id,
         client_secret: s.client_secret,
