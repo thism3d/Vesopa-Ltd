@@ -65,6 +65,10 @@ on:
         type: choice
         options: [Immediate, Manual]
         default: Immediate
+      sign:
+        description: Sign the program and installer (untick only with the owner's say-so; Downloads then shows it as unsigned)
+        type: boolean
+        default: true
       admin_notes:
         description: Notes shown beside the installer on Downloads (empty = the Store notes' title)
         required: false
@@ -155,6 +159,7 @@ jobs:
           TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
           TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
           TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
+          NO_SIGN: ${{ !inputs.sign && '1' || '' }}
         run: python3 tool/ci_find_signing.py
 
   build:
@@ -185,6 +190,7 @@ jobs:
         run: flutter pub get
 
       - name: Signing secrets
+        if: inputs.sign
         shell: bash
         env:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -207,16 +213,20 @@ jobs:
       - name: Build and sign the till and its installer
         shell: pwsh
         env:
-          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT || needs.secrets.outputs.endpoint }}
-          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT || needs.secrets.outputs.account }}
-          TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_PROFILE || needs.secrets.outputs.profile }}
+          TRUSTED_SIGNING_ENDPOINT: ${{ inputs.sign && (secrets.TRUSTED_SIGNING_ENDPOINT || needs.secrets.outputs.endpoint) || '' }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ inputs.sign && (secrets.TRUSTED_SIGNING_ACCOUNT || needs.secrets.outputs.account) || '' }}
+          TRUSTED_SIGNING_PROFILE: ${{ inputs.sign && (secrets.TRUSTED_SIGNING_PROFILE || needs.secrets.outputs.profile) || '' }}
+          SIGN: ${{ inputs.sign }}
         run: |
-          if (-not ($env:TRUSTED_SIGNING_ENDPOINT -and $env:TRUSTED_SIGNING_ACCOUNT -and $env:TRUSTED_SIGNING_PROFILE)) {
+          if ($env:SIGN -ne 'true') {
+            Write-Host '::warning::Not signing: this run was started with sign unticked.'
+          } elseif (-not ($env:TRUSTED_SIGNING_ENDPOINT -and $env:TRUSTED_SIGNING_ACCOUNT -and $env:TRUSTED_SIGNING_PROFILE)) {
             throw 'The secrets job gave no signing endpoint, account or profile.'
           }
           ./tool/build-installers.ps1 -Apps till
 
       - name: Check the signatures
+        if: inputs.sign
         shell: pwsh
         run: |
           $files = @('vesopa_epos\build\windows\x64\runner\Release\vesopa_epos.exe', "dist\installers\VesopaEPOS-Setup-$env:VERSION.exe")
@@ -349,6 +359,7 @@ jobs:
       - name: Put the installer on admin.vesopa.com/downloads
         env:
           NOTES: ${{ inputs.admin_notes || needs.secrets.outputs.title }}
+          SIGNED: ${{ inputs.sign }}
         run: |
           exe="VesopaEPOS-Setup-$VERSION.exe"
           test -f "$RUNNER_TEMP/installer/$exe" || { echo "::error::$exe not in the build's artifacts"; exit 1; }
@@ -358,10 +369,11 @@ jobs:
           ssh -n "$SERVER" "mkdir -p '$remote'"
           scp "$RUNNER_TEMP/installer/$exe" "$SERVER:$remote/$exe"
           q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\"'\"'/g")"; }
-          inner="cd $private/nodeapp && node scripts/add-release.js till $VERSION $remote/$exe --signed --by github"
+          inner="cd $private/nodeapp && node scripts/add-release.js till $VERSION $remote/$exe --by github"
+          [ "$SIGNED" = "true" ] && inner="$inner --signed"
           [ -n "$NOTES" ] && inner="$inner --notes $(q "$NOTES")"
           ssh -n "$SERVER" "chown -R $APP_USER:$APP_USER '$remote' && su - $APP_USER -c $(q "$inner"); rc=\$?; rm -rf '$remote'; exit \$rc"
-          echo "VesopaEPOS-Setup-$VERSION.exe is on https://admin.vesopa.com/downloads" >> "$GITHUB_STEP_SUMMARY"
+          echo "VesopaEPOS-Setup-$VERSION.exe is on https://admin.vesopa.com/downloads$([ "$SIGNED" = "true" ] || echo ' (unsigned)')" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Close SSH
         if: always()

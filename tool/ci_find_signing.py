@@ -140,6 +140,9 @@ def main():
         account = account or raw
 
     token = sign_in_pairs()
+    if os.environ.get("NO_SIGN"):
+        print("  not signing this run: only the Store sign-in above matters")
+        return
     if token is None:
         fail("No client id and secret in the environment signs in to Azure (see the lines above), so "
              "nothing can be signed. AZURE_CLIENT_ID / AZURE_CLIENT_SECRET must be the app registration "
