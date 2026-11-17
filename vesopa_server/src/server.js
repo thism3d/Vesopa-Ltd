@@ -527,6 +527,8 @@ app.use(require('./go_terminal').goTerminalRoutes({ secret: JWT_SECRET }));
 app.use(require('./display_adverts').displayAdvertRoutes({ pool, secret: JWT_SECRET, auth: requireAuth(JWT_SECRET) }));
 // DeepSeek's suggested layout for a till screen, for the back office and Go (src/layout_ai.js).
 app.use(require('./layout_ai').layoutAiRoutes({ pool, secret: JWT_SECRET, auth: requireAuth(JWT_SECRET) }));
+// Vesopa AI in Vesopa Go: questions about the venue's own figures, read-only (src/go_advisor.js).
+app.use(require('./go_advisor').goAdvisorRoutes({ pool, secret: JWT_SECRET }));
 // Each printer's place online: what goes in prints there (src/print_drive.js).
 app.use(require('./print_drive').printDriveRoutes({
   pool,

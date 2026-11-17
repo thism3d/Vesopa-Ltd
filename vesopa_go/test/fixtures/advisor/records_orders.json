@@ -1,0 +1,64 @@
+{
+  "source": "orders",
+  "title": "Sales",
+  "period": {
+    "key": "today",
+    "label": "Today so far (Tue 17 Nov, to 14:30)",
+    "from": "2026-11-17 00:00:00",
+    "to": "2026-11-17 14:30:00"
+  },
+  "site": {
+    "id": null,
+    "label": "All sites"
+  },
+  "columns": [
+    {
+      "key": "time",
+      "label": "Closed",
+      "kind": "text"
+    },
+    {
+      "key": "ref",
+      "label": "Sale",
+      "kind": "text"
+    },
+    {
+      "key": "staff",
+      "label": "Staff",
+      "kind": "text"
+    },
+    {
+      "key": "till",
+      "label": "Till",
+      "kind": "text"
+    },
+    {
+      "key": "table_number",
+      "label": "Table",
+      "kind": "text"
+    },
+    {
+      "key": "total_minor",
+      "label": "Total",
+      "kind": "money"
+    },
+    {
+      "key": "discount_minor",
+      "label": "Discount",
+      "kind": "money"
+    }
+  ],
+  "rows": [
+    {
+      "time": "2026-11-17 14:20",
+      "ref": "abcdef12",
+      "staff": "Bar Ben",
+      "till": "Bar till",
+      "table_number": "4",
+      "total_minor": 2450,
+      "discount_minor": 0
+    }
+  ],
+  "truncated": false,
+  "note": null
+}

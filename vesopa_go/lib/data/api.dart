@@ -40,12 +40,13 @@ class TapApi {
   /// The venue's contact email: what the till endpoints are scoped by.
   String? office;
 
-  Future<Map<String, dynamic>> _send(String method, String path, [Object? body]) async {
+  Future<Map<String, dynamic>> _send(String method, String path, [Object? body, Map<String, String>? headers]) async {
     final req = http.Request(method, Uri.parse('$base$path'))
       ..headers.addAll({
         'Accept': 'application/json',
         if (body != null) 'Content-Type': 'application/json',
         if (token != null) 'Authorization': 'Bearer $token',
+        ...?headers,
       });
     if (body != null) req.body = jsonEncode(body);
     final http.Response res;
@@ -66,6 +67,36 @@ class TapApi {
     }
     return j;
   }
+
+  // ---- Vesopa AI (vesopa_server/src/go_advisor.js) ---------------------------
+  //
+  // Read-only questions about the venue's figures. The terminal token proves
+  // the device; the Vesopa AI session (a manager, or somebody a manager invited
+  // by email) proves the person, in its own header.
+
+  Map<String, String> _ai(String session) => {'X-Vesopa-AI': session};
+
+  Future<Map<String, dynamic>> aiSession({required int clerkId, required String pin}) =>
+      _send('POST', '/api/go/ai/session', {'clerk_id': clerkId, 'pin': pin});
+  Future<Map<String, dynamic>> aiRedeem({required int clerkId, required String pin, required String code}) =>
+      _send('POST', '/api/go/ai/invites/redeem', {'clerk_id': clerkId, 'pin': pin, 'code': code});
+  Future<Map<String, dynamic>> aiBriefing(String session, {int? site}) =>
+      _send('GET', '/api/go/ai/briefing${site == null ? '' : '?site=$site'}', null, _ai(session));
+  Future<Map<String, dynamic>> aiAsk(String session, {String? question, String? intent, String? period, int? site, Map<String, String?>? previous, bool words = true}) =>
+      _send('POST', '/api/go/ai/ask', {
+        'question': ?question,
+        'intent': ?intent,
+        'period': ?period,
+        'site': ?site,
+        'previous': ?previous,
+        'words': words,
+      }, _ai(session));
+  Future<Map<String, dynamic>> aiRecords(String session, {required String source, required String period, int? site}) =>
+      _send('GET', '/api/go/ai/records?source=$source&period=$period${site == null ? '' : '&site=$site'}', null, _ai(session));
+  Future<Map<String, dynamic>> aiInvites(String session) => _send('GET', '/api/go/ai/invites', null, _ai(session));
+  Future<Map<String, dynamic>> aiInvite(String session, {required String email, int? site}) =>
+      _send('POST', '/api/go/ai/invites', {'email': email, 'site_id': ?site}, _ai(session));
+  Future<void> aiRevoke(String session, int id) => _send('DELETE', '/api/go/ai/invites/$id', null, _ai(session));
 
   /// Any POST, for the outbox.
   Future<Map<String, dynamic>> post(String path, Map<String, Object?> body) => _send('POST', path, body);

@@ -1,0 +1,200 @@
+{
+  "greeting": "Good afternoon",
+  "name": "Owner Olive",
+  "headline": "£800.00 from 40 sales, down 27.3% on last Tuesday to the same time (14:30). Yesterday: revenue was £200.00, exactly level with the Monday before (Mon 9 Nov).",
+  "ai": {
+    "answer": "Today is quieter: £800.00 so far.",
+    "why": [],
+    "next": []
+  },
+  "ai_status": "on",
+  "ai_note": null,
+  "today": {
+    "label": "Today so far (Tue 17 Nov, to 14:30)",
+    "compare": "Last Tuesday to the same time (14:30)",
+    "cards": [
+      {
+        "type": "kpis",
+        "items": [
+          {
+            "label": "Revenue",
+            "value": 80000,
+            "kind": "money",
+            "change_pct": -27.3,
+            "good_when": "up"
+          },
+          {
+            "label": "Sales",
+            "value": 40,
+            "kind": "count",
+            "change_pct": -20,
+            "good_when": "up"
+          },
+          {
+            "label": "Average spend",
+            "value": 2000,
+            "kind": "money",
+            "change_pct": -9.1,
+            "good_when": "up"
+          },
+          {
+            "label": "Discounts",
+            "value": 1500,
+            "kind": "money",
+            "change_pct": 200,
+            "good_when": "down"
+          }
+        ]
+      },
+      {
+        "type": "bars",
+        "title": "Revenue by hour",
+        "kind": "money",
+        "compare_label": "Last Tuesday to the same time (14:30)",
+        "items": [
+          {
+            "label": "12",
+            "value": 40000,
+            "compare": 40000
+          },
+          {
+            "label": "13",
+            "value": 40000,
+            "compare": 70000
+          }
+        ]
+      }
+    ]
+  },
+  "yesterday": {
+    "label": "Yesterday (Mon 16 Nov)",
+    "compare": "The Monday before (Mon 9 Nov)",
+    "headline": "Revenue was £200.00, exactly level with the Monday before (Mon 9 Nov).",
+    "why": [],
+    "cards": [
+      {
+        "type": "kpis",
+        "items": [
+          {
+            "label": "Revenue",
+            "value": 20000,
+            "kind": "money",
+            "change_pct": 0,
+            "good_when": "up"
+          },
+          {
+            "label": "Sales",
+            "value": 10,
+            "kind": "count",
+            "change_pct": 0,
+            "good_when": "up"
+          },
+          {
+            "label": "Average spend",
+            "value": 2000,
+            "kind": "money",
+            "change_pct": 0,
+            "good_when": "up"
+          },
+          {
+            "label": "Discounts",
+            "value": 0,
+            "kind": "money",
+            "change_pct": null,
+            "good_when": "down"
+          }
+        ]
+      },
+      {
+        "type": "drivers",
+        "title": "What made the difference",
+        "total_minor": 0,
+        "items": [
+          {
+            "label": "Number of sales",
+            "value_minor": 0,
+            "detail": "10 against 10"
+          },
+          {
+            "label": "Spend per sale",
+            "value_minor": 0,
+            "detail": "£20.00 against £20.00"
+          }
+        ]
+      }
+    ]
+  },
+  "alerts": [
+    {
+      "tone": "bad",
+      "title": "1 counted product out of stock",
+      "detail": "Burger."
+    },
+    {
+      "tone": "warn",
+      "title": "1 product running low",
+      "detail": "Lager has about 3 days left at its usual rate."
+    },
+    {
+      "tone": "bad",
+      "title": "1 product selling below cost",
+      "detail": "Burger lost £161.33 on 44 sold."
+    }
+  ],
+  "actions": [
+    {
+      "title": "Reorder Lager",
+      "why": "Lager: 30 in stock, about 10 sold a day, so roughly 3 days of cover.",
+      "action": "stock"
+    },
+    {
+      "title": "Check the price or cost of Burger",
+      "why": "Net sales £366.67 against a cost of £528.00.",
+      "action": "profit"
+    },
+    {
+      "title": "Push Lager",
+      "why": "Your biggest profit earner: £440.00 gross profit at a 80% margin.",
+      "action": "profit"
+    },
+    {
+      "title": "Staff up for 13:00",
+      "why": "Your busiest hour: £700.00 from 30 sales.",
+      "action": "sales"
+    }
+  ],
+  "meta": {
+    "period": {
+      "key": "today",
+      "label": "Today so far (Tue 17 Nov, to 14:30)",
+      "from": "2026-11-17 00:00:00",
+      "to": "2026-11-17 14:30:00"
+    },
+    "compare": {
+      "label": "Last Tuesday to the same time (14:30)",
+      "from": "2026-11-10 00:00:00",
+      "to": "2026-11-10 14:30:00"
+    },
+    "site": {
+      "id": null,
+      "label": "All sites"
+    },
+    "definitions": [
+      "Revenue: what customers paid on closed sales, VAT included, after discounts (as the Z report counts it).",
+      "Sales: closed bills.",
+      "Average spend: revenue divided by sales.",
+      "Alerts and suggestions look at the last 7 days against the 7 before, and at stock over the last 28 days."
+    ],
+    "freshness": {
+      "last_sale_at": "2026-11-17 14:20:00",
+      "computed_at": "2026-11-17 14:30:00",
+      "note": "Sales count once a till has sent them to Vesopa."
+    },
+    "records": {
+      "source": "orders",
+      "period": "today",
+      "site": null
+    },
+    "read_only": true
+  }
+}

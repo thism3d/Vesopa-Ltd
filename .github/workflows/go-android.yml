@@ -35,6 +35,10 @@ on:
         description: Build number (empty = the next one Play has not seen)
         required: false
         default: ''
+      install_page:
+        description: Also put this build's APK on go.vesopa.com/install (the website installer)
+        type: boolean
+        default: false
       promote_code:
         description: With mode promote, the version code already in Play to move onto the track (no build)
         required: false
@@ -176,6 +180,21 @@ jobs:
           name: vesopa-go-apk
           path: ${{ runner.temp }}/android-apk/*.apk
           retention-days: 30
+
+      # The same APK on go.vesopa.com/install, the website installer
+      # (vesopa_go/tool/publish_install.py, over SSH as go-site.yml does it).
+      - name: go.vesopa.com/install
+        if: inputs.install_page && inputs.mode != 'listing' && inputs.mode != 'promote'
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+        run: |
+          [ -n "$VESOPA_SSH_PASSWORD" ] || { echo "::error::VESOPA_SSH_PASSWORD is not set"; exit 1; }
+          mkdir -p ~/.ssh "$RUNNER_TEMP/ssh"
+          printf 'Host *\n  StrictHostKeyChecking accept-new\n  ConnectTimeout 20\n  ServerAliveInterval 30\n  ControlMaster auto\n  ControlPath %s/cm-%%r@%%h\n  ControlPersist 30m\n' "$RUNNER_TEMP/ssh" > ~/.ssh/config
+          printf '#!/bin/sh\nprintf "%%s\n" "$VESOPA_SSH_PASSWORD"\n' > "$RUNNER_TEMP/ssh/askpass"; chmod 700 "$RUNNER_TEMP/ssh/askpass"
+          export SSH_ASKPASS="$RUNNER_TEMP/ssh/askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=':0'
+          python3 vesopa_go/tool/publish_install.py "$RUNNER_TEMP"/android-apk/VesopaGo-*.apk
+          rm -rf "$RUNNER_TEMP/ssh"
 
       - name: Upload to Google Play
         if: inputs.mode != 'build' && inputs.mode != 'promote'
