@@ -4,6 +4,12 @@
 
 A business advisor inside Go. An owner opens **Vesopa AI** from the drawer (or the ✦ button in the top bar on any screen) and sees how the business is doing, then asks questions in plain words: "Why did my sales drop yesterday?", "What stock should I reorder?", "Which branch performed best?". The answers come from the venue's own Vesopa EPOS data, with the charts and records behind them.
 
+## On a PC or laptop: go.vesopa.com/ai
+
+The same Vesopa AI in the browser (`vesopa_go/web/site/ai/`). Owners sign in with **Continue with Vesopa** using the email their venue is registered under. Anyone a manager invited signs in with the email the invite went to, and needs no code. The back office exchanges the sign-in code (`POST /api/go/ai/web/exchange`) and checks the session on every request, so a removed invite stops at once. Owners can also invite and remove people there. Linked from go.vesopa.com and vesopasoftware.com (the Vesopa Go section).
+
+Deploy: `Go - server` (live) adds the page's return address to Go's Vesopa Auth client (`vesopa_auth/schema/schema_030_vesopa_go_web_ai.sql`). `Go - site` (live) uploads the page. `vesopasoftware.com - files` with `site/index.html` updates vesopasoftware.com.
+
 ## What it does
 
 | Tab | What it shows |

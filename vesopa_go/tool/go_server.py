@@ -59,6 +59,7 @@ SERVER_DIR = REPO / "vesopa_server"
 AUTH_SQL = REPO / "vesopa_auth" / "schema" / "schema_028_vesopa_go_client.sql"
 # go.vesopa.com/signup's return address on Go's client (2026-11-17), run after 028.
 AUTH_SIGNUP_SQL = REPO / "vesopa_auth" / "schema" / "schema_029_vesopa_go_web_signup.sql"
+AUTH_AI_SQL = REPO / "vesopa_auth" / "schema" / "schema_030_vesopa_go_web_ai.sql"
 HOST = os.environ.get("VESOPA_SSH_HOST", "root@34.63.118.67")
 IP = "34.63.118.67"
 USER = "vesopasoftware"
@@ -356,6 +357,10 @@ fi""")
     out = text(f"{db(auth)} -N < /tmp/schema_029_vesopa_go_web_signup.sql; rm -f /tmp/schema_029_vesopa_go_web_signup.sql")
     m = re.search(r"web sign-up redirects=(\d+)", out)
     note(f"  go.vesopa.com/signup on Go's client: {m.group(1) if m else '?'} address(es)")
+    sh("cat > /tmp/schema_030_vesopa_go_web_ai.sql", data=AUTH_AI_SQL.read_bytes())
+    out = text(f"{db(auth)} -N < /tmp/schema_030_vesopa_go_web_ai.sql; rm -f /tmp/schema_030_vesopa_go_web_ai.sql")
+    m = re.search(r"web Vesopa AI redirects=(\d+)", out)
+    note(f"  go.vesopa.com/ai (Vesopa AI on the web) on Go's client: {m.group(1) if m else '?'} address(es)")
     return client
 
 

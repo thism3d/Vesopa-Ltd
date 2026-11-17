@@ -162,7 +162,7 @@ const pool = {
       const c = staff.get(Number(params[0]));
       return [[c && c.office === params[1] ? c : undefined].filter(Boolean)];
     }
-    if (s.startsWith('SELECT id, site_id FROM go_ai_invites')) {
+    if (s.startsWith('SELECT id, site_id FROM go_ai_invites') && s.includes('clerk_id = ?')) {
       return [invites.filter((i) => i.office === params[0] && i.clerk_id === params[1] && i.accepted_at && !i.revoked_at).slice(-1)];
     }
     if (s.startsWith('SELECT id FROM go_ai_invites')) {
@@ -187,6 +187,19 @@ const pool = {
     if (s.startsWith('SELECT id, name FROM bo_till_sites')) return [[{ id: 1, name: 'Swansea' }, { id: 2, name: 'Neath' }]];
     if (s.startsWith('SELECT terminal, label, site_id FROM bo_till_names')) return [[{ terminal: 'TILL-1', label: 'Bar till', site_id: 1 }, { terminal: 'TILL-2', label: 'Neath till', site_id: 2 }]];
     if (s.startsWith('SELECT name FROM offices')) return [[{ name: 'The Bridge' }]];
+    if (s.startsWith('SELECT name, contact_email FROM offices')) return [params[0] === OFFICE ? [{ name: 'The Bridge', contact_email: OFFICE }] : []];
+    if (s.startsWith('SELECT contact_email FROM offices')) return [params[0] === OFFICE ? [{ contact_email: OFFICE }] : []];
+    if (s.startsWith('SELECT id, site_id FROM go_ai_invites WHERE office = ? AND email = ?')) {
+      return [invites.filter((i) => i.office === params[0] && i.email === params[1] && !i.revoked_at && i.accepted_at).slice(-1)];
+    }
+    if (s.startsWith('SELECT id, office, accepted_at FROM go_ai_invites WHERE email = ?')) {
+      return [invites.filter((i) => i.email === params[0] && !i.revoked_at && (i.accepted_at || i.expires_at > params[1])).slice(-1)];
+    }
+    if (s.startsWith('UPDATE go_ai_invites SET accepted_at')) {
+      const i = invites.find((x) => x.id === params[1] && x.office === params[2]);
+      i.accepted_at = params[0];
+      return [{ affectedRows: 1 }];
+    }
     if (s.startsWith('SELECT MAX(o.closed_at) AS last')) return [[{ last: new Date(2026, 10, 17, 14, 20) }]];
     if (s.startsWith('SELECT COUNT(*) AS sales')) return [[totalsFor(params)]];
     if (s.startsWith('SELECT HOUR(o.closed_at)')) {
@@ -410,6 +423,71 @@ const mails = [];
     const ctx = { period: E.resolvePeriod('today', NOW), site: { label: 'Whole venue' } };
     for (const [k, b] of Object.entries(BUILDERS)) assert.ok(b(d, ctx).headline, `${k} answers an empty venue`);
     ok('an empty venue gets a sensible answer to everything');
+    // On the web (go.vesopa.com/ai): Continue with Vesopa, no phone and no PIN.
+    {
+      const idTokens = { 'tok-owner': OFFICE, 'tok-ana': 'ana@example.com', 'tok-stranger': 'who@example.com' };
+      const web = express();
+      web.use(goAdvisorRoutes({
+        pool, secret: SECRET, ai: null, mail: async (m) => { mails.push(m); return true; }, now: () => NOW,
+        goClient: () => ({ issuer: 'https://auth.test', clientId: 'go-client' }),
+        verifyIdToken: async (t) => ({ email: idTokens[t], email_verified: true, name: 'Web ' + idTokens[t] }),
+        fetchImpl: async (url, init) => {
+          assert.strictEqual(url, 'https://auth.test/oauth/token');
+          const code = new URLSearchParams(init.body).get('code');
+          return { ok: true, json: async () => ({ id_token: code }) };
+        },
+      }));
+      web.use((err, _req, res, _next) => res.status(500).json({ error: err.message }));
+      const ws = http.createServer(web).listen(0);
+      const wbase = `http://127.0.0.1:${ws.address().port}`;
+      const wcall = async (method, path, body, aiToken) => {
+        const res = await fetch(wbase + path, {
+          method,
+          headers: { 'content-type': 'application/json', ...(aiToken ? { 'x-vesopa-ai': aiToken } : {}) },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        return { status: res.status, body: await res.json() };
+      };
+      const ex = (code) => wcall('POST', '/api/go/ai/web/exchange', { code, code_verifier: 'v', redirect_uri: 'https://go.vesopa.com/ai/' });
+      try {
+        let w = await wcall('POST', '/api/go/ai/web/exchange', { code: 'tok-owner', code_verifier: 'v', redirect_uri: 'https://evil.example/ai/' });
+        assert.strictEqual(w.status, 400, 'only go.vesopa.com may sign in');
+        w = await ex('tok-stranger');
+        assert.strictEqual(w.status, 403);
+        assert.strictEqual(w.body.code, 'not_invited');
+        const owner = await ex('tok-owner');
+        assert.strictEqual(owner.status, 200);
+        assert.strictEqual(owner.body.role, 'owner');
+        assert.strictEqual(owner.body.can_invite, true);
+        assert.strictEqual(owner.body.sites.length, 2);
+        w = await wcall('GET', '/api/go/ai/briefing', null, owner.body.token);
+        assert.strictEqual(w.status, 200, 'the web session needs no phone');
+        assert.strictEqual(w.body.name, 'Web ' + OFFICE);
+        w = await wcall('GET', '/api/go/ai/briefing', null, 'forged');
+        assert.strictEqual(w.status, 401, 'no web session and no phone: refused');
+        // An owner invites by email from the web; that person signs in with the same email.
+        w = await wcall('POST', '/api/go/ai/invites', { email: 'ana@example.com', site_id: 1 }, owner.body.token);
+        assert.strictEqual(w.status, 200);
+        const ana = await ex('tok-ana');
+        assert.strictEqual(ana.status, 200);
+        assert.strictEqual(ana.body.role, 'invited');
+        assert.strictEqual(ana.body.site, 1);
+        assert.strictEqual(ana.body.can_invite, false);
+        w = await wcall('POST', '/api/go/ai/ask', { question: 'How much today?', words: false }, ana.body.token);
+        assert.strictEqual(w.body.meta.site.label, 'Swansea', 'an invite for one site sees that site on the web too');
+        w = await wcall('POST', '/api/go/ai/ask', { question: 'How much today?', site: 2, words: false }, ana.body.token);
+        assert.strictEqual(w.status, 403);
+        const anaInvite = invites.find((i) => i.email === 'ana@example.com');
+        w = await wcall('DELETE', `/api/go/ai/invites/${anaInvite.id}`, null, owner.body.token);
+        assert.strictEqual(w.status, 200);
+        w = await wcall('GET', '/api/go/ai/briefing', null, ana.body.token);
+        assert.strictEqual(w.status, 403, 'revoked at once on the web too');
+        ok('on the web: owners sign in, invited emails see their site, strangers and revoked invites do not');
+      } finally {
+        ws.close();
+      }
+    }
+
     if (process.env.ADVISOR_FIXTURES) {
       const fs = require('fs');
       const path = require('path');

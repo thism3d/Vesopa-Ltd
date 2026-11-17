@@ -99,7 +99,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WRITE_RE = /\b(change|set|update|edit|delete|remove|refund|void|cancel|create|raise|lower|increase|reduce|place|send|add)\b.{0,40}\b(price|prices|stock|order|orders|purchase|product|products|staff|rota|discount|refund|menu)\b/i;
 const WRITE_HINT = /^(please\s+)?(order|reorder|restock|refund|void|delete|change|set|update)\b/i;
 
-function goAdvisorRoutes({ pool, secret, ai = undefined, mail = undefined, now = () => new Date() }) {
+function goAdvisorRoutes({ pool, secret, ai = undefined, mail = undefined, now = () => new Date(), goClient = null, verifyIdToken = null, fetchImpl = (...a) => fetch(...a) }) {
   const router = express.Router();
   const terminal = requireTerminal(secret);
   const model = ai === undefined ? defaultAi() : ai;
@@ -205,6 +205,121 @@ function goAdvisorRoutes({ pool, secret, ai = undefined, mail = undefined, now =
       req.ai = { clerk, role: a.role, site: a.site };
       next();
     } catch (e) { fail(res, e, next); }
+  };
+
+  // ---- on the web: go.vesopa.com/ai, for a PC or a laptop ----------------------
+  //
+  // The venue's owner (the email the venue is registered under) signs in with
+  // Continue with Vesopa; so does anybody a manager invited by email, whose
+  // invite is for that same email. Vesopa Auth has confirmed the address, so
+  // no PIN is involved. The session is re-checked on every request, as the
+  // phone's is: a revoked invite stops at once.
+
+  async function webAccess(office, email) {
+    const [[o]] = await pool.query('SELECT name, contact_email FROM offices WHERE contact_email = ?', [office]);
+    if (!o) return null;
+    if (String(o.contact_email).toLowerCase() === email) return { role: 'owner', site: null, venue: o.name };
+    try {
+      const [[inv]] = await pool.query(
+        `SELECT id, site_id FROM go_ai_invites
+          WHERE office = ? AND email = ? AND revoked_at IS NULL AND accepted_at IS NOT NULL
+          ORDER BY id DESC LIMIT 1`,
+        [office, email]);
+      if (inv) return { role: 'invited', site: inv.site_id == null ? null : Number(inv.site_id), venue: o.name };
+    } catch (e) {
+      if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+    }
+    return null;
+  }
+
+  /** The venue this email may look at: its own first, else the newest live invite (accepted here). */
+  async function webVenueFor(email) {
+    const [[own]] = await pool.query('SELECT contact_email FROM offices WHERE contact_email = ? LIMIT 1', [email]);
+    if (own) return own.contact_email;
+    let inv;
+    try {
+      [[inv]] = await pool.query(
+        `SELECT id, office, accepted_at FROM go_ai_invites
+          WHERE email = ? AND revoked_at IS NULL AND (accepted_at IS NOT NULL OR expires_at > ?)
+          ORDER BY id DESC LIMIT 1`,
+        [email, E.sqlTime(now())]);
+    } catch (e) {
+      if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+    }
+    if (!inv) return null;
+    if (!inv.accepted_at) {
+      await pool.query('UPDATE go_ai_invites SET accepted_at = ? WHERE id = ? AND office = ?', [E.sqlTime(now()), inv.id, inv.office]);
+    }
+    return inv.office;
+  }
+
+  router.post('/api/go/ai/web/exchange', express.json(), async (req, res, next) => {
+    try {
+      const b = req.body || {};
+      const redirect = String(b.redirect_uri || '');
+      if (!/^https:\/\/(go\.vesopa\.com|go\.vesopaepos\.com|staging\.go\.vesopa\.com)\/ai\/?$/.test(redirect)
+        && !(process.env.NODE_ENV === 'test' && /^http:\/\/127\.0\.0\.1/.test(redirect))) {
+        throw new AdvisorError(400, 'That sign-in did not come from go.vesopa.com.');
+      }
+      const c = goClient && goClient();
+      if (!c || !c.clientId || !verifyIdToken) throw new AdvisorError(503, 'Continue with Vesopa is not switched on for Vesopa AI yet.');
+      const r = await fetchImpl(`${c.issuer}/oauth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: String(b.code || ''),
+          redirect_uri: redirect,
+          client_id: c.clientId,
+          code_verifier: String(b.code_verifier || ''),
+        }).toString(),
+      });
+      const tok = await r.json().catch(() => ({}));
+      if (!r.ok || !tok.id_token) throw new AdvisorError(401, 'Vesopa refused that sign-in. Try again.');
+      let claims;
+      try {
+        claims = await verifyIdToken(tok.id_token, 'go');
+      } catch {
+        throw new AdvisorError(401, 'That Vesopa sign-in could not be accepted. Try again.');
+      }
+      const email = String(claims.email || '').trim().toLowerCase();
+      if (!email || claims.email_verified === false) throw new AdvisorError(403, 'Your Vesopa account needs a confirmed email address.');
+      const office = await webVenueFor(email);
+      const a = office && (await webAccess(office, email));
+      if (!a) {
+        throw new AdvisorError(403, `${email} is not a venue owner on Vesopa, and has no invite to Vesopa AI. Ask the venue's owner or a manager to invite this email.`, 'not_invited');
+      }
+      const name = String(claims.name || '').trim().slice(0, 80) || email;
+      const s = await sites(office);
+      res.json({
+        token: jwt.sign({ scope: 'go-ai-web', office, email, name }, secret, { expiresIn: SESSION_TTL }),
+        name,
+        email,
+        venue: a.venue,
+        role: a.role,
+        site: a.site,
+        sites: (a.site == null ? s.sites : s.sites.filter((x) => Number(x.id) === a.site)).map((x) => ({ id: Number(x.id), name: x.name })),
+        can_invite: a.role === 'owner',
+        ai: model ? { on: true } : { on: false, why: 'AI wording is not switched on for this server. Every figure still works; explanations use plain wording.' },
+        suggestions: E.SUGGESTIONS,
+      });
+    } catch (e) { fail(res, e, next); }
+  });
+
+  /** A phone (terminal token and a PIN session), or the website (a web session). */
+  const aiAuth = async (req, res, next) => {
+    let claims = null;
+    try { claims = jwt.verify(String(req.headers['x-vesopa-ai'] || ''), secret); } catch { /* the phone's way, below */ }
+    if (claims && claims.scope === 'go-ai-web') {
+      try {
+        const a = await webAccess(claims.office, claims.email);
+        if (!a) throw new AdvisorError(403, 'Your access to Vesopa AI has been withdrawn.', 'not_invited');
+        req.office = claims.office;
+        req.ai = { clerk: { id: null, name: claims.name || claims.email }, role: a.role, site: a.site, web: true };
+        return next();
+      } catch (e) { return fail(res, e, next); }
+    }
+    return terminal(req, res, (err) => (err ? next(err) : advisor(req, res, next)));
   };
 
   const fail = (res, e, next) => (e instanceof AdvisorError ? res.status(e.status).json({ error: e.message, code: e.code || null }) : next(e));
@@ -512,7 +627,7 @@ function goAdvisorRoutes({ pool, secret, ai = undefined, mail = undefined, now =
     } catch (e) { fail(res, e, next); }
   });
 
-  router.post('/api/go/ai/ask', terminal, advisor, express.json(), async (req, res, next) => {
+  router.post('/api/go/ai/ask', aiAuth, express.json(), async (req, res, next) => {
     try {
       const b = req.body || {};
       const question = String(b.question || '').trim().slice(0, 500);
@@ -574,7 +689,7 @@ function goAdvisorRoutes({ pool, secret, ai = undefined, mail = undefined, now =
    * The briefing: today so far against the same time last week, yesterday
    * against the same day last week, what needs attention and what to do.
    */
-  router.get('/api/go/ai/briefing', terminal, advisor, async (req, res, next) => {
+  router.get('/api/go/ai/briefing', aiAuth, async (req, res, next) => {
     try {
       const sc = await scope(req, req.query.site);
       const today = E.resolvePeriod('today', now());
@@ -643,7 +758,7 @@ function goAdvisorRoutes({ pool, secret, ai = undefined, mail = undefined, now =
   });
 
   /** The rows behind an answer: what "View data" opens. Never customer details. */
-  router.get('/api/go/ai/records', terminal, advisor, async (req, res, next) => {
+  router.get('/api/go/ai/records', aiAuth, async (req, res, next) => {
     try {
       const sc = await scope(req, req.query.site);
       const period = E.resolvePeriod(String(req.query.period || 'today'), now());
@@ -731,10 +846,10 @@ function goAdvisorRoutes({ pool, secret, ai = undefined, mail = undefined, now =
   // ---- invites (managers) -----------------------------------------------------------------
 
   const managerOnly = (req) => {
-    if (req.ai.role !== 'manager') throw new AdvisorError(403, 'Only a manager can invite people to Vesopa AI.');
+    if (req.ai.role !== 'manager' && req.ai.role !== 'owner') throw new AdvisorError(403, 'Only a manager can invite people to Vesopa AI.');
   };
 
-  router.get('/api/go/ai/invites', terminal, advisor, async (req, res, next) => {
+  router.get('/api/go/ai/invites', aiAuth, async (req, res, next) => {
     try {
       managerOnly(req);
       const [rows] = await pool.query(
@@ -761,7 +876,7 @@ function goAdvisorRoutes({ pool, secret, ai = undefined, mail = undefined, now =
     } catch (e) { fail(res, e, next); }
   });
 
-  router.post('/api/go/ai/invites', terminal, advisor, express.json(), async (req, res, next) => {
+  router.post('/api/go/ai/invites', aiAuth, express.json(), async (req, res, next) => {
     try {
       managerOnly(req);
       const b = req.body || {};
@@ -794,12 +909,14 @@ function goAdvisorRoutes({ pool, secret, ai = undefined, mail = undefined, now =
             '',
             `Your code: ${code}`,
             '',
-            'To use it: open Vesopa Go, sign on with your own staff PIN, tap the AI tab, choose "I have an invite code" and type the code above.',
+            'On a phone or iPad: open Vesopa Go, sign on with your own staff PIN, open Vesopa AI, choose "I have an invite code" and type the code above.',
+            `On a PC or laptop: go to https://go.vesopa.com/ai/ and sign in with your Vesopa account for ${email}. No code is needed there.`,
             `The code works once and expires in ${INVITE_DAYS} days. If you were not expecting this, you can ignore it.`,
           ].join('\n'),
           html: `<p>${escapeHtml(req.ai.clerk.name)} has invited you to <b>Vesopa AI</b>${escapeHtml(where)}: ask questions about the business's sales, profit, stock and team in Vesopa Go.</p>`
             + `<p style="font-size:28px;font-weight:800;letter-spacing:4px;font-family:monospace">${code}</p>`
-            + '<p>Open Vesopa Go, sign on with your own staff PIN, tap the <b>AI</b> tab, choose <b>I have an invite code</b> and type the code above.</p>'
+            + '<p><b>On a phone or iPad:</b> open Vesopa Go, sign on with your own staff PIN, open <b>Vesopa AI</b>, choose <b>I have an invite code</b> and type the code above.</p>'
+            + `<p><b>On a PC or laptop:</b> go to <a href="https://go.vesopa.com/ai/">go.vesopa.com/ai</a> and sign in with your Vesopa account for ${escapeHtml(email)}. No code is needed there.</p>`
             + `<p style="color:#666">The code works once and expires in ${INVITE_DAYS} days. If you were not expecting this, you can ignore it.</p>`,
         }));
       } catch (e) {
@@ -815,7 +932,7 @@ function goAdvisorRoutes({ pool, secret, ai = undefined, mail = undefined, now =
     } catch (e) { fail(res, e, next); }
   });
 
-  router.delete('/api/go/ai/invites/:id', terminal, advisor, async (req, res, next) => {
+  router.delete('/api/go/ai/invites/:id', aiAuth, async (req, res, next) => {
     try {
       managerOnly(req);
       const [r] = await pool.query(

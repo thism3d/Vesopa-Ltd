@@ -1,0 +1,47 @@
+# vesopasoftware.com: ship named files of vesopasoftware/ (the page and its
+# assets under site/, or the Node app under server/), with
+# tool/deploy_vesopasoftware_files.py, which the office PC runs too: backup
+# first, upload only the named files, restart only when a server file changed,
+# then check the home page answers.
+#
+# Actions > "vesopasoftware.com - files" > Run workflow, with the paths
+# relative to vesopasoftware/ separated by spaces, e.g. "site/index.html".
+#
+# The repository and its logs are public: the tool prints file names and
+# status codes only.
+name: vesopasoftware.com - files
+
+on:
+  workflow_dispatch:
+    inputs:
+      files:
+        description: Paths under vesopasoftware/, separated by spaces (e.g. site/index.html site/css/sections.css)
+        required: true
+        default: site/index.html
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vesopasoftware-site
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: App Store Connect API
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy the named files
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+          VESOPA_SSH_HOST: root@34.63.118.67
+          FILES: ${{ inputs.files }}
+        run: |
+          [ -n "$VESOPA_SSH_PASSWORD" ] || { echo "::error::VESOPA_SSH_PASSWORD is not set"; exit 1; }
+          for f in $FILES; do
+            case "$f" in *..*|*.env*|/*) echo "::error::not a vesopasoftware file: $f"; exit 1;; esac
+          done
+          python3 -m pip install --quiet paramiko
+          python3 tool/deploy_vesopasoftware_files.py $FILES
