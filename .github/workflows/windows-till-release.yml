@@ -41,8 +41,10 @@
 #                  of Azure (tool/ci_find_signing.py) unless TRUSTED_SIGNING_ENDPOINT,
 #                  TRUSTED_SIGNING_ACCOUNT and TRUSTED_SIGNING_PROFILE are set
 #   Store app      VESOPA_EPOS_STORE_ID (default 9PDMNJXNFZCW)
-#   MS_STORE_TENANT_ID / _CLIENT_ID / _CLIENT_SECRET, if set, are used for the
-#                  Store instead of the app registration above
+#   MS_STORE_TENANT_ID / _CLIENT_ID / _CLIENT_SECRET, AZURE_TENANT_ID /
+#                  _CLIENT_ID / _CLIENT_SECRET: tried as well. The secrets job
+#                  signs in with every pair and uses whichever Azure accepts for
+#                  signing and whichever Partner Center accepts for the Store
 #   VESOPA_SSH_PASSWORD  root on the admin.vesopa.com box (as backoffice-patch.yml)
 
 name: Windows - till release
@@ -87,8 +89,8 @@ jobs:
       endpoint: ${{ steps.sign.outputs.endpoint }}
       account: ${{ steps.sign.outputs.account }}
       profile: ${{ steps.sign.outputs.profile }}
-      client_from: ${{ steps.sign.outputs.client_from }}
-      store_client_from: ${{ steps.sign.outputs.store_client_from }}
+      sign_pair: ${{ steps.sign.outputs.sign_pair }}
+      store_pair: ${{ steps.sign.outputs.store_pair }}
     steps:
       - uses: actions/checkout@v4
 
@@ -134,14 +136,22 @@ jobs:
           [ "${{ inputs.admin }}" = "true" ] && set -- "$@" VESOPA_SSH_PASSWORD=
           bash tool/ci_pick_secrets.sh "$@"
 
-      # Names, not secrets: passed to the build job as outputs.
+      # Tries every client id + secret pair against Azure and Partner Center and
+      # passes on the NAMES of the pairs that work (outputs cannot carry secrets).
       - name: Code signing account and profile
         id: sign
         env:
           CODE_SIGNING_RESOURCE: ${{ secrets.MICROSOFT_CODE_SIGNING_RESOURCE || secrets.MICROSOFT_CODE_SIGNING_RESOURCE_ID || secrets.MICROSOFT_CODE_SIGNING_RESOURCE_GROUP || secrets.MICROSOFT_CODE_SIGNING_RESOURCE_NAME || secrets.MICROSOFT_CODE_SIGNING_RESOURCES || secrets.MICROSOFT_CODE_SIGNING_RESOURCE_URI || secrets.MICROSOFT_CODE_SIGNING_RESOURCE_PATH || secrets.MICROSOFT_CODE_SIGNING_RESOURCE_GROUP_NAME || secrets.MICROSOFT_CODE_SIGNING_RESOURCE_ACCOUNT }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
+          MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+          MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
+          MICROSOFT_TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
           MICROSOFT_VESOPA_CLIENT_ID: ${{ secrets.MICROSOFT_VESOPA_CLIENT_ID }}
           MICROSOFT_APPLICATION_ID: ${{ secrets.MICROSOFT_APPLICATION_ID }}
-          CLIENT_ID_CANDIDATES: MICROSOFT_VESOPA_CLIENT_ID MICROSOFT_APPLICATION_ID
+          MICROSOFT_VESOPA_CLIENT_KEY: ${{ secrets.MICROSOFT_VESOPA_CLIENT_KEY }}
           TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
           TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
           TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
@@ -180,12 +190,14 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
+          MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+          MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
           MICROSOFT_TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
           MICROSOFT_VESOPA_CLIENT_ID: ${{ secrets.MICROSOFT_VESOPA_CLIENT_ID }}
           MICROSOFT_APPLICATION_ID: ${{ secrets.MICROSOFT_APPLICATION_ID }}
           MICROSOFT_VESOPA_CLIENT_KEY: ${{ secrets.MICROSOFT_VESOPA_CLIENT_KEY }}
-          MICROSOFT_VESOPA_CLIENT_SECRET: ${{ secrets.MICROSOFT_VESOPA_CLIENT_SECRET }}
-        run: bash tool/ci_pick_secrets.sh AZURE_TENANT_ID=MICROSOFT_TENANT_ID AZURE_CLIENT_ID=${{ needs.secrets.outputs.client_from }},MICROSOFT_VESOPA_CLIENT_ID,MICROSOFT_APPLICATION_ID AZURE_CLIENT_SECRET=MICROSOFT_VESOPA_CLIENT_KEY,MICROSOFT_VESOPA_CLIENT_SECRET
+        run: bash tool/ci_use_pair.sh "${{ needs.secrets.outputs.sign_pair }}" AZURE
 
       # Builds with pubspec's windows_build_args (release, obfuscated), signs
       # the program and every unsigned DLL, makes the installer and signs it.
@@ -278,15 +290,14 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
+          MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+          MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
           MICROSOFT_TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
           MICROSOFT_VESOPA_CLIENT_ID: ${{ secrets.MICROSOFT_VESOPA_CLIENT_ID }}
           MICROSOFT_APPLICATION_ID: ${{ secrets.MICROSOFT_APPLICATION_ID }}
           MICROSOFT_VESOPA_CLIENT_KEY: ${{ secrets.MICROSOFT_VESOPA_CLIENT_KEY }}
-          MICROSOFT_VESOPA_CLIENT_SECRET: ${{ secrets.MICROSOFT_VESOPA_CLIENT_SECRET }}
-          MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
-          MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
-          MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
-        run: bash tool/ci_pick_secrets.sh MS_STORE_TENANT_ID=MICROSOFT_TENANT_ID,AZURE_TENANT_ID MS_STORE_CLIENT_ID=${{ needs.secrets.outputs.store_client_from }},MICROSOFT_VESOPA_CLIENT_ID,MICROSOFT_APPLICATION_ID,AZURE_CLIENT_ID MS_STORE_CLIENT_SECRET=MICROSOFT_VESOPA_CLIENT_KEY,MICROSOFT_VESOPA_CLIENT_SECRET,AZURE_CLIENT_SECRET
+        run: bash tool/ci_use_pair.sh "${{ needs.secrets.outputs.store_pair }}" MS_STORE
 
       - uses: actions/setup-node@v4
         with:
