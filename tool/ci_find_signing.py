@@ -93,13 +93,33 @@ def main():
 
     if not (tenant and client and secret):
         fail("No app registration to ask Azure with (tenant, client id, client secret).")
-    code, tok = http(f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
-                     {"grant_type": "client_credentials", "client_id": client,
-                      "client_secret": secret, "scope": f"{ARM}/.default"})
-    if code != 200:
-        fail(f"Azure refused the app registration's sign-in: {tok.get('error')}: "
-             f"{(tok.get('error_description') or '').splitlines()[0] if tok.get('error_description') else ''}")
-    token = tok["access_token"]
+    # Each client id the environment holds, tried with the key: for Azure (signing)
+    # and for Partner Center (the Store). Names only are printed.
+    tried = [("AZURE_CLIENT_ID", client)]
+    for name in os.environ.get("CLIENT_ID_CANDIDATES", "").split():
+        v = os.environ.get(name, "").strip()
+        if v and v not in [c for _, c in tried]:
+            tried.append((name, v))
+    token = None
+    store_ok = None
+    for name, cid in tried:
+        for scope, label in ((f"{ARM}/.default", "Azure"), ("https://manage.devcenter.microsoft.com/.default", "Partner Center")):
+            code, tok = http(f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+                             {"grant_type": "client_credentials", "client_id": cid,
+                              "client_secret": secret, "scope": scope})
+            why = (tok.get("error_description") or "").split(" Trace ID")[0]
+            print(f"  sign-in as {name} for {label}: {'ok' if code == 200 else why}")
+            if code == 200 and label == "Azure" and token is None:
+                token = tok["access_token"]
+                write_out("client_from", os.environ.get("AZURE_CLIENT_FROM", name) if name == "AZURE_CLIENT_ID" else name)
+            if code == 200 and label == "Partner Center" and store_ok is None:
+                store_ok = name
+                write_out("store_client_from", os.environ.get("AZURE_CLIENT_FROM", name) if name == "AZURE_CLIENT_ID" else name)
+    if token is None:
+        fail("No client id signs in to Azure with the client key. The app registration must be an "
+             "organisation app: in Azure portal > App registrations > the app > Authentication, "
+             "Supported account types must include 'Accounts in this organizational directory', and "
+             "the key (Certificates & secrets) must belong to that same app.")
 
     subs = [sub] if sub else []
     if not subs:
@@ -150,6 +170,13 @@ def main():
                  "add the one to sign with as the TRUSTED_SIGNING_PROFILE secret.")
         profile = pick[0]["name"]
     done(endpoint, account, profile)
+
+
+def write_out(key, value):
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a", encoding="utf-8") as f:
+            f.write(f"{key}={value}\n")
 
 
 def done(endpoint, account, profile):

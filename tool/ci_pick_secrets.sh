@@ -48,6 +48,7 @@ for spec in "$@"; do
     echo "::add-mask::$value"
     d="EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
     printf '%s<<%s\n%s\n%s\n' "$canon" "$d" "$value" "$d" >> "$GITHUB_ENV"
+    echo "${canon}_FROM=${from%% *}" >> "$GITHUB_ENV"
   fi
 done
 if [ -n "$missing" ]; then
