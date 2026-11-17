@@ -38,7 +38,9 @@ on:
       install_page:
         description: Also put this build's APK on go.vesopa.com/install (the website installer)
         type: boolean
-        default: false
+        # On by default (owner, 2026-11-17: "go.vesopa.com/install why not
+        # transferring to the website?"): every release reaches the installer.
+        default: true
       promote_code:
         description: With mode promote, the version code already in Play to move onto the track (no build)
         required: false
