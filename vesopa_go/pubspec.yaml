@@ -4,7 +4,7 @@ publish_to: 'none'
 
 # The store version and build. The workflows give each upload the next build
 # number the store has not seen; this is the floor.
-version: 1.2.62+1
+version: 1.2.63+1
 
 environment:
   sdk: ^3.13.4
@@ -45,6 +45,10 @@ dependencies:
   # Adverts kept on the device (lib/display/data/local_adverts.dart).
   path_provider: ^2.1.5
   mek_stripe_terminal: ^5.7.3
+  # Stripe's native sign-up screens: Identity, Connect onboarding, the card
+  # sheet (packages/stripe_onboarding; owner 2026-11-17).
+  stripe_onboarding:
+    path: packages/stripe_onboarding
   permission_handler: ^13.0.2
   pay: ^3.3.0
 

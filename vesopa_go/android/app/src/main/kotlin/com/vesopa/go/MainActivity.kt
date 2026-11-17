@@ -43,6 +43,13 @@ class MainActivity : FlutterFragmentActivity() {
     }
     private var receiver: BroadcastReceiver? = null
 
+    // Stripe's Identity and card sheets register for results here, as Android
+    // allows only while the activity is created (packages/stripe_onboarding).
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        com.vesopa.stripe_onboarding.StripeOnboarding.onActivityCreate(this)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.vesopa.go/dojo").setMethodCallHandler { call, result ->

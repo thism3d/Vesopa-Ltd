@@ -86,6 +86,6 @@
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Vesopa Go uses Bluetooth to connect to card readers.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Vesopa Go scans QR codes and barcodes (tables, products, member cards, tickets), and a manager can photograph a product for the menu.</string>
+	<string>Vesopa Go scans QR codes and barcodes (tables, products, member cards, tickets), a manager can photograph a product for the menu, and when signing a venue up the owner photographs their ID and takes a selfie for Stripe's identity check.</string>
 </dict>
 </plist>

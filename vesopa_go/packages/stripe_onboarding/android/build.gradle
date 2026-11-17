@@ -1,0 +1,50 @@
+// Stripe's native sign-up screens for Vesopa Go (../lib/stripe_onboarding.dart).
+group = "com.vesopa.stripe_onboarding"
+version = "1.0.0"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+android {
+    namespace = "com.vesopa.stripe_onboarding"
+    compileSdk = 36
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    sourceSets {
+        main.java.srcDirs += "src/main/kotlin"
+    }
+
+    defaultConfig {
+        minSdk = 26
+    }
+}
+
+dependencies {
+    // One version for all three, so they share stripe-core.
+    implementation "com.stripe:identity:23.26.0"
+    implementation "com.stripe:connect:23.26.0"
+    implementation "com.stripe:paymentsheet:23.26.0"
+    implementation "androidx.fragment:fragment-ktx:1.8.9"
+}

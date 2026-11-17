@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign up for Vesopa Go</title>
+<meta name="description" content="Sign your venue up for Vesopa Go: create your Vesopa account, tell us about your business, verify your identity with Stripe, connect your bank, and start with 14 days free.">
+<meta name="theme-color" content="#111111">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.png">
+<link rel="stylesheet" href="/style.css">
+<script src="/js/accent.js?v=1"></script>
+<style>
+  .doc .lead{font-size:1.08em}
+  .mode{display:flex;gap:14px;align-items:flex-start;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:18px 0}
+  .mode b{display:block;margin-bottom:2px}
+  .mode .dot{width:12px;height:12px;border-radius:50%;margin-top:6px;flex:none}
+  .mode.test .dot{background:#3E8CF0}.mode.capped .dot{background:#F5B301}.mode.live .dot{background:#2E9E5B}
+  .su-step{border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0;background:var(--card)}
+  .su-step.current{border:2px solid var(--lime)}
+  .su-step header{display:flex;align-items:center;gap:10px}
+  .su-step h3{margin:0;flex:1;font-size:1.1em}
+  .tag{font-size:.82em;font-weight:700;padding:2px 10px;border-radius:99px;white-space:nowrap}
+  .tag.todo{background:rgba(127,127,127,.15);color:var(--muted)}
+  .tag.waiting{background:rgba(245,179,1,.18);color:#9A6F00}
+  .tag.problem{background:rgba(229,72,77,.15);color:#C2373B}
+  .tag.done{background:rgba(46,158,91,.15);color:#2E9E5B}
+  .su-step p{margin:8px 0 0;color:var(--muted)}
+  .su-step .act{margin-top:12px;display:flex;gap:10px;flex-wrap:wrap}
+  .err{color:#E5484D;font-weight:600;margin:10px 0}
+  form.f{display:grid;gap:12px;margin-top:14px}
+  form.f label{display:grid;gap:6px;font-weight:600}
+  form.f input,form.f select{font:inherit;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--raised);color:var(--text);width:100%;box-sizing:border-box}
+  form.f .types{display:grid;gap:8px}
+  form.f .types label{display:flex;gap:10px;align-items:center;font-weight:500;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+  form.f .hint{font-weight:400;color:var(--muted);font-size:.9em}
+  .pane{margin-top:14px}
+  #connect-onboarding{min-height:200px}
+  .small{font-size:.9em;color:var(--muted)}
+  button.btn{border:0;cursor:pointer;font:inherit}
+  button.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  button.btn[disabled]{opacity:.55;cursor:default}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/go-mark.png" alt="">Vesopa <b>Go</b></a>
+  <nav class="links"><a href="/">Home</a><a href="/get-started/">Get started</a><a href="/support">Support</a></nav>
+</div></header>
+
+<main class="doc">
+  <h1>Sign up for Vesopa Go</h1>
+  <p class="lead">Take orders and card payments on your phones, with your sales, staff and menu in the Vesopa back office. <strong>14 days free</strong>, then £29 a month. Card payments are processed by <strong>Stripe</strong>.</p>
+  <p class="small">You'll need about ten minutes, your passport, driving licence or ID card, a phone or computer with a camera, and your business's bank details.</p>
+
+  <div id="app" aria-live="polite"><p>Loading…</p></div>
+
+  <noscript><p class="err">This page needs JavaScript switched on.</p></noscript>
+
+  <h2>Your data</h2>
+  <p class="small">Your ID, selfie, bank and card details go straight to Stripe, who are regulated to check them, and are never stored by Vesopa. Read our <a href="/privacy">privacy policy</a> and <a href="/terms">terms</a>, and <a href="https://stripe.com/gb/privacy" rel="noopener">Stripe's privacy policy</a>.</p>
+</main>
+
+<footer class="bottom"><div class="wrap">
+  <span>© Vesopa Software Ltd · company number 17362206</span>
+  <a href="/">Home</a><a href="/get-started/">Get started</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a>
+</div></footer>
+
+<script src="https://js.stripe.com/v3/"></script>
+<script src="https://connect-js.stripe.com/v1.0/connect.js" async></script>
+<script src="/js/signup-config.js?v=1"></script>
+<script src="/js/signup.js?v=1"></script>
+</body>
+</html>

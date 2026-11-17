@@ -25,7 +25,7 @@ const { attachAccess, requirePermission } = require('./permissions');
 
 const USES = ['tap', 'online', 'memberships'];
 
-function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
+function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe, capCheck = null, onEvent = null }) {
   // Helpers a stand-in client (tests) leaves out come from the real one.
   client = { ...stripe, ...client };
   const router = express.Router();
@@ -214,6 +214,20 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
     return row;
   }
 
+  /**
+   * A new Vesopa Go venue whose sign-up checks are not all done is capped
+   * (go_onboarding.js): £250 a payment, £1,000 a day. True when the payment
+   * may go ahead; otherwise the answer is sent.
+   */
+  async function withinCap(req, res, row, amount) {
+    const hook = router.capCheck || capCheck;
+    if (!hook) return true;
+    const why = await hook(req.office, row, amount);
+    if (!why) return true;
+    res.status(409).json({ error: why, code: 'onboarding_limit' });
+    return false;
+  }
+
   router.get('/till/stripe/config', terminal, async (req, res, next) => {
     try { res.json(view(await settingsFor(req.office))); } catch (e) { fail(res, e, next); }
   });
@@ -233,6 +247,7 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
       if (!row) return;
       const amount = Math.round(Number(req.body && req.body.amount_minor));
       if (!Number.isInteger(amount) || amount < 30) return res.status(400).json({ error: 'At least 30p.' });
+      if (!(await withinCap(req, res, row, amount))) return;
       const pi = await client.createTerminalPayment(row.account_id, {
         amountMinor: amount,
         reference: req.body.reference ? String(req.body.reference).slice(0, 80) : undefined,
@@ -259,6 +274,7 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
       const token = String((req.body && req.body.token) || '');
       if (!Number.isInteger(amount) || amount < 30) return res.status(400).json({ error: 'At least 30p.' });
       if (!/^tok_\w{4,}$/.test(token)) return res.status(400).json({ error: 'Google Pay gave no card.' });
+      if (!(await withinCap(req, res, row, amount))) return;
       const pi = await client.createWalletPayment(row.account_id, {
         amountMinor: amount,
         token,
@@ -377,6 +393,7 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
       if (!reader.startsWith('tmr_')) return res.status(400).json({ error: 'Which reader?' });
       const amount = Math.round(Number(b.amount_minor));
       if (!Number.isInteger(amount) || amount < 30) return res.status(400).json({ error: 'At least 30p.' });
+      if (!(await withinCap(req, res, row, amount))) return;
       const pi = await client.createTerminalPayment(row.account_id, {
         amountMinor: amount,
         reference: b.reference ? String(b.reference).slice(0, 80) : undefined,
@@ -504,12 +521,17 @@ function stripeRoutes({ pool, broadcast = () => {}, secret, client = stripe }) {
           }, { office: row.office });
         }
       }
+      // Vesopa Go sign-ups (go_onboarding.js): identity checks and licences.
+      const hook = router.onStripeEvent || onEvent;
+      if (hook) await hook(event);
     } catch (e) {
       console.error('stripe webhook', e && e.message);
     }
     res.json({ received: true });
   });
 
+  // For go_onboarding.js, which makes a new venue's account and reads its state.
+  router.settings = { settingsFor, save, refresh, view };
   return router;
 }
 

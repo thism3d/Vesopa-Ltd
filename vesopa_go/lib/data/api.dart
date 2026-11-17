@@ -261,6 +261,36 @@ class TapApi {
   // test/api_paths_test.dart pins each one.
 
   Future<Map<String, dynamic>> stripeConfig() => _send('GET', '/api/till/stripe/config');
+
+  // ---- Signing up: identity, business, bank and licence (go_onboarding.js) ----
+
+  /// Where the venue's sign-up checks stand, and what comes next.
+  Future<Map<String, dynamic>> onboardingStatus({bool refresh = false}) =>
+      _send('GET', '/api/go/onboarding${refresh ? '?refresh=1' : ''}');
+
+  Future<Map<String, dynamic>> saveBusiness({
+    required String type,
+    required String legalName,
+    required int expectedMonthlyMinor,
+    required int averageSaleMinor,
+  }) =>
+      _send('PUT', '/api/go/onboarding/business', {
+        'business_type': type,
+        'legal_name': legalName,
+        'expected_monthly_minor': expectedMonthlyMinor,
+        'average_sale_minor': averageSaleMinor,
+      });
+
+  /// A Stripe Identity session for the owner's ID and selfie, with the
+  /// ephemeral key Stripe's mobile sheet needs.
+  Future<Map<String, dynamic>> identitySession() => _send('POST', '/api/go/onboarding/identity', {'mobile': true});
+
+  /// The venue's Stripe account (made on the first call) and an account
+  /// session for Stripe's own onboarding screens.
+  Future<Map<String, dynamic>> stripeOnboardingSession() => _send('POST', '/api/go/onboarding/stripe');
+
+  /// The licence's SetupIntent: 14 days free, then £29 a month.
+  Future<Map<String, dynamic>> licenceSession() => _send('POST', '/api/go/onboarding/licence');
   Future<Map<String, dynamic>> stripeConnectionToken() => _send('POST', '/api/till/stripe/connection-token', const {});
   /// [attempt] is new for every try, so a second try on the same bill is a
   /// new payment, not the first one handed back (2026-11-08).
