@@ -25,8 +25,8 @@ What `staging` and `live` do, in order, stopping at the first thing wrong:
              the back-office and Vesopa Auth databases. Nothing is deleted from
              any database, ever; the dumps are there so anything can be undone.
   4. deploy  the changed files (nothing on the server is deleted), then
-             schema/schema_tap.sql (CREATE TABLE IF NOT EXISTS only) and
-             schema/schema_go_licence.sql (The Vesopa Kitchen's Go licence,
+             schema/schema_tap.sql and schema/schema_go_ai.sql (CREATE TABLE
+             IF NOT EXISTS only) and schema/schema_go_licence.sql (The Vesopa Kitchen's Go licence,
              INSERT IGNORE: added only when the venue has none).
   5. auth    vesopa_auth/schema/schema_028_vesopa_go_client.sql: Go's own client,
              a copy of the till's (adds rows only; nothing if it is there), and
@@ -328,6 +328,11 @@ def deploy_files(app, upload):
     sh(f"cat > {app}/schema/schema_staff_items.sql && chown {USER}:{USER} {app}/schema/schema_staff_items.sql", data=staff.read_bytes())
     sh(f"{db(app)} < schema/schema_staff_items.sql")
     note("  schema_staff_items.sql applied (bo_products.staff_item, epos_staff_drinks, if missing)")
+    # Vesopa AI's invites (2026-11-17): one table, CREATE TABLE IF NOT EXISTS.
+    ai = SERVER_DIR / "schema" / "schema_go_ai.sql"
+    sh(f"cat > {app}/schema/schema_go_ai.sql && chown {USER}:{USER} {app}/schema/schema_go_ai.sql", data=ai.read_bytes())
+    sh(f"{db(app)} < schema/schema_go_ai.sql")
+    note("  schema_go_ai.sql applied (go_ai_invites, if missing)")
 
 
 def auth_client(app, auth):
@@ -436,6 +441,12 @@ def main():
         upload, conflicts = plan(app)
         missing = modules_missing(app, upload)
         note(f"  packages the new code needs that are not installed: {', '.join(missing) or 'none'}")
+        # Vesopa AI words its answers with DeepSeek (Gemini as the backup) when
+        # these are set; without them it still answers, in plain wording. Names
+        # only: never a value.
+        for key in ("DEEPSEEK_API_KEY", "GEMINI_API_KEY"):
+            have = text(f"grep -qE '^{key}=.+' {app}/.env && echo set || echo missing", check=False)
+            note(f"  {key} in the app's .env: {have}")
         if mode == "check":
             continue
         if conflicts:
