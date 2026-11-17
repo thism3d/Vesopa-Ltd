@@ -1,0 +1,5 @@
+Version 1.16.54.0 - Tables on every till
+
+A table opened on one till now appears on the others, with or without the internet.
+Each till keeps its own X and Z; a switch in Settings, Local network adds one report for all tills.
+A phone or tablet running Vesopa Go as a Card terminal can take this till's card payments.

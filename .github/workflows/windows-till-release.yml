@@ -1,0 +1,306 @@
+# The Windows till (Vesopa EPOS), built and signed on GitHub's Windows machine,
+# then sent to the Microsoft Store and put on admin.vesopa.com/downloads.
+# The GitHub twin of tool/release_store_*.py + tool/build-installers.ps1
+# -Publish: nothing needs the build PC.
+#
+# Actions > "Windows - till release" > Run workflow.
+#
+#   1. secrets   every secret the chosen steps need is checked first, on a
+#                small Linux machine, so a missing one stops the run in seconds
+#                rather than after the Windows build
+#   2. build     flutter build windows with pubspec's windows_build_args, every
+#                unsigned .exe/.dll signed with Azure Trusted Signing
+#                (tool/build-installers.ps1), the Inno Setup installer made and
+#                signed, both checked to carry Vesopa Software Ltd's signature;
+#                then msix:create --store --build-windows false from the same
+#                signed program, and the package's own version checked against
+#                pubspec's msix_version
+#   3. store     ms-store-submission-client: cancel a submission still in
+#                progress, stage the package with
+#                ms-store-submission-client/notes-<msix_version>-epos.txt, commit
+#   4. admin     the signed installer copied to the server and registered with
+#                vesopa_admin/scripts/add-release.js (as tool/publish_installers.py
+#                does), so it shows on Downloads and can be chosen under Versions
+#
+# The version is whatever vesopa_epos/pubspec.yaml says (version: and
+# msix_config.msix_version). The Store refuses a version it has seen and
+# add-release.js refuses one already on Downloads, so a re-run cannot send the
+# same version twice; untick a step to redo only the other.
+#
+# Secrets, in the "App Store Connect API" environment with the others:
+#   TRUSTED_SIGNING_ENDPOINT   e.g. https://weu.codesigning.azure.net
+#   TRUSTED_SIGNING_ACCOUNT    the Trusted Signing (Artifact Signing) account name
+#   TRUSTED_SIGNING_PROFILE    its certificate profile name
+#   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
+#                              the app registration with the "Trusted Signing
+#                              Certificate Profile Signer" role on that account
+#   MS_STORE_TENANT_ID, MS_STORE_CLIENT_ID, MS_STORE_CLIENT_SECRET
+#                              the Partner Center Azure AD application (Manager)
+#   VESOPA_SSH_PASSWORD        root on the admin.vesopa.com box (as backoffice-patch.yml)
+
+name: Windows - till release
+
+on:
+  workflow_dispatch:
+    inputs:
+      store:
+        description: Send the package to the Microsoft Store
+        type: boolean
+        default: true
+      admin:
+        description: Put the signed installer on admin.vesopa.com/downloads
+        type: boolean
+        default: true
+      publish_mode:
+        description: Immediate = live once Microsoft certifies it; Manual = waits for "Publish now" in Partner Center
+        type: choice
+        options: [Immediate, Manual]
+        default: Immediate
+      admin_notes:
+        description: Notes shown beside the installer on Downloads (empty = the Store notes' title)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-till-release
+  cancel-in-progress: false
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: App Store Connect API
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      msix: ${{ steps.v.outputs.msix }}
+      title: ${{ steps.v.outputs.title }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version and release notes
+        id: v
+        run: |
+          version=$(sed -n 's/^version:[[:space:]]*\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' vesopa_epos/pubspec.yaml)
+          msix=$(sed -n 's/^[[:space:]]*msix_version:[[:space:]]*\([0-9.]*\).*/\1/p' vesopa_epos/pubspec.yaml)
+          [ -n "$version" ] && [ -n "$msix" ] || { echo "::error::No version or msix_version in vesopa_epos/pubspec.yaml"; exit 1; }
+          [ "$msix" = "$version.0" ] || { echo "::error::pubspec version $version and msix_version $msix do not match"; exit 1; }
+          app=$(sed -n "s/.*appVersion *= *'\([0-9.]*\)'.*/\1/p" vesopa_epos/lib/config/constants.dart | head -1)
+          if [ -n "$app" ] && [ "$app" != "$version" ]; then
+            echo "::error::constants.dart appVersion is $app, pubspec is $version"; exit 1
+          fi
+          notes="ms-store-submission-client/notes-$msix-epos.txt"
+          if [ "${{ inputs.store }}" = "true" ] && [ ! -f "$notes" ]; then
+            echo "::error::$notes is missing: the Store's \"What's new\" text for $msix (see the other notes-*-epos.txt files)"; exit 1
+          fi
+          title=""
+          [ -f "$notes" ] && title=$(head -1 "$notes" | sed 's/^Version [0-9.]* - //')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "msix=$msix" >> "$GITHUB_OUTPUT"
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+          echo "### Vesopa EPOS $version (Store $msix)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Secrets for the chosen steps
+        env:
+          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
+          MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+          MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+        run: |
+          need="TRUSTED_SIGNING_ENDPOINT TRUSTED_SIGNING_ACCOUNT TRUSTED_SIGNING_PROFILE AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET"
+          [ "${{ inputs.store }}" = "true" ] && need="$need MS_STORE_TENANT_ID MS_STORE_CLIENT_ID MS_STORE_CLIENT_SECRET"
+          [ "${{ inputs.admin }}" = "true" ] && need="$need VESOPA_SSH_PASSWORD"
+          missing=""
+          for n in $need; do [ -n "${!n}" ] || missing="$missing $n"; done
+          if [ -n "$missing" ]; then
+            echo "::error::Not set in the 'App Store Connect API' environment:$missing (see the top of this file)."
+            exit 1
+          fi
+          echo "All set: $need"
+
+  build:
+    needs: secrets
+    runs-on: windows-latest
+    timeout-minutes: 90
+    environment: App Store Connect API
+    env:
+      VERSION: ${{ needs.secrets.outputs.version }}
+      MSIX_VERSION: ${{ needs.secrets.outputs.msix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.2
+          cache: true
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          $found = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe", "$env:ProgramFiles\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue
+          if (-not $found) { choco install innosetup -y --no-progress; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
+
+      - name: pub get
+        working-directory: vesopa_epos
+        run: flutter pub get
+
+      # Builds with pubspec's windows_build_args (release, obfuscated), signs
+      # the program and every unsigned DLL, makes the installer and signs it.
+      - name: Build and sign the till and its installer
+        shell: pwsh
+        env:
+          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: ./tool/build-installers.ps1 -Apps till
+
+      - name: Check the signatures
+        shell: pwsh
+        run: |
+          $files = @('vesopa_epos\build\windows\x64\runner\Release\vesopa_epos.exe', "dist\installers\VesopaEPOS-Setup-$env:VERSION.exe")
+          foreach ($f in $files) {
+            if (-not (Test-Path $f)) { throw "$f was not made" }
+            $s = Get-AuthenticodeSignature -LiteralPath $f
+            if ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notlike '*O=Vesopa Software Ltd*') {
+              throw "$f is not signed by Vesopa Software Ltd ($($s.Status); $($s.SignerCertificate.Subject))"
+            }
+            Write-Host "$f signed: $($s.SignerCertificate.Subject)"
+          }
+
+      # The Store package from the same signed program (as tool/release_store_*.py).
+      # Microsoft signs the .msix itself on ingestion.
+      - name: Store package
+        working-directory: vesopa_epos
+        shell: pwsh
+        run: |
+          dart run msix:create --store --build-windows false
+          $p = 'build\store\vesopa-epos-store.msix'
+          if (-not (Test-Path $p)) { throw "$p was not made" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $z = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $p))
+          try {
+            $e = $z.Entries | Where-Object { $_.FullName -eq 'AppxManifest.xml' }
+            $r = [IO.StreamReader]::new($e.Open()); $x = $r.ReadToEnd(); $r.Close()
+          } finally { $z.Dispose() }
+          $m = [regex]::Match($x, '<Identity[^>]*\sVersion="([^"]+)"')
+          if ($m.Groups[1].Value -ne $env:MSIX_VERSION) { throw "$p is version $($m.Groups[1].Value), not $env:MSIX_VERSION" }
+          "{0}: {1}, {2:N1} MB" -f $p, $env:MSIX_VERSION, ((Get-Item $p).Length / 1MB)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vesopa-epos-${{ env.MSIX_VERSION }}-store
+          path: vesopa_epos/build/store/vesopa-epos-store.msix
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vesopa-epos-${{ env.VERSION }}-installer
+          path: dist/installers/VesopaEPOS-Setup-${{ env.VERSION }}.exe
+          retention-days: 30
+
+      # The obfuscation's symbols: the only way to read a crash from this build.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vesopa-epos-${{ env.VERSION }}-symbols
+          path: vesopa_epos/build/symbols
+          retention-days: 90
+          if-no-files-found: warn
+
+  store:
+    needs: [secrets, build]
+    if: inputs.store
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: App Store Connect API
+    env:
+      MSIX_VERSION: ${{ needs.secrets.outputs.msix }}
+      MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
+      MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+      MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: vesopa-epos-${{ env.MSIX_VERSION }}-store
+          path: ${{ runner.temp }}/store
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Submit to the Microsoft Store
+        working-directory: ms-store-submission-client
+        env:
+          STAGE_VERSION: ${{ env.MSIX_VERSION }}
+          PUBLISH_MODE: ${{ inputs.publish_mode }}
+        run: |
+          npm ci --no-audit --no-fund
+          pkg="$RUNNER_TEMP/store/vesopa-epos-store.msix"
+          found=$(unzip -p "$pkg" AppxManifest.xml | grep -o '<Identity[^>]*' | grep -o ' Version="[^"]*"' | cut -d'"' -f2)
+          [ "$found" = "$MSIX_VERSION" ] || { echo "::error::The package is $found, not $MSIX_VERSION"; exit 1; }
+          node examples/cancel-pending.js vesopa-epos
+          node examples/stage.js vesopa-epos "$pkg" "notes-$MSIX_VERSION-epos.txt"
+          node examples/commit.js vesopa-epos
+          echo "Vesopa EPOS $MSIX_VERSION sent to the Microsoft Store ($PUBLISH_MODE)." >> "$GITHUB_STEP_SUMMARY"
+
+  admin:
+    needs: [secrets, build]
+    if: inputs.admin
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: App Store Connect API
+    env:
+      # The Hestia box beside admin.vesopa.com (tool/publish_installers.py).
+      SERVER: root@34.63.118.67
+      APP_USER: vesopasoftware
+      VERSION: ${{ needs.secrets.outputs.version }}
+      VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vesopa-epos-${{ env.VERSION }}-installer
+          path: ${{ runner.temp }}/installer
+
+      - name: SSH
+        run: |
+          # The password through SSH_ASKPASS: never on a command line or in a file in the repo.
+          mkdir -p ~/.ssh "$RUNNER_TEMP/ssh"
+          printf 'Host *\n  StrictHostKeyChecking accept-new\n  ConnectTimeout 20\n  ControlMaster auto\n  ControlPath %s/cm-%%r@%%h\n  ControlPersist 10m\n' "$RUNNER_TEMP/ssh" > ~/.ssh/config
+          printf '#!/bin/sh\nprintf "%%s\\n" "$VESOPA_SSH_PASSWORD"\n' > "$RUNNER_TEMP/ssh/askpass"
+          chmod 700 "$RUNNER_TEMP/ssh/askpass"
+          echo "SSH_ASKPASS=$RUNNER_TEMP/ssh/askpass" >> "$GITHUB_ENV"
+          echo "SSH_ASKPASS_REQUIRE=force" >> "$GITHUB_ENV"
+
+      - name: Put the installer on admin.vesopa.com/downloads
+        env:
+          NOTES: ${{ inputs.admin_notes || needs.secrets.outputs.title }}
+        run: |
+          exe="VesopaEPOS-Setup-$VERSION.exe"
+          test -f "$RUNNER_TEMP/installer/$exe" || { echo "::error::$exe not in the build's artifacts"; exit 1; }
+          ssh -n "$SERVER" true || { echo "::error::Could not sign in to $SERVER over SSH."; exit 1; }
+          private="/home/$APP_USER/web/admin.vesopa.com/private"
+          remote="$private/release-uploads/$(date -u +%Y%m%d_%H%M%S)-till"
+          ssh -n "$SERVER" "mkdir -p '$remote'"
+          scp "$RUNNER_TEMP/installer/$exe" "$SERVER:$remote/$exe"
+          q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\"'\"'/g")"; }
+          inner="cd $private/nodeapp && node scripts/add-release.js till $VERSION $remote/$exe --signed --by github"
+          [ -n "$NOTES" ] && inner="$inner --notes $(q "$NOTES")"
+          ssh -n "$SERVER" "chown -R $APP_USER:$APP_USER '$remote' && su - $APP_USER -c $(q "$inner"); rc=\$?; rm -rf '$remote'; exit \$rc"
+          echo "VesopaEPOS-Setup-$VERSION.exe is on https://admin.vesopa.com/downloads" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Close SSH
+        if: always()
+        run: ssh -O exit "$SERVER" 2>/dev/null || true
