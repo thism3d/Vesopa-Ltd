@@ -150,6 +150,9 @@ jobs:
         if: inputs.mode != 'listing' && inputs.mode != 'promote'
         working-directory: vesopa_go
         run: |
+          # GitHub's machine has 16 GB: R8 needs more than the office PC's 3 GB
+          # once Stripe's sign-up libraries are in (2026-11-17, out of heap).
+          sed -i 's/-Xmx3G/-Xmx6G/' android/gradle.properties
           flutter pub get
           flutter build appbundle --release \
             --build-name="${{ steps.num.outputs.version }}" --build-number="${{ steps.num.outputs.build }}"
