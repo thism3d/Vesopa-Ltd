@@ -7,6 +7,7 @@
 ///   Quick sale  a typed amount
 ///   Sales       today's receipts, email, refunds
 ///   Reports     the day, and End of day
+///   Vesopa AI   the business explained: briefing, questions, sales, profit, stock, people
 ///   Card payments  today's card payments and their refunds, staff cards
 ///   Settings
 library;
@@ -45,11 +46,15 @@ import 'quick_sale_page.dart';
 import 'printer_scan.dart';
 import 'receipt_print.dart';
 import 'reports_page.dart';
+import '../../advisor/ui/advisor_page.dart';
 import 'sales_page.dart';
 import 'sell_page.dart';
 import '../../ui/tap_to_pay_intro.dart';
 import '../../ui/app_version.dart';
 import '../../ui/gateway_mark.dart';
+
+/// The drawer's name for Vesopa AI, and how the top bar's shortcut finds it.
+const advisorTitle = 'Vesopa AI';
 
 class Shell extends ConsumerStatefulWidget {
   const Shell({super.key});
@@ -110,6 +115,9 @@ class _ShellState extends ConsumerState<Shell> {
           (Icons.confirmation_number_rounded, 'Events & tickets', () => const EventsGate()),
         (Icons.receipt_long_rounded, 'Sales', () => const SalesPage()),
         (Icons.insights_rounded, 'Reports', () => const ReportsPage()),
+        // Vesopa AI: the business explained, from its own figures. A real
+        // venue only (the demo has no business behind it).
+        if (!s.demo) (Icons.auto_awesome_rounded, advisorTitle, () => const AdvisorPage()),
         // Every card in one place: payment, staff, membership, gift.
         (Icons.credit_card_rounded, 'Cards', () => const CardsPage()),
         (Icons.settings_rounded, 'Settings', () => const SettingsPage()),
@@ -168,6 +176,13 @@ class _ShellState extends ConsumerState<Shell> {
                   body: QuickSalePage(onAdded: () => Navigator.of(c).pop()),
                 ),
               )),
+            ),
+          // Vesopa AI, one tap from any screen.
+          if (!s.demo && pages[i].$2 != advisorTitle)
+            IconButton(
+              tooltip: advisorTitle,
+              icon: Icon(Icons.auto_awesome_rounded, color: context.goLimeInk),
+              onPressed: () => ref.read(shellPageProvider.notifier).go(pages.indexWhere((p) => p.$2 == advisorTitle)),
             ),
           const StatusChips(),
           Padding(

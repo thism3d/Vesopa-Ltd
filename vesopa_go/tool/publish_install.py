@@ -8,17 +8,28 @@ cannot disagree with what installs (owner, 2026-11-07: "in the link always show
 the app version"). The IPA comes from go-ios.yml with adhoc=true. Nothing is
 deleted; the old IPA is replaced. Prints the link to send, with its version.
 """
+import os
 import pathlib
 import plistlib
 import re
 import sys
 import zipfile
 
-sys.argv.append("--local")
+# On GitHub (go-android.yml with install_page): the runner's ssh with the
+# workflow's askpass. On the office PC: password SSH from .env.claude.
+CI = bool(os.environ.get("GITHUB_ACTIONS"))
+if not CI:
+    sys.argv.append("--local")
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import go_site  # noqa: E402
-sys.path.insert(0, str(go_site.REPO / "tool"))
-import deploy_pontardawe_app as app  # noqa: E402  (the server login, from a worktree too)
+if not CI:
+    sys.path.insert(0, str(go_site.REPO / "tool"))
+    import deploy_pontardawe_app as app  # noqa: E402  (the server login, from a worktree too)
+
+
+def connect():
+    if not CI:
+        go_site._client = app.vesopa_ssh.connect()
 
 INSTALL = go_site.SITE / "install"
 
@@ -55,7 +66,7 @@ def publish_apk(apk):
     stamp(INSTALL / "index.html", [
         (r'<p class="version-android">[^<]*</p>', f'<p class="version-android">Version {shown}</p>'),
     ])
-    go_site._client = app.vesopa_ssh.connect()
+    connect()
     user, folder = go_site.where()
     target = f"{folder}/install"
     go_site.sh(f"mkdir -p {target} && cat > {target}/VesopaGo.apk.new && mv {target}/VesopaGo.apk.new {target}/VesopaGo.apk", data=apk.read_bytes())
@@ -80,7 +91,7 @@ def main():
         (r"(<key>bundle-version</key><string>)[^<]*", rf"\g<1>{version}"),
         (r"(<key>title</key><string>)[^<]*", rf"\g<1>Vesopa Go {version} (test)"),
     ])
-    go_site._client = app.vesopa_ssh.connect()
+    connect()
     user, folder = go_site.where()
     target = f"{folder}/install"
     go_site.sh(f"mkdir -p {target} && cat > {target}/VesopaGo.ipa.new && mv {target}/VesopaGo.ipa.new {target}/VesopaGo.ipa", data=ipa.read_bytes())
