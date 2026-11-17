@@ -108,14 +108,14 @@ async function call(method, path, { body, account, v2 = false, idempotencyKey, k
  * Stripe holds losses; merchant configuration for direct charges and
  * customer configuration for Vesopa's licence billing.
  */
-function createAccount({ email, name, country = 'gb', currency = 'gbp', identity }, opts = {}) {
+function createAccount({ email, name, country = 'gb', currency = 'gbp', identity, dashboard = 'express' }, opts = {}) {
   return call('POST', '/v2/core/accounts', {
     ...opts,
     v2: true,
     body: {
       contact_email: email || undefined,
       display_name: name || undefined,
-      dashboard: 'express',
+      dashboard,
       // What a Vesopa Go sign-up already knows (go_onboarding.js): the kind
       // of business and its name, so Stripe's onboarding asks for less.
       identity: { country, ...(identity || {}) },
@@ -192,6 +192,9 @@ function onboardingSession(account, opts = {}) {
       components: {
         account_onboarding: { enabled: true, features: { external_account_collection: true } },
         notification_banner: { enabled: true, features: { external_account_collection: true } },
+        // Venues signed up in Go have no Stripe dashboard: this is where they
+        // keep their business and bank details up to date.
+        account_management: { enabled: true, features: { external_account_collection: true } },
       },
     },
   });

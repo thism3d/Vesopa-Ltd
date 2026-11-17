@@ -418,7 +418,20 @@
     }
     h += step(4, 'Your Vesopa licence', licOk ? 'done' : (lic.status === 'past_due' || lic.status === 'unpaid') ? 'problem' : 'todo', licOk ? 'Done' : 'To do', licBody, licAct, s.next === 'licence');
 
-    if (!s.next) {
+    // 5. The owner's manager PIN, once everything else is done.
+    var pinBody = s.owner_pin_set
+      ? '<p>Set. Staff sign in to EPOS with their own PIN; add them in the back office, Staff.</p>'
+      : s.complete
+        ? '<p>Choose the PIN you will sign in to EPOS with. You become the venue\'s first manager.</p>'
+          + '<form class="f" id="pin-form">'
+          + '<label>Your name, as staff will see it<input name="name" required minlength="2" maxlength="60" autocomplete="name"></label>'
+          + '<label>PIN (4 to 6 digits)<input name="pin" required inputmode="numeric" pattern="[0-9]{4,6}" type="password" autocomplete="new-password"></label>'
+          + '<label>The same PIN again<input name="again" required inputmode="numeric" pattern="[0-9]{4,6}" type="password" autocomplete="new-password"></label>'
+          + '<div class="act"><button class="btn primary small" type="submit"' + (state.busy ? ' disabled' : '') + '>' + (state.busy === 'pin' ? 'Saving…' : 'Set my PIN') + '</button></div></form>'
+        : '<p>Once the steps above are done, choose the PIN you sign in to EPOS with.</p>';
+    h += step(5, 'Your manager PIN', s.owner_pin_set ? 'done' : 'todo', s.owner_pin_set ? 'Done' : 'To do', pinBody, '', s.complete && !s.owner_pin_set);
+
+    if (s.ready_to_use) {
       h += '<p><strong>All done.</strong> Install Vesopa Go on your iPhone or Android phone and sign in with the same Vesopa account. Manage your venue at <a href="https://backoffice.vesopaepos.com">backoffice.vesopaepos.com</a>.</p>';
     } else {
       h += '<p class="small">You can stop at any point and come back here, or finish in the Vesopa Go app (More, Account checks).</p>';
@@ -458,6 +471,20 @@
     });
     var vf = document.getElementById('venue-form');
     if (vf) vf.addEventListener('submit', function (e) { e.preventDefault(); registerVenue(vf); });
+    var pf = document.getElementById('pin-form');
+    if (pf) pf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var el = pf.elements, pin = el['pin'].value;
+      if (pin !== el['again'].value) return fail(new Error('The two PINs are different.'));
+      if (/^(\d)\1+$/.test(pin) || '0123456789'.indexOf(pin) >= 0 || '9876543210'.indexOf(pin) >= 0) return fail(new Error('Choose a PIN that is harder to guess.'));
+      state.busy = 'pin';
+      render();
+      api('POST', '/api/go/onboarding/owner-pin', { name: el['name'].value, pin: pin }).then(function (st) {
+        state.status = st;
+        state.busy = null;
+        render();
+      }).catch(fail);
+    });
     var bf = document.getElementById('business-form');
     if (bf) bf.addEventListener('submit', function (e) {
       e.preventDefault();

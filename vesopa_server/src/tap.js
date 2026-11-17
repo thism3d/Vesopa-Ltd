@@ -147,9 +147,10 @@ function secretPath(platform) {
 }
 
 class TapError extends Error {
-  constructor(status, message) {
+  constructor(status, message, extra = {}) {
     super(message);
     this.status = status;
+    this.extra = extra;
   }
 }
 
@@ -405,7 +406,7 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
   }
 
   const who = (req) => String(req.seatId || req.terminal.jti || req.terminal.commissionedBy || 'tap').slice(0, 128);
-  const send = (res, e, next) => (e instanceof TapError ? res.status(e.status).json({ error: e.message }) : next(e));
+  const send = (res, e, next) => (e instanceof TapError ? res.status(e.status).json({ error: e.message, ...e.extra }) : next(e));
   const view = (row) => ({
     id: row.id,
     intent_id: row.intent_id,
@@ -1478,10 +1479,19 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     const type = String(businessType || '').trim().slice(0, 60);
     const conn = await pool.getConnection();
     try {
-      const [[user]] = await conn.query('SELECT id FROM backoffice_users WHERE email = ?', [email]);
-      const [[office]] = await conn.query('SELECT id FROM offices WHERE contact_email = ?', [email]);
+      const [[user]] = await conn.query('SELECT id, office_id FROM backoffice_users WHERE email = ?', [email]);
+      const [[office]] = await conn.query('SELECT id, name FROM offices WHERE contact_email = ?', [email]);
       if (user || office) {
-        throw new TapError(409, 'That Vesopa account already has a venue. Use Continue with Vesopa instead.');
+        // Named, so the app can say which account and venue it is and offer
+        // to open it or sign up with another account (owner, 2026-11-17: a
+        // registration "failed" and opened Vesopa EPOS Ltd instead).
+        let venue = office && office.name;
+        if (!venue && user && user.office_id) {
+          const [[o]] = await conn.query('SELECT name FROM offices WHERE id = ?', [user.office_id]);
+          venue = o && o.name;
+        }
+        throw new TapError(409, `${email} already has a Vesopa venue${venue ? `, ${venue}` : ''}. One Vesopa account has one venue: `
+          + 'open it, or sign up with another email to register a new venue.', { code: 'account_has_venue', email, venue: venue || null });
       }
       await conn.beginTransaction();
       const [o] = await conn.execute(

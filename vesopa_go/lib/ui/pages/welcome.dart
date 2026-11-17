@@ -248,7 +248,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
   static const _types = ['Pub or bar', 'Restaurant', 'Café', 'Club', 'Market stall or pop-up', 'Events'];
 
-  Future<void> _go() async {
+  Future<void> _go({bool anotherAccount = false}) async {
     if (!_form.currentState!.validate()) return;
     setState(() {
       _busy = true;
@@ -256,7 +256,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     });
     try {
       final sso = await ref.read(apiProvider).signInClient();
-      final idToken = await VesopaSso(issuer: sso.issuer, clientId: sso.clientId).authorize(signUp: true);
+      // Another account: Vesopa's account picker, so the one already signed
+      // in on this device (which has its venue) is not used again.
+      final idToken = await VesopaSso(issuer: sso.issuer, clientId: sso.clientId)
+          .authorize(signUp: !anotherAccount, selectAccount: anotherAccount);
       final session = ref.read(tapProvider.notifier);
       final answer = await ref.read(apiProvider).registerVenue(
             idToken: idToken,
@@ -267,19 +270,50 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             deviceId: session.deviceId,
           );
       await ref.read(tapProvider.notifier).commissioned(answer);
-      // Straight on to the checks card payments need (Stripe, owner 2026-11-17).
-      if (mounted) {
-        await Navigator.of(context).pushReplacement(
-            MaterialPageRoute<void>(builder: (_) => const OnboardingPage(justRegistered: true)));
-      }
+      // The app now opens on the venue's account checks, and stays there
+      // until the sign-up is finished (main.dart, onboardingGateProvider).
+      ref.invalidate(onboardingGateProvider);
+      if (mounted) Navigator.of(context).pop();
     } on SsoFailed catch (e) {
       setState(() => _error = e.message);
     } on TapApiError catch (e) {
+      if (e.status == 409 && e.body['code'] == 'account_has_venue' && mounted) {
+        setState(() => _busy = false);
+        await _accountHasVenue(e);
+        return;
+      }
       setState(() => _error = e.status == 404
           ? 'Registering from the app is coming soon. For now, sign up at vesopa.com and then Continue with Vesopa.'
           : e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// The Vesopa account signed in already has a venue (one venue per
+  /// account): say which, and offer to open it or use another account. Never
+  /// opens the old venue by itself (owner, 2026-11-17).
+  Future<void> _accountHasVenue(TapApiError e) async {
+    final email = e.body['email'] as String? ?? 'This Vesopa account';
+    final venue = e.body['venue'] as String?;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('This account already has a venue'),
+        content: Text('$email is the Vesopa account for ${venue ?? 'a venue'}. Each Vesopa account has one venue, '
+            'so to register "${_name.text.trim()}" sign up with a different email.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop('open'), child: Text('Open ${venue ?? 'it'}')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop('another'), child: const Text('Use another email')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'another') {
+      await _go(anotherAccount: true);
+    } else if (choice == 'open') {
+      // Back to the welcome screen, where Continue with Vesopa opens it.
+      Navigator.of(context).pop();
     }
   }
 

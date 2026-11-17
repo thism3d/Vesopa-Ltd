@@ -36,6 +36,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 
 const stripe = require('./stripe_client');
+const { TILL_COLUMNS, STANDARD_GROUPS } = require('./permissions');
 
 const LIMITS = { per_payment_minor: 25000, per_day_minor: 100000 };
 const LICENCE = {
@@ -222,9 +223,13 @@ function goOnboardingRoutes({
         trial_end DATETIME NULL,
         environment VARCHAR(12) NULL,
         source VARCHAR(12) NULL,
+        owner_pin_set TINYINT(1) NOT NULL DEFAULT 0,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`).catch((e) => { ready = null; throw e; });
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`)
+      // A table made before the owner's PIN (2026-11-17) gets the column.
+      .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN owner_pin_set TINYINT(1) NOT NULL DEFAULT 0').catch(() => {}))
+      .catch((e) => { ready = null; throw e; });
     return ready;
   }
 
@@ -326,7 +331,15 @@ function goOnboardingRoutes({
       : steps.identity !== IDENTITY_DONE && steps.identity !== 'processing' ? 'identity'
         : steps.stripe === 'not_started' || steps.stripe === 'more_needed' || (steps.stripe === 'in_review' && Number(s.requirements_due)) ? 'stripe'
           : !LICENCE_OK.has(steps.licence) ? 'licence' : null;
+    // Nothing left for the owner to do (Stripe may still be reviewing): then
+    // the owner's manager PIN, and only after that Go's EPOS and the other
+    // modes (owner, 2026-11-17).
+    const complete = Boolean(row) && next === null;
     return {
+      signed_up: Boolean(row),
+      complete,
+      owner_pin_set: Boolean(Number(r.owner_pin_set)),
+      ready_to_use: complete && Boolean(Number(r.owner_pin_set)),
       steps,
       next,
       mode,
@@ -360,11 +373,21 @@ function goOnboardingRoutes({
     };
   }
 
+  /**
+   * A trial subscription is "trialing" the moment it is made, card or not, so
+   * the licence counts as set up only once a card is saved on it (owner,
+   * 2026-11-17: "card not added but passed to the next screen").
+   */
   function licenceFields(sub) {
+    const si = sub.pending_setup_intent;
+    const saved = Boolean(sub.default_payment_method)
+      || (si && typeof si === 'object' && si.status === 'succeeded');
+    let status = sub.status;
+    if ((status === 'trialing' || status === 'active' || status === 'incomplete') && !saved) status = 'card_needed';
+    else if (status === 'incomplete' && saved) status = 'trialing';
     return {
       subscription_id: sub.id,
-      licence_status: sub.status === 'incomplete' && sub.pending_setup_intent && typeof sub.pending_setup_intent === 'object'
-        && sub.pending_setup_intent.status === 'succeeded' ? 'trialing' : sub.status,
+      licence_status: status,
       trial_end: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
     };
   }
@@ -491,10 +514,16 @@ function goOnboardingRoutes({
       if (kind.structure) identity.business_details.structure = kind.structure;
       if (monthly) identity.business_details.annual_revenue = { amount: { value: monthly * 12, currency: 'gbp' } };
     }
+    // No Stripe dashboard (owner, 2026-11-17: verify "without the Stripe
+    // webpage opening"): Stripe still checks the business (it holds the
+    // losses, so it collects the requirements), but an account without a
+    // dashboard needs no Stripe sign-in, so its onboarding stays inside Go.
+    // The venue sees its payments and payouts in the Vesopa back office.
+    const dashboard = 'none';
     try {
-      return await sc.createAccount({ email, name, identity }, opts);
+      return await sc.createAccount({ email, name, identity, dashboard }, opts);
     } catch (e) {
-      if (e instanceof stripe.StripeError && e.status === 400) return sc.createAccount({ email, name }, opts);
+      if (e instanceof stripe.StripeError && e.status === 400) return sc.createAccount({ email, name, dashboard }, opts);
       throw e;
     }
   }
@@ -509,7 +538,7 @@ function goOnboardingRoutes({
       const env = envOf(row, await stripeSettings.settingsFor(req.office));
       const opts = optsOf(env);
       let sub = row.subscription_id ? await client.retrieveLicence(row.subscription_id, opts).catch(() => null) : null;
-      if (sub && !['incomplete', 'trialing'].includes(sub.status)) sub = null;
+      if (sub && !['incomplete', 'trialing', 'active'].includes(sub.status)) sub = null;
       if (!sub || !sub.pending_setup_intent) {
         const [[venue]] = await pool.query('SELECT name FROM offices WHERE contact_email = ?', [req.office]);
         const customer = row.customer_id || (await client.createCustomer({ office: req.office, name: row.legal_name || (venue && venue.name) }, opts)).id;
@@ -529,6 +558,49 @@ function goOnboardingRoutes({
         trial_days: LICENCE.trial_days,
         merchant_name: 'Vesopa Software Ltd',
       });
+    } catch (e) { fail(res, e, next); }
+  });
+
+  // ---- 6. The owner's manager PIN, once everything else is done ----
+
+  /**
+   * The person who signed up becomes the venue's first member of staff, a
+   * manager, with the PIN they choose: what Go's EPOS asks for. Asked for
+   * once the sign-up is complete, and before Go opens EPOS or any other mode
+   * (owner, 2026-11-17). Staff, Supervisor and Manager groups are made for
+   * the venue if it has none.
+   */
+  router.post('/go/onboarding/owner-pin', who, express.json(), async (req, res, next) => {
+    try {
+      const v = await status(req.office);
+      if (!v.signed_up || !v.complete) throw new OnboardingError(409, 'Finish your account checks first.');
+      if (v.owner_pin_set) throw new OnboardingError(409, 'Your manager PIN is already set. Change it in the back office, Staff.');
+      const b = req.body || {};
+      const pin = String(b.pin || '');
+      const name = String(b.name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+      if (!/^\d{4,6}$/.test(pin)) throw new OnboardingError(400, 'A PIN is 4 to 6 digits.');
+      if (/^(\d)\1+$/.test(pin) || '0123456789'.includes(pin) || '9876543210'.includes(pin)) {
+        throw new OnboardingError(400, 'Choose a PIN that is harder to guess than repeated or consecutive digits.');
+      }
+      if (name.length < 2) throw new OnboardingError(400, 'Give your name, as staff will see it.');
+      const [[clash]] = await pool.query('SELECT clark_name FROM bo_clarks WHERE email = ? AND pin_code = ?', [req.office, pin]);
+      if (clash) throw new OnboardingError(409, 'That PIN is already used by somebody at this venue. Choose another.');
+
+      for (const group of STANDARD_GROUPS) {
+        await pool.execute(
+          `INSERT IGNORE INTO epos_permission_groups (email, name, sort_order, ${TILL_COLUMNS.join(', ')})
+           VALUES (?, ?, ?, ${TILL_COLUMNS.map(() => '?').join(', ')})`,
+          [req.office, group.name, group.sort_order, ...TILL_COLUMNS.map((c) => (group.granted.includes(c) ? 1 : 0))]);
+      }
+      const [[manager]] = await pool.query(
+        "SELECT id FROM epos_permission_groups WHERE email = ? AND name = 'Manager' ORDER BY id LIMIT 1", [req.office]);
+      if (!manager) throw new OnboardingError(500, 'The Manager group could not be made. Try again.');
+      await pool.execute(
+        'INSERT INTO bo_clarks (email, pluid, clark_name, pin_code, active, permission_group_id) VALUES (?, 0, ?, ?, 1, ?)',
+        [req.office, name, pin, manager.id]);
+      await save(req.office, { owner_pin_set: 1 });
+      broadcast({ type: 'staff.updated' }, { office: req.office });
+      res.status(201).json(await status(req.office));
     } catch (e) { fail(res, e, next); }
   });
 
@@ -635,9 +707,18 @@ function goOnboardingRoutes({
       broadcast({ type: 'go-onboarding' }, { office });
       return;
     }
-    if (type === 'setup_intent.succeeded' && obj.metadata && obj.metadata.purpose === 'vesopa_go_licence') {
-      const office = obj.metadata.office;
-      if (office) await save(office, { licence_status: 'trialing' });
+    if (type === 'setup_intent.succeeded') {
+      // The subscription's own SetupIntent carries no metadata of ours: find
+      // the venue by its subscription and read it again from Stripe.
+      const [rows] = await pool.query('SELECT office, subscription_id, environment FROM go_onboarding WHERE customer_id = ?', [obj.customer || '']);
+      for (const row of rows) {
+        if (!row.subscription_id) continue;
+        const sub = await client.retrieveLicence(row.subscription_id, optsOf(row.environment || sc.environment())).catch(() => null);
+        if (sub) {
+          await save(row.office, licenceFields(sub));
+          broadcast({ type: 'go-onboarding' }, { office: row.office });
+        }
+      }
     }
   };
 
