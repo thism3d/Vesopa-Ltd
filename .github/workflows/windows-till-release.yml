@@ -189,12 +189,15 @@ jobs:
 
       # Builds with pubspec's windows_build_args (release, obfuscated), signs
       # the program and every unsigned DLL, makes the installer and signs it.
+      # The TRUSTED_SIGNING_* secrets are read here directly: GitHub empties a
+      # job output that holds a secret's value, so the secrets job's outputs
+      # only carry what it looked up in Azure.
       - name: Build and sign the till and its installer
         shell: pwsh
         env:
-          TRUSTED_SIGNING_ENDPOINT: ${{ needs.secrets.outputs.endpoint }}
-          TRUSTED_SIGNING_ACCOUNT: ${{ needs.secrets.outputs.account }}
-          TRUSTED_SIGNING_PROFILE: ${{ needs.secrets.outputs.profile }}
+          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT || needs.secrets.outputs.endpoint }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT || needs.secrets.outputs.account }}
+          TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_PROFILE || needs.secrets.outputs.profile }}
         run: |
           if (-not ($env:TRUSTED_SIGNING_ENDPOINT -and $env:TRUSTED_SIGNING_ACCOUNT -and $env:TRUSTED_SIGNING_PROFILE)) {
             throw 'The secrets job gave no signing endpoint, account or profile.'
