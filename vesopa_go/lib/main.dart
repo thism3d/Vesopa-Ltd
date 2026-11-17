@@ -39,6 +39,7 @@ import 'ui/go_frame.dart';
 import 'ui/sounds.dart';
 import 'ui/splash.dart';
 import 'ui/venue_font.dart';
+import 'ui/pages/onboarding.dart' show OnboardingPage, onboardingGateProvider, holdForSignup;
 import 'ui/pages/setup.dart';
 import 'ui/theme.dart';
 import 'ui/tv.dart';
@@ -107,12 +108,16 @@ class GoApp extends ConsumerWidget {
         DeviceMode.epos => epos,
       };
     }
+    // A venue that signed up in Go or on go.vesopa.com opens on its account
+    // checks until they are finished and the owner's PIN is set: no PIN pad,
+    // no EPOS, no other mode before then (owner, 2026-11-17).
+    final signup = signedOn && !demo && holdForSignup(ref.watch(onboardingGateProvider).value);
     return MaterialApp(
       navigatorKey: goNavigator,
       // Signed on: the licence, offline and idle rules over every page.
       // The start animation over the first screen, then the frame's rules.
       builder: (context, child) => TvRemote(
-        child: GoSplash(child: phase == Phase.ready && (!modes || device.mode == DeviceMode.epos) ? GoFrame(child: child!) : child!),
+        child: GoSplash(child: !signup && phase == Phase.ready && (!modes || device.mode == DeviceMode.epos) ? GoFrame(child: child!) : child!),
       ),
       title: appName,
       debugShowCheckedModeBanner: false,
@@ -123,7 +128,9 @@ class GoApp extends ConsumerWidget {
       themeMode: ref.watch(appearanceProvider),
       home: AnimatedSwitcher(
         duration: const Duration(milliseconds: 250),
-        child: switch (phase) {
+        child: signup
+            ? const OnboardingPage(key: ValueKey('signup'), gate: true)
+            : switch (phase) {
           Phase.booting => const Scaffold(key: ValueKey('boot'), body: Center(child: GoMark(size: 72))),
           Phase.welcome when demoOnly => const Scaffold(key: ValueKey('boot'), body: Center(child: GoMark(size: 72))),
           Phase.welcome => const LiteWelcomePage(key: ValueKey('welcome')),

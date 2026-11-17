@@ -55,8 +55,8 @@ const pool = {
       tapSettings.set(args[0], { office: args[0], enabled: 1, tips_enabled: 1, tip_percents: args[1], service_percents: args[2], allow_cash: 1, receipt_email: 1 });
       return [{ affectedRows: 1 }];
     }
-    if (s.startsWith('SELECT id FROM backoffice_users WHERE email')) return [users.has(args[0]) ? [{ id: 1 }] : []];
-    if (s.startsWith('SELECT id FROM offices WHERE contact_email')) return [offices.has(args[0]) ? [offices.get(args[0])] : []];
+    if (/^SELECT id(, office_id)? FROM backoffice_users WHERE email/.test(s)) return [users.has(args[0]) ? [{ id: 1 }] : []];
+    if (/^SELECT id(, name)? FROM offices WHERE contact_email/.test(s)) return [offices.has(args[0]) ? [offices.get(args[0])] : []];
     if (s.startsWith('INSERT INTO offices')) {
       const id = offices.size + 100;
       offices.set(args[1], { id, name: args[0], plan: 'tap' });
@@ -301,6 +301,8 @@ async function main() {
     assert.strictEqual(tapSettings.get('new@venue.test').tip_percents, '10,12.5,15');
     const regAgain = await go('POST', '/api/tap/register', { auth: null, body: { id_token: 'verified:new@venue.test', venue_name: 'Again' } });
     assert.strictEqual(regAgain.status, 409, 'one venue per account');
+    assert.strictEqual(regAgain.body.code, 'account_has_venue', 'says why');
+    assert.strictEqual(regAgain.body.email, 'new@venue.test', 'names the account');
     assert.strictEqual((await go('POST', '/api/tap/register', { auth: null, body: { id_token: 'unverified:x@venue.test', venue_name: 'X Bar' } })).status, 403);
     assert.strictEqual((await go('POST', '/api/tap/register', { auth: null, body: { id_token: 'nonsense', venue_name: 'X Bar' } })).status, 401);
     // The new venue's phone can use its token at once.

@@ -322,6 +322,11 @@ class TapApi {
 
   /// The licence's SetupIntent: 14 days free, then £29 a month.
   Future<Map<String, dynamic>> licenceSession() => _send('POST', '/api/go/onboarding/licence');
+
+  /// The owner's manager PIN, once the checks are done: they become the
+  /// venue's first manager, and Go's EPOS opens.
+  Future<Map<String, dynamic>> setOwnerPin({required String name, required String pin}) =>
+      _send('POST', '/api/go/onboarding/owner-pin', {'name': name, 'pin': pin});
   Future<Map<String, dynamic>> stripeConnectionToken() => _send('POST', '/api/till/stripe/connection-token', const {});
   /// [attempt] is new for every try, so a second try on the same bill is a
   /// new payment, not the first one handed back (2026-11-08).

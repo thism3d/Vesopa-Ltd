@@ -26,6 +26,7 @@ const OFFICE = 'owner@newvenue.test';
 function fakePool() {
   const tables = { epos_stripe_settings: new Map(), go_onboarding: new Map() };
   const offices = new Map([[OFFICE, { name: 'The New Venue', contact_email: OFFICE }]]);
+  const clerks = [];
   const answer = async (sql, params = []) => {
     const one = sql.replace(/\s+/g, ' ').trim();
     let m = one.match(/^SELECT \* FROM (\w+) WHERE office = \?/);
@@ -41,9 +42,12 @@ function fakePool() {
       return [{ affectedRows: 1 }, []];
     }
     if (/FROM offices WHERE contact_email/.test(one)) return [[offices.get(params[0])].filter(Boolean), []];
+    if (/FROM epos_permission_groups WHERE email = \? AND name = 'Manager'/.test(one)) return [[{ id: 3 }], []];
+    if (/^SELECT clark_name FROM bo_clarks/.test(one)) return [clerks.filter((c) => c.office === params[0] && c.pin === params[1]), []];
+    if (/^INSERT INTO bo_clarks/.test(one)) { clerks.push({ office: params[0], name: params[1], pin: params[2], group: params[3] }); return [{ insertId: clerks.length }, []]; }
     return [[], []];
   };
-  return { tables, offices, query: answer, execute: answer };
+  return { tables, offices, clerks, query: answer, execute: answer };
 }
 
 function fakeStripe(state) {
@@ -81,7 +85,7 @@ function fakeStripe(state) {
         calls.push(['licence', a]);
         return { id: 'sub_1', status: 'trialing', trial_end: 1900000000, pending_setup_intent: { id: 'seti_1', client_secret: 'seti_1_secret', status: 'requires_payment_method' } };
       },
-      retrieveLicence: async () => ({ id: 'sub_1', status: state.licence || 'trialing', trial_end: 1900000000, pending_setup_intent: null }),
+      retrieveLicence: async () => ({ id: 'sub_1', status: state.licence || 'trialing', trial_end: 1900000000, pending_setup_intent: null, default_payment_method: state.cardSaved ? 'pm_1' : null }),
       takenToday: async () => state.takenToday || 0,
     },
   };
@@ -164,6 +168,7 @@ function signed(event) {
     r = await call(server, 'POST', '/api/go/onboarding/stripe', { token: phone });
     ok(r.status === 201 && r.body.client_secret === 'accs_onb' && r.body.account === 'acct_new1', 'onboarding session');
     const made = fake.calls.find((c) => c[0] === 'createAccount')[1];
+    ok(made.dashboard === 'none', 'no Stripe dashboard: no Stripe sign-in in onboarding');
     ok(made.identity.entity_type === 'company' && made.identity.business_details.registered_name === 'New Venue Ltd'
       && made.identity.business_details.annual_revenue.amount.value === 24000000, 'account carries the business');
     const st = pool.tables.epos_stripe_settings.get(OFFICE);
@@ -179,6 +184,11 @@ function signed(event) {
     // The licence: 14 days free, card through the SetupIntent.
     r = await call(server, 'POST', '/api/go/onboarding/licence', { token: phone });
     ok(r.status === 201 && r.body.setup_intent_client_secret === 'seti_1_secret' && r.body.trial_days === 14 && r.body.amount_minor === 2900, 'licence card');
+
+    // The owner's PIN waits for every step.
+    ok((await call(server, 'POST', '/api/go/onboarding/owner-pin', { token: phone, body: { name: 'Ann Owner', pin: '4826' } })).status === 409, 'PIN waits for the checks');
+    r = await call(server, 'GET', '/api/go/onboarding', { token: phone });
+    ok(r.body.signed_up === true && r.body.complete === false && r.body.ready_to_use === false, 'not ready to use yet');
 
     // Test mode: no live payments at all yet.
     let pay = await call(server, 'POST', '/api/till/stripe/payments', { token: phone, body: { amount_minor: 500 } });
@@ -202,14 +212,34 @@ function signed(event) {
     ok(pool.tables.go_onboarding.get(OFFICE).identity_status === 'verified', 'identity verified');
     const forged = { raw: JSON.stringify({ type: 'identity.verification_session.verified', data: { object: { id: 'vs_x', metadata: { office: OFFICE, purpose: 'vesopa_go_owner' } } } }), headers: { 'Stripe-Signature': 't=1,v1=00' } };
     ok((await call(server, 'POST', '/api/stripe/webhook', forged)).status === 400, 'unsigned event refused');
-    const subEv = signed({ type: 'customer.subscription.updated', data: { object: { id: 'sub_1', status: 'trialing', trial_end: 1900000000, metadata: { office: OFFICE, purpose: 'vesopa_go_licence' } } } });
+    // A trial without a card is not a licence (2026-11-17: the card step passed with no card).
+    const noCard = signed({ type: 'customer.subscription.created', data: { object: { id: 'sub_1', status: 'trialing', trial_end: 1900000000, default_payment_method: null, metadata: { office: OFFICE, purpose: 'vesopa_go_licence' } } } });
+    await call(server, 'POST', '/api/stripe/webhook', noCard);
+    ok(pool.tables.go_onboarding.get(OFFICE).licence_status === 'card_needed', 'trial without a card: card still needed');
+    r = await call(server, 'GET', '/api/go/onboarding?refresh=1', { token: phone });
+    ok(r.body.steps.licence === 'card_needed' && r.body.verified === false, 'licence step still to do');
+    state.cardSaved = true;
+    const subEv = signed({ type: 'customer.subscription.updated', data: { object: { id: 'sub_1', status: 'trialing', trial_end: 1900000000, default_payment_method: 'pm_1', metadata: { office: OFFICE, purpose: 'vesopa_go_licence' } } } });
     await call(server, 'POST', '/api/stripe/webhook', subEv);
-    ok(pool.tables.go_onboarding.get(OFFICE).licence_status === 'trialing', 'licence trialing');
+    ok(pool.tables.go_onboarding.get(OFFICE).licence_status === 'trialing', 'card saved: licence trialing');
     state.due = 0;
     r = await call(server, 'GET', '/api/go/onboarding?refresh=1', { token: phone });
     ok(r.body.mode === 'live' && r.body.verified === true && r.body.limits === null && r.body.next === null, 'all checks: live');
     pay = await call(server, 'POST', '/api/till/stripe/payments', { token: phone, body: { amount_minor: 80000 } });
     ok(pay.status === 201, 'no cap once verified');
+
+    // Complete: the owner's manager PIN, then Go is ready to use.
+    ok(r.body.complete === true && r.body.ready_to_use === false, 'complete, PIN still to set');
+    ok((await call(server, 'POST', '/api/go/onboarding/owner-pin', { token: phone, body: { name: 'Ann Owner', pin: '1111' } })).status === 400, 'guessable PIN refused');
+    ok((await call(server, 'POST', '/api/go/onboarding/owner-pin', { token: phone, body: { name: 'Ann Owner', pin: '12' } })).status === 400, 'short PIN refused');
+    r = await call(server, 'POST', '/api/go/onboarding/owner-pin', { token: phone, body: { name: 'Ann Owner', pin: '4826' } });
+    ok(r.status === 201 && r.body.ready_to_use === true, 'PIN set: ready to use');
+    ok(pool.clerks.length === 1 && pool.clerks[0].group === 3 && pool.clerks[0].pin === '4826', 'owner is the first manager');
+    ok((await call(server, 'POST', '/api/go/onboarding/owner-pin', { token: phone, body: { name: 'Ann Owner', pin: '5937' } })).status === 409, 'set once');
+
+    // A venue that never signed up here is never held back.
+    r = await call(server, 'GET', '/api/go/onboarding', { token: jwt.sign({ scope: 'terminal', office: 'old@venue.test' }, SECRET) });
+    ok(r.body.signed_up === false && r.body.ready_to_use === false, 'old venue: not a sign-up');
 
     // A venue that never signed up here is never capped.
     const old = 'old@venue.test';

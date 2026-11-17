@@ -214,6 +214,133 @@ class _SetupPageState extends ConsumerState<SetupPage> with TickerProviderStateM
   }
 }
 
+/// The same animated page for a device whose venue has tills but which has
+/// no mode yet (modes/mode_chooser_page.dart; owner, 2026-11-17: "this screen
+/// must be animated like the animated screen"). One card per [DeviceMode],
+/// each with its motion picture, over the drifting glows.
+class AnimatedModeChooser extends StatefulWidget {
+  const AnimatedModeChooser({super.key, required this.venue, required this.onChoose});
+  final String venue;
+  final ValueChanged<DeviceMode> onChoose;
+
+  @override
+  State<AnimatedModeChooser> createState() => _AnimatedModeChooserState();
+}
+
+class _AnimatedModeChooserState extends State<AnimatedModeChooser> with TickerProviderStateMixin {
+  late final AnimationController _loop = AnimationController(vsync: this, duration: const Duration(milliseconds: 3600))..repeat();
+  late final AnimationController _enter = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..forward();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.of(context).disableAnimations) {
+      _loop
+        ..stop()
+        ..value = 0.82;
+      _enter.value = 1;
+    }
+  }
+
+  @override
+  void dispose() {
+    _loop.dispose();
+    _enter.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final kind = size.shortestSide >= 600 ? 'iPad' : 'phone';
+    final wide = size.width >= 820;
+
+    Widget rise(int i, Widget child) {
+      final a = CurvedAnimation(parent: _enter, curve: Interval((0.12 * i).clamp(0, 0.6), (0.12 * i + 0.45).clamp(0, 1), curve: _ease));
+      return FadeTransition(
+        opacity: a,
+        child: SlideTransition(position: Tween(begin: const Offset(0, 0.12), end: Offset.zero).animate(a), child: child),
+      );
+    }
+
+    const green = Color(0xFF30D158); // Apple's system green
+    final cards = [
+      for (final m in DeviceMode.values)
+        _ModeCard(
+          key: ValueKey('mode-${m.name}'),
+          scene: switch (m) {
+            DeviceMode.epos => _Scene.epos,
+            DeviceMode.kitchen => _Scene.kitchen,
+            DeviceMode.display => _Scene.display,
+            DeviceMode.terminal => _Scene.own,
+          },
+          tint: switch (m) {
+            DeviceMode.epos => Tp.lime,
+            DeviceMode.kitchen => _orange,
+            DeviceMode.display => _blue,
+            DeviceMode.terminal => green,
+          },
+          loop: _loop,
+          tall: wide,
+          title: m.label,
+          body: m.detail,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            widget.onChoose(m);
+          },
+        ),
+    ];
+
+    return Theme(
+      data: Tp.theme(Brightness.dark, font: Theme.of(context).textTheme.bodyMedium?.fontFamily),
+      child: Builder(builder: (context) {
+        final t = Theme.of(context).textTheme;
+        return Scaffold(
+          backgroundColor: const Color(0xFF0B0E0A),
+          body: Stack(children: [
+            Positioned.fill(child: AnimatedBuilder(animation: _loop, builder: (_, _) => CustomPaint(painter: _Glow(_loop.value)))),
+            SafeArea(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1180),
+                  child: ListView(
+                    padding: EdgeInsets.symmetric(horizontal: wide ? 40 : 20, vertical: wide ? 40 : 24),
+                    children: [
+                      rise(0, Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Signed in to ${widget.venue}', style: t.titleMedium?.copyWith(color: Tp.lime)),
+                        const SizedBox(height: 6),
+                        Text('How will this $kind be used?',
+                            style: t.headlineLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.5, color: Colors.white)),
+                        const SizedBox(height: 8),
+                        Text('Choose one. A manager can change it later in Settings, or set it for this device in the back office.',
+                            style: t.bodyLarge?.copyWith(color: Colors.white70)),
+                      ])),
+                      SizedBox(height: wide ? 32 : 24),
+                      if (wide)
+                        IntrinsicHeight(
+                          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            for (final (i, c) in cards.indexed) ...[if (i > 0) const SizedBox(width: 16), Expanded(child: rise(i + 1, c))],
+                          ]),
+                        )
+                      else
+                        for (final (i, c) in cards.indexed) ...[if (i > 0) const SizedBox(height: 12), rise(i + 1, c)],
+                      const SizedBox(height: 28),
+                      rise(cards.length + 1, Center(
+                        child: Text('Not sure? Choose EPOS: it is what most devices are.',
+                            style: t.bodySmall?.copyWith(color: Colors.white60)),
+                      )),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ]),
+        );
+      }),
+    );
+  }
+}
+
 class _ModeCard extends StatefulWidget {
   const _ModeCard({
     super.key,
