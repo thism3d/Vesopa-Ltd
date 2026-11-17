@@ -26,6 +26,7 @@ const { goAdvisorRoutes, hashCode } = require('../src/go_advisor');
 
 const SECRET = 'go-advisor-test-secret';
 const OFFICE = 'the-bridge@vesopa.co.uk';
+const THEIRS = 'someone-else@vesopa.co.uk'; // the venue next door
 const NOW = new Date(2026, 10, 17, 14, 30, 0); // Tue 17 Nov 2026, 14:30 local
 
 let passed = 0;
@@ -414,6 +415,44 @@ const mails = [];
       if (/FROM epos_orders o WHERE/.test(a.sql)) assert.ok(/WHERE o\.email = \?/.test(a.sql) && a.params[0] === OFFICE, a.sql.slice(0, 80));
     }
     ok('every statement is scoped by the venue');
+
+    // Another venue: nothing a phone or a page sends can reach it.
+    {
+      const jwt = require('jsonwebtoken');
+      const theirTerminal = issueTerminalToken({ officeEmail: THEIRS, officeId: 2, email: THEIRS }, SECRET);
+      const asThem = async (path, aiToken, body) => {
+        const res = await fetch(base + path, {
+          method: body ? 'POST' : 'GET',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${theirTerminal}`, 'x-vesopa-ai': aiToken },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        return { status: res.status, body: await res.json() };
+      };
+      // Our Vesopa AI session on the next venue's phone: refused.
+      let r = await asThem('/api/go/ai/briefing', T);
+      assert.strictEqual(r.status, 401, 'a session for one venue does not open on another venue\'s device');
+      // A session made up for the other venue without our server's key: refused.
+      const forged = jwt.sign({ scope: 'go-ai', office: THEIRS, clerk_id: 9, role: 'manager', site: null }, 'not-the-server-key');
+      r = await asThem('/api/go/ai/briefing', forged);
+      assert.strictEqual(r.status, 401);
+      const forgedWeb = jwt.sign({ scope: 'go-ai-web', office: THEIRS, email: OFFICE }, 'not-the-server-key');
+      r = await call('GET', '/api/go/ai/briefing', null, forgedWeb);
+      assert.strictEqual(r.status, 401, 'a made-up web session is refused');
+      // Our own session naming the other venue's site: refused, not quietly answered.
+      r = await call('POST', '/api/go/ai/ask', { question: 'How much today?', site: 77, words: false }, T);
+      assert.strictEqual(r.status, 404, 'a site that is not this venue\'s');
+      // An office named in the body or the address is ignored: the answer is still ours.
+      asked.length = 0;
+      r = await call('POST', '/api/go/ai/ask', { question: 'How much today?', office: THEIRS, email: THEIRS, words: false }, T);
+      assert.strictEqual(r.status, 200);
+      r = await call('GET', `/api/go/ai/records?source=orders&period=today&office=${encodeURIComponent(THEIRS)}`, null, T);
+      assert.strictEqual(r.status, 200);
+      for (const a of asked) assert.ok(!a.params.includes(THEIRS), 'never asked about the other venue: ' + a.sql.slice(0, 70));
+      // Removing an invite by number only ever touches our own invites.
+      r = await call('DELETE', '/api/go/ai/invites/999999', null, T);
+      assert.strictEqual(r.status, 404);
+      ok('another venue is out of reach: other devices, forged sessions, other sites, office in the request, other invites');
+    }
 
     // A plain-wording view of the answer builders (what Go draws with no model).
     const d = {
