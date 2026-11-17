@@ -114,6 +114,7 @@ jobs:
           MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
           MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
           VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+          ALL_SECRETS: ${{ toJSON(secrets) }}
         run: |
           need="TRUSTED_SIGNING_ENDPOINT TRUSTED_SIGNING_ACCOUNT TRUSTED_SIGNING_PROFILE AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET"
           [ "${{ inputs.store }}" = "true" ] && need="$need MS_STORE_TENANT_ID MS_STORE_CLIENT_ID MS_STORE_CLIENT_SECRET"
@@ -121,6 +122,9 @@ jobs:
           missing=""
           for n in $need; do [ -n "${!n}" ] || missing="$missing $n"; done
           if [ -n "$missing" ]; then
+            # Names only: the values never reach the log.
+            echo "Secret names this job can see (environment and repository):"
+            jq -r 'keys[] | select(. != "github_token")' <<< "$ALL_SECRETS" | sed 's/^/  /'
             echo "::error::Not set in the 'App Store Connect API' environment:$missing (see the top of this file)."
             exit 1
           fi
