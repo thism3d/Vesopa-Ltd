@@ -1,0 +1,147 @@
+{
+  "intent": "stock",
+  "title": "Stock to reorder",
+  "headline": "2 of 2 counted products need attention: 1 out of stock, 1 running low.",
+  "why": [
+    "Burger is out of stock (usually 3.6 a day).",
+    "Lager: 30 left, about 10 a day, so roughly 3 days (around 2026-11-20)."
+  ],
+  "next": [],
+  "ai": null,
+  "ai_status": "not_asked",
+  "ai_note": null,
+  "ai_provider": null,
+  "cards": [
+    {
+      "type": "kpis",
+      "items": [
+        {
+          "label": "Counted products",
+          "value": 2,
+          "kind": "count",
+          "change_pct": null,
+          "good_when": "up"
+        },
+        {
+          "label": "Out of stock",
+          "value": 1,
+          "kind": "count",
+          "change_pct": null,
+          "good_when": "down"
+        },
+        {
+          "label": "Under 3 days",
+          "value": 0,
+          "kind": "count",
+          "change_pct": null,
+          "good_when": "down"
+        },
+        {
+          "label": "To reorder",
+          "value": 2,
+          "kind": "count",
+          "change_pct": null,
+          "good_when": "down"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Suggested reorder (enough for 14 days)",
+      "columns": [
+        {
+          "key": "name",
+          "label": "Product",
+          "kind": "text"
+        },
+        {
+          "key": "stock",
+          "label": "In stock",
+          "kind": "count"
+        },
+        {
+          "key": "per_day",
+          "label": "Sold a day",
+          "kind": "count"
+        },
+        {
+          "key": "days_cover",
+          "label": "Days left",
+          "kind": "days"
+        },
+        {
+          "key": "reorder_qty",
+          "label": "Reorder",
+          "kind": "count"
+        }
+      ],
+      "rows": [
+        {
+          "plu": 2,
+          "name": "Burger",
+          "department": "Unassigned",
+          "stock": 0,
+          "low_at": null,
+          "sold_28d": 100,
+          "per_day": 3.6,
+          "days_cover": 0,
+          "runs_out": null,
+          "reorder_qty": 50,
+          "cost_minor": 1200,
+          "status": "out"
+        },
+        {
+          "plu": 1,
+          "name": "Lager",
+          "department": "Unassigned",
+          "stock": 30,
+          "low_at": 20,
+          "sold_28d": 280,
+          "per_day": 10,
+          "days_cover": 3,
+          "runs_out": "2026-11-20",
+          "reorder_qty": 110,
+          "cost_minor": 100,
+          "status": "low"
+        }
+      ]
+    }
+  ],
+  "follow_ups": [
+    "Which products are not moving?",
+    "What were the best sellers this week?"
+  ],
+  "meta": {
+    "period": {
+      "key": "last_30_days",
+      "label": "Last 30 days (Mon 19 Oct to today)",
+      "from": "2026-10-19 00:00:00",
+      "to": "2026-11-17 14:30:00"
+    },
+    "compare": {
+      "label": "The 30 days before (Sat 19 Sept to Sun 18 Oct)",
+      "from": "2026-09-19 00:00:00",
+      "to": "2026-10-19 00:00:00"
+    },
+    "site": {
+      "id": null,
+      "label": "All sites"
+    },
+    "definitions": [
+      "Days left: stock now / average sold a day over the last 28 days, all sites.",
+      "Reorder: enough for 14 days at that rate, less stock on hand. Supplier lead times are not held yet, so allow for delivery."
+    ],
+    "freshness": {
+      "last_sale_at": "2026-11-17 14:20:00",
+      "computed_at": "2026-11-17 14:30:00",
+      "note": "Sales count once a till has sent them to Vesopa; a till that is offline sends them when it reconnects."
+    },
+    "records": {
+      "source": "stock",
+      "period": "last_30_days",
+      "site": null
+    },
+    "read_only": true
+  },
+  "question": "What stock should I reorder?"
+}

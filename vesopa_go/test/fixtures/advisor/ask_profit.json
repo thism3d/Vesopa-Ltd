@@ -1,0 +1,162 @@
+{
+  "intent": "profit",
+  "title": "Profit",
+  "headline": "Gross profit £326.67 on £666.67 net sales: a 49% margin, against 30.4% before.",
+  "why": [
+    "Lager earns the most: £400.00 gross profit at 80%.",
+    "Burger sells well but keeps only -44% (-£73.33 on £166.67 net)."
+  ],
+  "next": [],
+  "ai": null,
+  "ai_status": "unavailable",
+  "ai_note": "Plain wording: the AI model did not answer in time. The figures are exact either way.",
+  "ai_provider": null,
+  "cards": [
+    {
+      "type": "kpis",
+      "items": [
+        {
+          "label": "Gross profit",
+          "value": 32667,
+          "kind": "money",
+          "change_pct": 17.2,
+          "good_when": "up"
+        },
+        {
+          "label": "Margin",
+          "value": 49,
+          "kind": "pct",
+          "change_pct": 18.6,
+          "good_when": "up"
+        },
+        {
+          "label": "Net sales (costed)",
+          "value": 66667,
+          "kind": "money",
+          "change_pct": -27.3,
+          "good_when": "up"
+        },
+        {
+          "label": "Not costed",
+          "value": 0,
+          "kind": "pct",
+          "change_pct": null,
+          "good_when": "down"
+        }
+      ]
+    },
+    {
+      "type": "bars",
+      "title": "Gross profit by product",
+      "kind": "money",
+      "items": [
+        {
+          "label": "Lager",
+          "value": 40000
+        },
+        {
+          "label": "Burger",
+          "value": -7333
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Most profitable products",
+      "columns": [
+        {
+          "key": "name",
+          "label": "Product",
+          "kind": "text"
+        },
+        {
+          "key": "qty",
+          "label": "Sold",
+          "kind": "count"
+        },
+        {
+          "key": "gross_minor",
+          "label": "Revenue",
+          "kind": "money"
+        },
+        {
+          "key": "gp_minor",
+          "label": "Gross profit",
+          "kind": "money"
+        },
+        {
+          "key": "margin_pct",
+          "label": "Margin",
+          "kind": "pct"
+        }
+      ],
+      "rows": [
+        {
+          "plu": 1,
+          "name": "Lager",
+          "department": "Draught",
+          "qty": 100,
+          "gross_minor": 60000,
+          "net_minor": 50000,
+          "cost_minor": 10000,
+          "has_cost": true,
+          "gp_minor": 40000,
+          "margin_pct": 80,
+          "share_pct": 75
+        },
+        {
+          "plu": 2,
+          "name": "Burger",
+          "department": "Food",
+          "qty": 20,
+          "gross_minor": 20000,
+          "net_minor": 16667,
+          "cost_minor": 24000,
+          "has_cost": true,
+          "gp_minor": -7333,
+          "margin_pct": -44,
+          "share_pct": 25
+        }
+      ]
+    }
+  ],
+  "follow_ups": [
+    "Any products selling below cost?",
+    "What were the best sellers?",
+    "What should I focus on tomorrow?"
+  ],
+  "meta": {
+    "period": {
+      "key": "today",
+      "label": "Today so far (Tue 17 Nov, to 14:30)",
+      "from": "2026-11-17 00:00:00",
+      "to": "2026-11-17 14:30:00"
+    },
+    "compare": {
+      "label": "Last Tuesday to the same time (14:30)",
+      "from": "2026-11-10 00:00:00",
+      "to": "2026-11-10 14:30:00"
+    },
+    "site": {
+      "id": null,
+      "label": "All sites"
+    },
+    "definitions": [
+      "Net sales: product revenue with VAT taken out.",
+      "Gross profit: net sales minus cost (quantity x the product's cost price today).",
+      "Margin: gross profit / net sales. Products with no cost price are left out and shown as \"Not costed\"."
+    ],
+    "freshness": {
+      "last_sale_at": "2026-11-17 14:20:00",
+      "computed_at": "2026-11-17 14:30:00",
+      "note": "Sales count once a till has sent them to Vesopa; a till that is offline sends them when it reconnects."
+    },
+    "records": {
+      "source": "products",
+      "period": "today",
+      "site": null
+    },
+    "read_only": true
+  },
+  "question": ""
+}
