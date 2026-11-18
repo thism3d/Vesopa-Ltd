@@ -204,6 +204,7 @@ class VesopaSignInButton extends StatefulWidget {
 
 class _VesopaSignInButtonState extends State<VesopaSignInButton> {
   bool _down = false;
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -211,7 +212,18 @@ class _VesopaSignInButtonState extends State<VesopaSignInButton> {
     return Semantics(
       button: true,
       label: widget.label,
-      child: GestureDetector(
+      // A remote reaches it too: it takes the focus, and OK presses it.
+      child: FocusableActionDetector(
+        enabled: on,
+        onShowFocusHighlight: (v) => setState(() => _focused = v),
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) {
+            HapticFeedback.lightImpact();
+            widget.onPressed?.call();
+            return null;
+          }),
+        },
+        child: GestureDetector(
         onTapDown: on ? (_) => setState(() => _down = true) : null,
         onTapCancel: () => setState(() => _down = false),
         onTapUp: on
@@ -230,6 +242,7 @@ class _VesopaSignInButtonState extends State<VesopaSignInButton> {
             decoration: BoxDecoration(
               color: on ? Colors.white : Colors.white.withValues(alpha: 0.7),
               borderRadius: BorderRadius.circular(16),
+              border: _focused ? Border.all(color: Tp.lime, width: 3) : null,
               boxShadow: [
                 if (on) BoxShadow(color: Tp.lime.withValues(alpha: _down ? 0.15 : 0.28), blurRadius: _down ? 10 : 26, offset: const Offset(0, 8), spreadRadius: -6),
               ],
@@ -255,6 +268,7 @@ class _VesopaSignInButtonState extends State<VesopaSignInButton> {
             ]),
           ),
         ),
+      ),
       ),
     );
   }

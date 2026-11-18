@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/constants.dart';
 import 'hardware_fingerprint.dart';
 import 'licence_key.dart';
+import 'terminal_number.dart';
 import 'terminal_relicense.dart' show signedOutKey;
 import 'terminal_sync.dart';
 import 'terminal_identity.dart';
@@ -277,6 +278,12 @@ class SessionController extends AsyncNotifier<Session> {
     });
     await writeLicenceKey(key);
     await _adopt(body);
+    // The number it was licensed as is the terminal it is: no need to ask.
+    final t = body['terminal'];
+    final n = t is Map ? (t['number'] as num?)?.toInt() : int.tryParse(terminalNumber.trim());
+    if (n != null) {
+      await ref.read(terminalNumberProvider.notifier).adopt(n, t is Map ? t['name'] as String? : null);
+    }
     // A till being set up again: its printers and the rest come straight back.
     await restoreTerminalSettings(apiBase: apiBase, version: VesopaBrand.appVersion);
   }

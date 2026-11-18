@@ -101,6 +101,12 @@ const whatsNewByVersion = <String, List<String>>{
     'Each till has its own X and Z. Settings, Local network has a switch to add one report for all tills.',
     'A phone or tablet running Vesopa Go as a Card terminal can take this till\'s card payments (Settings, Card payments).',
   ],
+  '1.16.55': [
+    'A picked item on the bill is just highlighted: no "1 x selected", no pencil and no item box. Void and Cancel take items off.',
+    'Beside the totals: arrows to move down and up the bill, and Select all.',
+    'Functions, Discount: money off the highlighted items, or the whole bill when none are highlighted.',
+    'After signing in, the till asks which terminal it is, or replaces. Its sales, X and Z carry on under that terminal, and the X and Z show its number and name.',
+  ],
 };
 
 /// The notes to show once after an update to [VesopaBrand.appVersion], or

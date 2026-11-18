@@ -46,6 +46,7 @@ import '../../ui/pages/connection_page.dart';
 import '../../ui/pages/scan_sheet.dart';
 import '../../ui/sounds.dart';
 import '../../ui/theme.dart';
+import '../../ui/tv.dart';
 import '../data/basket_feed.dart';
 import '../data/control.dart';
 import '../data/display_options.dart';
@@ -98,25 +99,44 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
   Timer? _tick;
   Timer? _status;
 
+  // The remote (owner, 2026-11-18): a TV has no touch, so the arrows turn the
+  // adverts and OK opens the settings, behind the manager's PIN as before.
+  final _keys = FocusNode(debugLabel: 'display-remote');
+  final _slides = GlobalKey<_SlidesState>();
+  bool _hint = false;
+  Timer? _hintTimer;
+  bool _inSettings = false;
+
   @override
   void initState() {
     super.initState();
     WakelockPlus.enable().catchError((Object _) {});
     DisplayOptions.load().then((o) {
-      if (mounted) setState(() => _options = o);
+      if (!mounted) return;
+      setState(() => _options = o);
+      _applyScreen();
     });
     // The display, not the till, is on the venue's link now.
     TapSession.lanHeldByDisplay = true;
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _start();
+      // On a TV, say once what the remote does.
+      if (GoDevice.remote.value && mounted) _showHint();
+    });
   }
 
   @override
   void dispose() {
     _tick?.cancel();
     _status?.cancel();
+    _hintTimer?.cancel();
+    _keys.dispose();
+    // The rest of the app has its own bars and turns as it likes.
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    unawaited(SystemChrome.setPreferredOrientations(const []));
     _link?.stop();
     TapSession.lanHeldByDisplay = false;
     WakelockPlus.disable().catchError((Object _) {});
@@ -281,17 +301,81 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
     }
   }
 
+  /// The till's settings with this screen's own on top (display_options.dart).
+  TillControl get _ctl => _options.applyTo(_control);
+
+  /// How the adverts play here.
+  _Look get _look {
+    final c = _ctl;
+    return _Look(dwell: c.dwellSeconds, volume: c.advertVolume, fillStills: _options.fillStills, fillVideos: _options.fillVideos);
+  }
+
   bool get _idle {
-    final c = _control;
+    final c = _ctl;
     if (_basket.card != null) return false;
+    final since = DateTime.now().difference(_lastChange);
     if (_basket.state == 'paid') {
-      return DateTime.now().difference(_lastChange) > Duration(seconds: _options.thanksSeconds > 0 ? _options.thanksSeconds : c?.thankYouSeconds ?? 20);
+      // Zero holds the thank-you until the next sale, as on Windows.
+      return c.thankYouSeconds > 0 && since > Duration(seconds: c.thankYouSeconds);
     }
-    if (_basket.hasSale) return false;
-    return DateTime.now().difference(_lastChange) > Duration(seconds: min(c?.idleSeconds ?? 45, 10));
+    // A bill nobody has added to for the idle time gives the screen back to
+    // the adverts (the Windows display's "when the till goes quiet"); zero
+    // keeps the bill up for as long as it is open.
+    if (_basket.hasSale) return c.idleSeconds > 0 && since > Duration(seconds: c.idleSeconds);
+    return since > Duration(seconds: c.idleSeconds <= 0 ? 10 : min(c.idleSeconds, 10));
+  }
+
+  void _showHint() {
+    _hintTimer?.cancel();
+    if (!_hint) setState(() => _hint = true);
+    _hintTimer = Timer(const Duration(seconds: 6), () {
+      if (mounted) setState(() => _hint = false);
+    });
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    // A button on the screen has the focus (the member card, Try again):
+    // the arrows move between them as everywhere else.
+    if (!_keys.hasPrimaryFocus) return KeyEventResult.ignored;
+    final k = event.logicalKey;
+    _showHint();
+    if (k == LogicalKeyboardKey.arrowLeft) {
+      _slides.currentState?.previous();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.arrowRight) {
+      _slides.currentState?.next();
+      return KeyEventResult.handled;
+    }
+    final open = <LogicalKeyboardKey>{
+      LogicalKeyboardKey.select,
+      LogicalKeyboardKey.enter,
+      LogicalKeyboardKey.numpadEnter,
+      LogicalKeyboardKey.gameButtonA,
+      LogicalKeyboardKey.contextMenu,
+      LogicalKeyboardKey.f1,
+    };
+    if (open.contains(k)) {
+      if (event is KeyDownEvent) _settings();
+      return KeyEventResult.handled;
+    }
+    // Up and down go on to the app's remote, which moves to a button below.
+    return KeyEventResult.ignored;
   }
 
   Future<void> _settings() async {
+    if (_inSettings) return;
+    _inSettings = true;
+    try {
+      await _openSettings();
+    } finally {
+      _inSettings = false;
+      if (mounted && FocusManager.instance.primaryFocus is FocusScopeNode) _keys.requestFocus();
+    }
+  }
+
+  Future<void> _openSettings() async {
     await showModeSettings(context, ref, extra: [
       Card(
         child: ListTile(
@@ -349,11 +433,65 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
   }
 
   Future<void> _setOptions(DisplayOptions o) async {
+    final before = _options;
     setState(() => _options = o);
+    if (before.fullScreen != o.fullScreen || before.orientation != o.orientation) _applyScreen();
     await o.save();
   }
 
-  /// What a manager can change here, after their PIN.
+  /// Full screen and a fixed way up, as this display is set.
+  void _applyScreen() {
+    unawaited(SystemChrome.setEnabledSystemUIMode(_options.fullScreen ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge));
+    unawaited(SystemChrome.setPreferredOrientations(switch (_options.orientation) {
+      'landscape' => const [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
+      'portrait' => const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown],
+      _ => const <DeviceOrientation>[],
+    }));
+  }
+
+  /// One answer from a short list, in a dialog a remote can work.
+  Future<T?> _pick<T>(String title, T current, List<(T, String)> choices) => showDialog<T>(
+        context: context,
+        builder: (c) => SimpleDialog(
+          title: Text(title),
+          children: [
+            for (final (value, label) in choices)
+              ListTile(
+                autofocus: value == current,
+                leading: Icon(value == current ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+                    color: value == current ? Tp.lime : null),
+                title: Text(label),
+                onTap: () => Navigator.pop(c, value),
+              ),
+          ],
+        ),
+      );
+
+  /// A line of words. Empty gives the till's back.
+  Future<String?> _type(String title, String current, {String? hint, int lines = 1}) {
+    final words = TextEditingController(text: current);
+    return showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: words,
+          autofocus: true,
+          maxLines: lines,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: InputDecoration(hintText: hint ?? 'Empty: what the till says'),
+          onSubmitted: lines == 1 ? (v) => Navigator.pop(c, v) : null,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, words.text), child: const Text('Save')),
+        ],
+      ),
+    );
+  }
+
+  /// What a manager can change here, after their PIN: everything the Windows
+  /// customer display can be set to, in its sections and its words.
   Future<void> _displayOptions() => showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
@@ -365,64 +503,174 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
         redraw(() {});
       }
       final o = _options;
+      final till = _control;
+      final t = Theme.of(c).textTheme;
+      String secs(int s) => s >= 120 && s % 60 == 0 ? '${s ~/ 60} minutes' : '$s seconds';
+      String follow(String what) => 'What the till says${what.isEmpty ? '' : ' ($what)'}';
+
+      Widget section(String title, IconData icon, List<Widget> rows) => Padding(
+            padding: const EdgeInsets.only(top: 18),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: Row(children: [
+                  Icon(icon, size: 18, color: Tp.lime),
+                  const SizedBox(width: 8),
+                  Text(title.toUpperCase(), style: t.labelLarge?.copyWith(letterSpacing: 1.2, fontWeight: FontWeight.w800)),
+                ]),
+              ),
+              Card(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias, child: Column(children: rows)),
+            ]),
+          );
       Widget flag(String title, String detail, bool value, DisplayOptions Function(bool) change) => SwitchListTile(
-        title: Text(title),
-        subtitle: Text(detail),
-        value: value,
-        onChanged: (v) => set(change(v)),
-      );
-      return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          flag('Touch', 'Off: customers cannot touch anything on this screen.', o.touch, (v) => o.copyWith(touch: v)),
-          flag('Sound', 'A chime when a payment is approved or declined.', o.sound, (v) => o.copyWith(sound: v)),
-          flag('Pay from a phone', 'Show the QR code when the till offers it.', o.showQr, (v) => o.copyWith(showQr: v)),
-          flag('Amount to pay', 'The amount in big figures on the pay screen.', o.showAmount, (v) => o.copyWith(showAmount: v)),
-          flag('Card steps', 'What the card is doing, as the till words it.', o.showCardSteps, (v) => o.copyWith(showCardSteps: v)),
-          flag('Cards we take', 'Card and wallet names under the pay screen.', o.showCardMarks, (v) => o.copyWith(showCardMarks: v)),
-          flag('Discounts', 'Discounts and savings on the bill.', o.showDiscount, (v) => o.copyWith(showDiscount: v)),
-          flag('Member buttons', 'Tap a member card or scan a pass on the waiting screen.', o.memberButtons, (v) => o.copyWith(memberButtons: v)),
-          ListTile(
-            leading: const Icon(Icons.perm_media_rounded),
-            title: const Text('Adverts on this device'),
-            subtitle: const Text('Play pictures and films from this device\'s files and photos.'),
+            title: Text(title),
+            subtitle: Text(detail),
+            value: value,
+            onChanged: (v) => set(change(v)),
+          );
+      Widget choice(String title, String value, VoidCallback onTap) => ListTile(
+            title: Text(title),
+            subtitle: Text(value, style: TextStyle(color: Tp.lime.withValues(alpha: 0.9))),
             trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () async {
-              await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LocalAdvertsPage()));
-              unawaited(_loadLocal());
+            onTap: onTap,
+          );
+      Widget words(String title, String mine, String theirs, Future<void> Function(String) save, {String? hint, int lines = 1}) => choice(
+            title,
+            mine.isNotEmpty ? mine : (theirs.isEmpty ? 'Nothing' : follow(theirs)),
+            () async {
+              final v = await _type(title, mine, hint: hint, lines: lines);
+              if (v != null) await save(v.trim());
             },
-          ),
-          ListTile(
-            title: const Text('Dim adverts while waiting'),
-            subtitle: Text(o.idleDim == 0 ? 'Off' : '${o.idleDim} per cent darker'),
-          ),
-          Slider(
-            value: o.idleDim.toDouble(),
-            max: 80,
-            divisions: 8,
-            label: '${o.idleDim}',
-            onChanged: (v) => set(o.copyWith(idleDim: v.round())),
-          ),
-          ListTile(
-            title: const Text('Thank-you stays up for'),
-            subtitle: Text(o.thanksSeconds == 0 ? 'What the till says' : '${o.thanksSeconds} seconds'),
-          ),
-          Slider(
-            value: o.thanksSeconds.toDouble(),
-            max: 60,
-            divisions: 12,
-            label: '${o.thanksSeconds}',
-            onChanged: (v) => set(o.copyWith(thanksSeconds: v.round())),
-          ),
-          const ListTile(title: Text('Size of the words')),
-          Slider(
-            value: o.textScale,
-            min: 0.8,
-            max: 1.6,
-            divisions: 8,
-            label: o.textScale.toStringAsFixed(1),
-            onChanged: (v) => set(o.copyWith(textScale: v)),
-          ),
+          );
+
+      final tileIds = o.followsTillTiles ? (till?.tiles ?? const <String>[]) : o.tileList;
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 28),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('Display options', style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          Text('Saved on this screen and in the back office. "What the till says" follows the till this display is paired with.',
+              style: t.bodyMedium?.copyWith(color: Colors.white60)),
+          section('Big screen', Icons.tv_rounded, [
+            flag('Full screen', "Hide the device's own bars, so the screen is all display.", o.fullScreen, (v) => o.copyWith(fullScreen: v)),
+            choice('Which way up', switch (o.orientation) { 'landscape' => 'Landscape', 'portrait' => 'Portrait', _ => 'As the device is turned' }, () async {
+              final v = await _pick('Which way up', o.orientation, const [('auto', 'As the device is turned'), ('landscape', 'Landscape'), ('portrait', 'Portrait')]);
+              if (v != null) set(o.copyWith(orientation: v));
+            }),
+            ListTile(
+              title: const Text('Size of the words'),
+              subtitle: Text('${(o.textScale * 100).round()} per cent${(till?.zoom ?? 100) != 100 ? ', and the till zooms ${till!.zoom}%' : ''}'),
+            ),
+            Slider(value: o.textScale, min: 0.8, max: 1.6, divisions: 8, label: '${(o.textScale * 100).round()}%', onChanged: (v) => set(o.copyWith(textScale: v))),
+            flag('Touch', 'Off: customers cannot touch anything on this screen. The remote and the corner still work.', o.touch, (v) => o.copyWith(touch: v)),
+          ]),
+          section('Adverts', Icons.slideshow_rounded, [
+            ListTile(
+              leading: const Icon(Icons.perm_media_rounded),
+              title: const Text('Adverts on this device'),
+              subtitle: const Text("Play pictures and films from this device's files and photos."),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () async {
+                await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LocalAdvertsPage()));
+                unawaited(_loadLocal());
+              },
+            ),
+            choice('Each picture stays up for', o.dwellSeconds == 0 ? "Each advert's own time" : secs(o.dwellSeconds), () async {
+              final v = await _pick('Each picture stays up for', o.dwellSeconds, [
+                (0, "Each advert's own time"),
+                for (final n in const [5, 8, 10, 12, 15, 20, 30, 60]) (n, secs(n)),
+              ]);
+              if (v != null) set(o.copyWith(dwellSeconds: v));
+            }),
+            choice('Film sound', o.advertVolume < 0 ? follow(till == null ? '' : (till.advertVolume == 0 ? 'silent' : '${till.advertVolume}%')) : (o.advertVolume == 0 ? 'Silent' : '${o.advertVolume} per cent'), () async {
+              final v = await _pick('Film sound', o.advertVolume, const [(-1, 'What the till says'), (0, 'Silent'), (25, '25 per cent'), (50, '50 per cent'), (75, '75 per cent'), (100, 'Full')]);
+              if (v != null) set(o.copyWith(advertVolume: v));
+            }),
+            flag('Pictures fill the screen', 'Cropped to fit. Off shows the whole picture, with bars.', o.fillStills, (v) => o.copyWith(fillStills: v)),
+            flag('Films fill the screen', 'The same for films, which are often cut to another shape.', o.fillVideos, (v) => o.copyWith(fillVideos: v)),
+            ListTile(title: const Text('Dim adverts while waiting'), subtitle: Text(o.idleDim == 0 ? 'Off' : '${o.idleDim} per cent darker')),
+            Slider(value: o.idleDim.toDouble(), max: 80, divisions: 8, label: '${o.idleDim}%', onChanged: (v) => set(o.copyWith(idleDim: v.round()))),
+          ]),
+          section('While a bill is on screen', Icons.receipt_long_rounded, [
+            flag('Prices on each line', 'Off hides line prices, whatever the till says. The total always shows.', o.showPrices, (v) => o.copyWith(showPrices: v)),
+            flag('Discounts', 'Discounts and savings on the bill.', o.showDiscount, (v) => o.copyWith(showDiscount: v)),
+            flag('Adverts beside the bill', 'On a wide screen. Off gives the bill the whole screen.', o.saleAdverts, (v) => o.copyWith(saleAdverts: v)),
+            choice('Bill on the', switch (o.billSide) { 'left' => 'Left', 'right' => 'Right', _ => follow(till == null ? '' : (till.billOnRight ? 'right' : 'left')) }, () async {
+              final v = await _pick('Bill on the', o.billSide, const [('till', 'What the till says'), ('left', 'Left'), ('right', 'Right')]);
+              if (v != null) set(o.copyWith(billSide: v));
+            }),
+            choice('Bill takes', o.billShare == 0 ? follow(till == null ? '' : '${till.billShare}%') : '${o.billShare} per cent of the screen', () async {
+              final v = await _pick('Bill takes', o.billShare, const [(0, 'What the till says'), (30, '30 per cent'), (40, '40 per cent'), (50, 'Half'), (60, '60 per cent'), (70, '70 per cent')]);
+              if (v != null) set(o.copyWith(billShare: v));
+            }),
+          ]),
+          section('Tiles', Icons.dashboard_customize_rounded, [
+            SwitchListTile(
+              title: const Text("The till's tiles"),
+              subtitle: const Text('Off: choose this screen\'s own below.'),
+              value: o.followsTillTiles,
+              onChanged: (v) => set(o.copyWith(tiles: v ? 'till' : (till?.tiles ?? const []).join(','))),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final e in displayTiles.entries)
+                  FilterChip(
+                    label: Text(e.value),
+                    selected: tileIds.contains(e.key),
+                    onSelected: o.followsTillTiles
+                        ? null
+                        : (on) {
+                            final next = [...o.tileList]..remove(e.key);
+                            if (on) next.add(e.key);
+                            set(o.copyWith(tiles: next.join(',')));
+                          },
+                  ),
+              ]),
+            ),
+            if (!o.followsTillTiles) ...[
+              choice('Tiles sit', o.tilePlace == 'side' ? 'Down the side' : 'Along the bottom', () async {
+                final v = await _pick('Tiles sit', o.tilePlace, const [('bottom', 'Along the bottom'), ('side', 'Down the side')]);
+                if (v != null) set(o.copyWith(tilePlace: v));
+              }),
+            ],
+            words('Welcome tile', o.welcomeText, till?.welcomeText ?? '', (v) async => set(o.copyWith(welcomeText: v)), hint: 'Welcome to the club'),
+            words("Special's heading", o.specialTitle, till?.specialTitle ?? '', (v) async => set(o.copyWith(specialTitle: v)), hint: "Today's special"),
+            words("Special's words", o.specialText, till?.specialText ?? '', (v) async => set(o.copyWith(specialText: v)), hint: 'Sunday roast, £14.95', lines: 3),
+          ]),
+          section('When the till goes quiet', Icons.bedtime_rounded, [
+            choice('Adverts take over after', o.idleSeconds < 0
+                ? follow(till == null ? '' : (till.idleSeconds == 0 ? 'never' : secs(till.idleSeconds)))
+                : (o.idleSeconds == 0 ? 'Never: a bill stays up while it is open' : '${secs(o.idleSeconds)} with no change to the bill'), () async {
+              final v = await _pick('Adverts take over after', o.idleSeconds, [
+                (-1, 'What the till says'),
+                (0, 'Never'),
+                for (final n in const [20, 30, 45, 60, 90, 120, 300]) (n, secs(n)),
+              ]);
+              if (v != null) set(o.copyWith(idleSeconds: v));
+            }),
+          ]),
+          section('What the customer reads', Icons.chat_bubble_outline_rounded, [
+            words('Thank-you', o.thankYou, till?.thankYou ?? 'Thank you', (v) async => set(o.copyWith(thankYou: v)), hint: 'Thank you, see you soon'),
+            choice('Thank-you stays up for', o.thanksSeconds == 0 ? follow(till == null ? '' : (till.thankYouSeconds == 0 ? 'until the next sale' : secs(till.thankYouSeconds))) : secs(o.thanksSeconds), () async {
+              final v = await _pick('Thank-you stays up for', o.thanksSeconds, [
+                (0, 'What the till says'),
+                for (final n in const [5, 10, 20, 30, 60]) (n, secs(n)),
+              ]);
+              if (v != null) set(o.copyWith(thanksSeconds: v));
+            }),
+            words('Standing message', o.standingMessage, till?.standingMessage ?? '', (v) async => set(o.copyWith(standingMessage: v)), hint: 'Quiz night every Thursday'),
+            words('QR code for customers', o.customerQr, till?.customerQr ?? '', (v) async => set(o.copyWith(customerQr: v)), hint: 'A web address, e.g. https://…'),
+            if (o.customerQr.isNotEmpty)
+              words('Line under the QR', o.customerQrCaption, '', (v) async => set(o.copyWith(customerQrCaption: v)), hint: 'Scan to join'),
+            flag('Member buttons', 'Tap a member card or scan a pass on the waiting screen.', o.memberButtons, (v) => o.copyWith(memberButtons: v)),
+          ]),
+          section('Paying', Icons.contactless_rounded, [
+            flag('Pay from a phone', 'Show the QR code when the till offers it.', o.showQr, (v) => o.copyWith(showQr: v)),
+            flag('Amount to pay', 'The amount in big figures on the pay screen.', o.showAmount, (v) => o.copyWith(showAmount: v)),
+            flag('Card steps', 'What the card is doing, as the till words it.', o.showCardSteps, (v) => o.copyWith(showCardSteps: v)),
+            flag('Cards we take', 'Card and wallet names under the pay screen.', o.showCardMarks, (v) => o.copyWith(showCardMarks: v)),
+            flag('Sound', 'A chime when a payment is approved or declined.', o.sound, (v) => o.copyWith(sound: v)),
+          ]),
         ]),
       );
     }),
@@ -501,21 +749,40 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
       screen = _CardScreen(card: _basket.card!, basket: _basket, options: _options);
     } else if (_idle) {
       screen = _Idle(
+        slidesKey: _slides,
         adverts: _playing,
+        look: _look,
         venue: venue,
-        control: _control,
+        control: _ctl,
         dim: _options.idleDim,
         onMemberCard: _options.memberButtons ? _tapMemberCard : null,
         onScanPass: _options.memberButtons ? _scanPass : null,
       );
     } else if (_basket.state == 'paid') {
-      screen = _ThankYou(basket: _basket, words: _control?.thankYou ?? 'Thank you');
+      screen = _ThankYou(basket: _basket, words: _ctl.thankYou);
     } else {
-      screen = _Bill(basket: _basket, control: _control, adverts: _playing, venue: venue, showDiscount: _options.showDiscount);
+      screen = _Bill(
+        basket: _basket,
+        control: _ctl,
+        adverts: _options.saleAdverts ? _playing : const [],
+        look: _look,
+        venue: venue,
+        showDiscount: _options.showDiscount,
+      );
+    }
+    // The tiles (clock, date, welcome, special, QR, cards, total) along the
+    // bottom or down the side, over the adverts and the bill.
+    final tiles = _ctl.tiles;
+    if (tiles.isNotEmpty && (screen is _Idle || screen is _Bill)) {
+      screen = _WithTiles(tiles: tiles, side: _ctl.tilePlace == 'side', control: _ctl, basket: _basket, venue: venue, child: screen);
     }
     return Scaffold(
       backgroundColor: const Color(0xFF0B0E0A),
-      body: Theme(
+      body: Focus(
+        focusNode: _keys,
+        autofocus: true,
+        onKeyEvent: _onKey,
+        child: Theme(
         data: Tp.theme(Brightness.dark),
         child: Stack(children: [
           Positioned.fill(
@@ -528,12 +795,14 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
                 child: ScaleTransition(scale: Tween(begin: 0.98, end: 1.0).animate(a), child: child),
               ),
               child: KeyedSubtree(
-                key: ValueKey(screen.runtimeType),
+                key: ValueKey(screen is _WithTiles ? screen.child.runtimeType : screen.runtimeType),
                 // The corner below stays live, so staff are never locked out.
                 child: AbsorbPointer(
                   absorbing: _locked,
                   child: MediaQuery(
-                    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(_options.textScale)),
+                    data: MediaQuery.of(context).copyWith(
+                      textScaler: TextScaler.linear((_options.textScale * _ctl.zoom / 100).clamp(0.6, 2.4)),
+                    ),
                     child: screen,
                   ),
                 ),
@@ -555,8 +824,63 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
               ),
             ),
           ),
+          // What the remote does, for a few seconds after a key.
+          Positioned(
+            right: 24,
+            bottom: 24,
+            child: SafeArea(
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: _hint ? 1 : 0,
+                  duration: reduce ? Duration.zero : const Duration(milliseconds: 260),
+                  curve: _ease,
+                  child: _RemoteHint(adverts: _idle && _playing.length > 1),
+                ),
+              ),
+            ),
+          ),
         ]),
       ),
+      ),
+    );
+  }
+}
+
+/// The remote's keys on this screen, in the brand's lime key caps.
+class _RemoteHint extends StatelessWidget {
+  const _RemoteHint({required this.adverts});
+  final bool adverts;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme.titleSmall?.copyWith(color: Colors.white, fontWeight: FontWeight.w600);
+    Widget cap(String s) => Container(
+          constraints: const BoxConstraints(minWidth: 34),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: Tp.lime, borderRadius: BorderRadius.circular(8)),
+          child: Text(s, style: const TextStyle(color: Color(0xFF0B0E0A), fontWeight: FontWeight.w800, fontSize: 14)),
+        );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xE6171B15),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (adverts) ...[
+          cap('◀'),
+          const SizedBox(width: 4),
+          cap('▶'),
+          const SizedBox(width: 10),
+          Text('Adverts', style: t),
+          const SizedBox(width: 22),
+        ],
+        cap('OK'),
+        const SizedBox(width: 10),
+        Text('Settings', style: t),
+      ]),
     );
   }
 }
@@ -622,8 +946,9 @@ class _PairCode extends StatelessWidget {
 
 /// The bill as it is rung up; adverts beside it on a wide screen.
 class _Bill extends StatelessWidget {
-  const _Bill({required this.basket, required this.control, required this.adverts, required this.venue, this.showDiscount = true});
+  const _Bill({required this.basket, required this.control, required this.adverts, required this.venue, this.look = const _Look(), this.showDiscount = true});
   final bool showDiscount;
+  final _Look look;
   final Basket basket;
   final TillControl? control;
   final List<_Advert> adverts;
@@ -701,7 +1026,7 @@ class _Bill extends StatelessWidget {
     );
     if (!wide || adverts.isEmpty) return bill;
     final share = ((c?.billShare ?? 50).clamp(30, 70)) / 100;
-    final ad = _Slides(adverts: adverts);
+    final ad = _Slides(adverts: adverts, look: look);
     final billBox = Expanded(flex: (share * 100).round(), child: Container(color: const Color(0xFF12160F), child: bill));
     final adBox = Expanded(flex: ((1 - share) * 100).round(), child: ad);
     return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: c?.billOnRight == true ? [adBox, billBox] : [billBox, adBox]);
@@ -818,14 +1143,18 @@ class _ThankYou extends StatelessWidget {
 /// standing message and QR along the bottom.
 class _Idle extends StatelessWidget {
   const _Idle({
+    this.slidesKey,
     required this.adverts,
+    this.look = const _Look(),
     required this.venue,
     required this.control,
     this.dim = 0,
     this.onMemberCard,
     this.onScanPass,
   });
+  final GlobalKey<_SlidesState>? slidesKey;
   final List<_Advert> adverts;
+  final _Look look;
   final String venue;
   final TillControl? control;
   final int dim;
@@ -881,7 +1210,7 @@ class _Idle extends StatelessWidget {
                       style: t.displayMedium?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -1)),
                 ),
               )
-            : _Slides(adverts: adverts),
+            : _Slides(key: slidesKey, adverts: adverts, look: look),
       ),
       if (dim > 0) Positioned.fill(child: IgnorePointer(child: ColoredBox(color: Colors.black.withValues(alpha: dim / 100)))),
       Positioned(
@@ -905,9 +1234,20 @@ class _Idle extends StatelessWidget {
 }
 
 /// The adverts, one after another: a picture for its seconds, a film to its end.
+/// How the adverts play: seconds a picture stays up (0: its own), film
+/// volume, and whether pictures and films fill the screen or sit whole in it.
+class _Look {
+  const _Look({this.dwell = 0, this.volume = 0, this.fillStills = true, this.fillVideos = true});
+  final int dwell;
+  final int volume;
+  final bool fillStills;
+  final bool fillVideos;
+}
+
 class _Slides extends StatefulWidget {
-  const _Slides({required this.adverts});
+  const _Slides({super.key, required this.adverts, this.look = const _Look()});
   final List<_Advert> adverts;
+  final _Look look;
   @override
   State<_Slides> createState() => _SlidesState();
 }
@@ -926,6 +1266,7 @@ class _SlidesState extends State<_Slides> {
   @override
   void didUpdateWidget(_Slides old) {
     super.didUpdateWidget(old);
+    if (old.look.volume != widget.look.volume) unawaited(_video?.setVolume(widget.look.volume.clamp(0, 100) / 100));
     if (old.adverts.length != widget.adverts.length || (widget.adverts.isNotEmpty && old.adverts.isNotEmpty && old.adverts.last.url != widget.adverts.last.url)) {
       _i = 0;
       _show();
@@ -949,7 +1290,7 @@ class _SlidesState extends State<_Slides> {
       final v = a.file ? VideoPlayerController.file(File(a.url)) : VideoPlayerController.networkUrl(Uri.parse(a.url));
       try {
         await v.initialize();
-        await v.setVolume(0);
+        await v.setVolume(widget.look.volume.clamp(0, 100) / 100);
         if (!mounted) {
           await v.dispose();
           return;
@@ -966,11 +1307,15 @@ class _SlidesState extends State<_Slides> {
         _timer = Timer(const Duration(seconds: 1), _next);
       }
     } else {
-      _timer = Timer(Duration(seconds: a.seconds.clamp(3, 120)), _next);
+      _timer = Timer(Duration(seconds: (widget.look.dwell > 0 ? widget.look.dwell : a.seconds).clamp(3, 300)), _next);
     }
     await old?.dispose();
     if (mounted) setState(() {});
   }
+
+  /// The remote's left and right keys.
+  void previous() => _previous();
+  void next() => _next();
 
   void _previous() {
     if (!mounted) return;
@@ -994,11 +1339,14 @@ class _SlidesState extends State<_Slides> {
     final v = _video;
     final child = a.video
         ? (v != null && v.value.isInitialized
-            ? FittedBox(fit: BoxFit.cover, child: SizedBox(width: v.value.size.width, height: v.value.size.height, child: VideoPlayer(v)))
+            ? FittedBox(
+                fit: widget.look.fillVideos ? BoxFit.cover : BoxFit.contain,
+                child: SizedBox(width: v.value.size.width, height: v.value.size.height, child: VideoPlayer(v)),
+              )
             : const ColoredBox(color: Colors.black))
         : (a.file
-            ? Image.file(File(a.url), fit: BoxFit.cover, errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black))
-            : Image.network(a.url, fit: BoxFit.cover, errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black)));
+            ? Image.file(File(a.url), fit: widget.look.fillStills ? BoxFit.cover : BoxFit.contain, errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black))
+            : Image.network(a.url, fit: widget.look.fillStills ? BoxFit.cover : BoxFit.contain, errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black)));
     // A customer can swipe through them, either way.
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -1013,6 +1361,142 @@ class _SlidesState extends State<_Slides> {
         child: SizedBox.expand(key: ValueKey('$_i-${a.url}-${v != null}'), child: child),
       ),
       ),
+    );
+  }
+}
+
+/// The tiles: the Windows display's clock, date, welcome, special, QR, cards
+/// and total, as a strip along the bottom or a column down the side. Glass
+/// panels over the screen's own dark, the brand's lime for what matters.
+class _WithTiles extends StatelessWidget {
+  const _WithTiles({required this.tiles, required this.side, required this.control, required this.basket, required this.venue, required this.child});
+  final List<String> tiles;
+  final bool side;
+  final TillControl control;
+  final Basket basket;
+  final String venue;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final now = DateTime.now();
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    final due = basket.totalMinor - basket.paidMinor;
+
+    Widget? tile(String id) {
+      switch (id) {
+        case 'clock':
+          return _Tile(child: Text('${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
+              style: t.displaySmall?.copyWith(fontWeight: FontWeight.w300, fontFeatures: Tp.tabular)));
+        case 'date':
+          return _Tile(
+            label: days[now.weekday - 1],
+            child: Text('${now.day} ${months[now.month - 1]}', style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+          );
+        case 'welcome':
+          final words = control.welcomeText.isNotEmpty ? control.welcomeText : (venue.isEmpty ? 'Welcome' : 'Welcome to $venue');
+          return _Tile(fit: false, child: Text(words, maxLines: 3, overflow: TextOverflow.ellipsis, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)));
+        case 'special':
+          if (control.specialTitle.isEmpty && control.specialText.isEmpty) return null;
+          return _Tile(
+            label: control.specialTitle.isEmpty ? "Today's special" : control.specialTitle,
+            accent: true,
+            fit: false,
+            child: Text(control.specialText, maxLines: 4, overflow: TextOverflow.ellipsis, style: t.titleMedium),
+          );
+        case 'qr':
+          if (control.customerQr.isEmpty) return null;
+          return _Tile(
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+                child: QrImageView(data: control.customerQr, size: 76),
+              ),
+              const SizedBox(width: 12),
+              Flexible(child: Text(control.customerQrCaption, maxLines: 3, style: t.titleSmall)),
+            ]),
+          );
+        case 'cards':
+          return _Tile(
+            label: 'We take',
+            child: Text('Visa · Mastercard · Amex\nApple Pay · Google Pay', style: t.titleSmall?.copyWith(height: 1.35)),
+          );
+        case 'total':
+          if (!basket.hasSale || due <= 0) return null;
+          return _Tile(
+            label: basket.paidMinor > 0 ? 'Left to pay' : 'Total',
+            accent: true,
+            child: Text(money(due), style: t.headlineMedium?.copyWith(fontWeight: FontWeight.w900, color: Tp.lime, fontFeatures: Tp.tabular)),
+          );
+      }
+      return null;
+    }
+
+    final shown = [for (final id in tiles) ?tile(id)];
+    if (shown.isEmpty) return child;
+    if (side) {
+      return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Expanded(child: child),
+        Container(
+          width: 300,
+          color: const Color(0xFF0B0E0A),
+          padding: const EdgeInsets.fromLTRB(0, 16, 16, 16),
+          child: SafeArea(
+            left: false,
+            child: Column(children: [
+              for (final w in shown) Expanded(child: Padding(padding: const EdgeInsets.only(bottom: 12), child: w)),
+            ]),
+          ),
+        ),
+      ]);
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Expanded(child: child),
+      Container(
+        height: 136,
+        color: const Color(0xFF0B0E0A),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: SafeArea(
+          top: false,
+          child: Row(children: [
+            for (var i = 0; i < shown.length; i++) ...[
+              if (i > 0) const SizedBox(width: 12),
+              Expanded(child: shown[i]),
+            ],
+          ]),
+        ),
+      ),
+    ]);
+  }
+}
+
+class _Tile extends StatelessWidget {
+  const _Tile({required this.child, this.label, this.accent = false, this.fit = true});
+  final Widget child;
+  final bool fit;
+  final String? label;
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF171B15),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent ? Tp.lime.withValues(alpha: 0.55) : Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (label != null)
+          Text(label!.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: t.labelMedium?.copyWith(letterSpacing: 1.2, color: accent ? Tp.lime : Colors.white60, fontWeight: FontWeight.w700)),
+        if (label != null) const SizedBox(height: 4),
+        if (fit) FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: child) else Flexible(child: child),
+      ]),
     );
   }
 }

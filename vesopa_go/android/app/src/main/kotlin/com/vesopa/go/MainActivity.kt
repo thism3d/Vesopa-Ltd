@@ -39,7 +39,14 @@ class MainActivity : FlutterFragmentActivity() {
         if (pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK)) return true
         if (pm.hasSystemFeature("amazon.hardware.fire_tv")) return true
         val ui = getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager
-        return ui?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+        if (ui?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION) return true
+        // Android TV boxes that call themselves tablets: no touch screen,
+        // and a D-pad to move with (owner, 2026-11-18).
+        val config = resources.configuration
+        val noTouch = !pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN) ||
+            config.touchscreen == android.content.res.Configuration.TOUCHSCREEN_NOTOUCH
+        val dpad = config.navigation == android.content.res.Configuration.NAVIGATION_DPAD
+        return noTouch && dpad
     }
     private var receiver: BroadcastReceiver? = null
 
