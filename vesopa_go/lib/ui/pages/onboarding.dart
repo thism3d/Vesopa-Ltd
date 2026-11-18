@@ -116,14 +116,35 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   }
 
   Future<String?> _identity() async {
-    final s = await _api.identitySession();
+    final Map<String, dynamic> s;
+    try {
+      s = await _api.identitySession();
+    } on TapApiError catch (e) {
+      return _identityProblem(e.message);
+    }
+    // Stripe will not run Identity for Vesopa's account: the owner's ID is
+    // checked in step 3 instead, and the sign-up goes on (server: via_connect).
+    if (s['via_connect'] == true) return null;
     final r = await StripeOnboarding.verifyIdentity(
       sessionId: s['id'] as String,
       ephemeralKeySecret: s['ephemeral_key_secret'] as String,
       publishableKey: s['publishable_key'] as String? ?? '',
     );
-    if (r.end == StripeFlowEnd.failed) return r.message ?? 'Stripe could not check your ID. Try again.';
+    if (r.end == StripeFlowEnd.failed) return _identityProblem(r.message);
     return null;
+  }
+
+  /// Stripe's own words when it will not run an ID check at all ("For more
+  /// information on Stripe Identity supported use-cases and locations…")
+  /// describe Vesopa's Stripe account, not the person in front of the
+  /// screen, so they are put in words that person can act on.
+  static String _identityProblem(String? stripe) {
+    final m = stripe ?? '';
+    if (m.contains('identity/use-cases') || m.toLowerCase().contains('not enabled for identity') || m.toLowerCase().contains('identity is not')) {
+      return 'Stripe has not opened ID checks for Vesopa yet, so your ID cannot be checked right now. '
+          'Vesopa has been told; please try again later, or contact support@vesopa.com.';
+    }
+    return m.isEmpty ? 'Stripe could not check your ID. Try again.' : m;
   }
 
   Future<String?> _stripe() async {
@@ -240,11 +261,16 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                   detail: switch (identity) {
                     'verified' => 'Verified by Stripe.',
                     'processing' => 'Stripe is checking your ID. This usually takes a minute or two.',
+                    'via_connect' => stripe == 'complete'
+                        ? 'Checked by Stripe with the business and bank checks.'
+                        : 'Stripe checks your photo ID in the next step, with the business and bank checks.',
                     'requires_input' when s?['identity_error'] != null => s!['identity_error'] as String,
                     _ => 'A photo of your passport, driving licence or ID card, and a live selfie. Have it with you.',
                   },
-                  state: identity == 'verified'
+                  state: identity == 'verified' || (identity == 'via_connect' && stripe == 'complete')
                       ? _State.done
+                      : identity == 'via_connect'
+                          ? _State.waiting
                       : identity == 'processing'
                           ? _State.waiting
                           : s?['identity_error'] != null
@@ -253,7 +279,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                   current: next == 'identity',
                   action: identity == 'requires_input' && s?['identity_error'] != null ? 'Try again' : 'Verify my identity',
                   busy: _busy == 'identity',
-                  onPressed: _busy == null && businessDone && identity != 'verified' && identity != 'processing'
+                  onPressed: _busy == null && businessDone && identity != 'verified' && identity != 'processing' && identity != 'via_connect'
                       ? () => _step('identity', _identity)
                       : null,
                 ),

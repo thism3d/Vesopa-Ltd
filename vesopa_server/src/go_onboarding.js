@@ -58,6 +58,23 @@ const BUSINESS_TYPES = {
 };
 
 const IDENTITY_DONE = 'verified';
+
+/**
+ * Stripe will not run Identity for Vesopa's account at all (its words end
+ * "For more information on Stripe Identity supported use-cases and
+ * locations, please see https://docs.stripe.com/identity/use-cases"). That is
+ * the account's state, not the owner's ID, so the sign-up does not stop
+ * there: the owner's ID is checked by Stripe in step 3, the business and bank
+ * checks, which ask the owner for their photo ID as Stripe needs it. Identity
+ * is asked again on every try, so it takes over the moment Stripe opens it.
+ */
+const IDENTITY_VIA_CONNECT = 'via_connect';
+const identityRefused = (e) => {
+  const m = String((e && e.message) || '');
+  return /identity\/use-cases/i.test(m)
+    || /(not|n't) (been )?(enabled|activated|approved|eligible|available)[^.]*identity/i.test(m)
+    || /identity[^.]*(not|n't) (been )?(enabled|activated|approved|eligible|available)/i.test(m);
+};
 const LICENCE_OK = new Set(['trialing', 'active']);
 
 class OnboardingError extends Error {
@@ -309,7 +326,7 @@ function goOnboardingRoutes({
     if (refresh && stripeRow && stripeRow.account_id) {
       stripeRow = await stripeSettings.refresh(office, stripeRow).catch(() => stripeRow);
     }
-    if (refresh && row && row.identity_session && row.identity_status !== IDENTITY_DONE) {
+    if (refresh && row && row.identity_session && row.identity_status !== IDENTITY_DONE && row.identity_status !== IDENTITY_VIA_CONNECT) {
       const s = await client.retrieveIdentitySession(row.identity_session, optsOf(identityEnvOf(row, env))).catch(() => null);
       if (s) {
         await save(office, identityFields(s));
@@ -334,17 +351,20 @@ function goOnboardingRoutes({
     const steps = {
       business: Boolean(r.business_type && r.legal_name && r.expected_monthly_minor && r.average_sale_minor),
       identity: r.identity_status || 'not_started',
+      // 'via_connect': Stripe checks the owner's ID in step 3 instead.
       stripe: !s.account_id ? 'not_started'
         : card === 'active' && payouts === 'active' && !Number(s.requirements_due) ? 'complete'
           : card === 'active' ? 'more_needed' : 'in_review',
       bank: payouts === 'active' ? 'verified' : 'not_verified',
       licence: r.licence_status || 'not_started',
     };
-    const verified = steps.business && steps.identity === IDENTITY_DONE && steps.stripe === 'complete'
+    const identityOk = steps.identity === IDENTITY_DONE
+      || (steps.identity === IDENTITY_VIA_CONNECT && steps.stripe === 'complete');
+    const verified = steps.business && identityOk && steps.stripe === 'complete'
       && steps.bank === 'verified' && LICENCE_OK.has(steps.licence);
     const mode = card !== 'active' ? 'test' : verified ? 'live' : 'capped';
     const next = !steps.business ? 'business'
-      : steps.identity !== IDENTITY_DONE && steps.identity !== 'processing' ? 'identity'
+      : steps.identity !== IDENTITY_DONE && steps.identity !== 'processing' && steps.identity !== IDENTITY_VIA_CONNECT ? 'identity'
         : steps.stripe === 'not_started' || steps.stripe === 'more_needed' || (steps.stripe === 'in_review' && Number(s.requirements_due)) ? 'stripe'
           : !LICENCE_OK.has(steps.licence) ? 'licence' : null;
     // Nothing left for the owner to do (Stripe may still be reviewing): then
@@ -461,7 +481,14 @@ function goOnboardingRoutes({
       }
       if (!s) {
         const returnUrl = /^https:\/\//.test(String((req.body || {}).return_url || '')) ? req.body.return_url : null;
-        s = await client.createIdentitySession({ office: req.office, email: req.office, returnUrl }, opts);
+        try {
+          s = await client.createIdentitySession({ office: req.office, email: req.office, returnUrl }, opts);
+        } catch (e) {
+          if (!(e instanceof stripe.StripeError) || !identityRefused(e)) throw e;
+          console.warn(`[go_onboarding] Stripe refused Identity on the ${env} account; ${req.office} is checked in step 3:`, e.message);
+          await save(req.office, { identity_session: null, identity_status: IDENTITY_VIA_CONNECT, identity_error: null, identity_env: env });
+          return res.status(200).json({ via_connect: true, ...(await status(req.office)) });
+        }
       }
       await save(req.office, { ...identityFields(s), identity_env: env });
       const answer = {
@@ -711,7 +738,7 @@ function goOnboardingRoutes({
       const office = obj.metadata && obj.metadata.office;
       if (!office || (obj.metadata && obj.metadata.purpose !== 'vesopa_go_owner')) return;
       const row = await rowFor(office);
-      if (!row || (row.identity_session && row.identity_session !== obj.id)) return;
+      if (!row || row.identity_session !== obj.id) return;
       await save(office, identityFields(obj));
       broadcast({ type: 'go-onboarding' }, { office });
       return;
