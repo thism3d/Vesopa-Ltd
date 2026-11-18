@@ -23,7 +23,6 @@ import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/ui/pages/bill.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
 import 'package:vesopa_go/ui/clerk_chip.dart';
-import 'package:vesopa_go/payments/payment_service.dart';
 import 'package:vesopa_go/ui/accent.dart';
 import 'package:vesopa_go/ui/appearance.dart';
 import 'package:vesopa_go/ui/device_prefs.dart';
@@ -39,6 +38,8 @@ import '../data/lite_state.dart';
 import 'brand.dart';
 import 'cash_page.dart';
 import 'dojo_checklist_page.dart';
+import 'package:vesopa_go/payments/stripe_tap.dart' show StripeTapToPay;
+import 'package:vesopa_go/ui/tv.dart' show GoDevice;
 import 'stripe_checklist_page.dart';
 import '../../modes/device_mode.dart';
 import '../../display/data/display_hub.dart';
@@ -67,7 +68,7 @@ class _ShellState extends ConsumerState<Shell> {
   late final AppLifecycleListener _life = AppLifecycleListener(onResume: () {
     if (!mounted || kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
     final pay = ref.read(paymentsProvider);
-    if (pay is DojoTapToPay && MediaQuery.sizeOf(context).shortestSide < 600) pay.prepare(again: true);
+    if (pay is StripeTapToPay && MediaQuery.sizeOf(context).shortestSide < 600) pay.prepare();
   });
 
   @override
@@ -87,10 +88,8 @@ class _ShellState extends ConsumerState<Shell> {
       final s = ref.read(tapProvider);
       final tablet = MediaQuery.sizeOf(context).shortestSide >= 600;
       final pay = ref.read(paymentsProvider);
-      if (pay is DojoTapToPay && cardVia(ref.read(liteSettingsProvider), s.config, tablet: tablet) == 'tap') pay.prepare();
-      if (pay is DojoTapToPay) {
-        // Apple 3.8: only a manager accepts the Tap to Pay terms.
-        pay.canAcceptTerms = () => ref.read(tapProvider).clerk?.can(TillPermission.isManager) ?? false;
+      if (pay is StripeTapToPay && cardVia(ref.read(liteSettingsProvider), s.config, tablet: tablet) == 'tap') {
+        pay.prepare();
         // Apple 3.1 / 3.2: the introduction, once, for everyone who takes payments.
         if (!tablet && !s.demo) maybeShowTapToPayIntro(context, ref);
       }
@@ -281,7 +280,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         if (stripe)
           ListTile(
             dense: true,
-            title: Text('Stripe · ${stripeStatus == null ? 'checking' : stripeStatus.live ? 'Live' : 'Sandbox'}'),
+            title: Text('Vesopa Pay · ${stripeStatus == null ? 'checking' : stripeStatus.live ? 'Live' : 'Test mode'}'),
             subtitle: Text(stripeStatus == null ? 'Chosen by the venue in the back office' : (stripeStatus.ready ? 'Account ready to take cards' : 'Account not ready to take cards')),
           ),
         if (s.config.teya.enabled && !stripe)
@@ -296,8 +295,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 title: const Text('The venue\'s choice'),
                 subtitle: Text(cardVia(const LiteSettings(), s.config, tablet: tablet) == 'tap' ? 'Tap to Pay' : 'Card machine'),
               ),
-              const RadioListTile(value: 'tap', title: Text('Tap to Pay on this device')),
-              RadioListTile(value: 'machine', title: Text(stripe ? 'The Stripe card reader' : 'The card machine')),
+              // Vesopa Tap to Pay: phones (and the iPad, for the demo), never a TV.
+              if (stripe && !GoDevice.isTv) const RadioListTile(value: 'tap', title: Text('Vesopa Tap to Pay on this device')),
+              RadioListTile(value: 'machine', title: Text(stripe ? 'The Vesopa card reader' : 'The card machine')),
             ]),
           ),
         // Tap to Pay needs NFC: when it is off or missing, say so and why.

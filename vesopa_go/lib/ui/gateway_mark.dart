@@ -12,10 +12,13 @@ import '../data/session.dart';
 import '../payments/payment_service.dart';
 import '../payments/stripe_tap.dart';
 import '../payments/teya_machine.dart';
+import '../counter/ui/brand.dart' show GoMark;
 import 'theme.dart';
 
 enum CardGateway {
-  stripe('Stripe', 'assets/marks/gateway_stripe.svg'),
+  // Vesopa's own payments (Stripe underneath): branded Vesopa, never Stripe
+  // (owner, 2026-11-18: "Don't brand Stripe directly, brand Vesopa Tap to Pay").
+  stripe('Vesopa Pay', ''),
   dojo('Dojo', 'assets/marks/gateway_dojo.png'),
   teya('Teya', 'assets/marks/gateway_teya.svg');
 
@@ -28,7 +31,7 @@ enum CardGateway {
 CardGateway? gatewayOf(PaymentService pay) => switch (pay) {
   StripeTapToPay() => CardGateway.stripe,
   TeyaCardMachine() => CardGateway.teya,
-  DojoTapToPay() => CardGateway.dojo,
+  DojoCardMachine() => CardGateway.dojo,
   _ => null,
 };
 
@@ -58,9 +61,15 @@ class GatewayBadge extends ConsumerWidget {
     final gateway = ref.watch(cardGatewayProvider);
     if (gateway == null) return const SizedBox.shrink();
     const height = 22.0;
-    final logo = gateway.asset.endsWith('.svg')
-        ? SvgPicture.asset(gateway.asset, height: height, fit: BoxFit.contain, semanticsLabel: gateway.label)
-        : Image.asset(gateway.asset, height: height, fit: BoxFit.contain, semanticLabel: gateway.label);
+    final logo = gateway.asset.isEmpty
+        ? Row(mainAxisSize: MainAxisSize.min, children: [
+            const GoMark(size: height),
+            const SizedBox(width: 6),
+            Text(gateway.label, style: const TextStyle(color: Color(0xFF111111), fontWeight: FontWeight.w800, fontSize: 15, height: 1)),
+          ])
+        : gateway.asset.endsWith('.svg')
+            ? SvgPicture.asset(gateway.asset, height: height, fit: BoxFit.contain, semanticsLabel: gateway.label)
+            : Image.asset(gateway.asset, height: height, fit: BoxFit.contain, semanticLabel: gateway.label);
     return Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,

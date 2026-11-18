@@ -163,7 +163,6 @@ class _DojoChecklistPageState extends ConsumerState<DojoChecklistPage> {
 
   Future<void> _run(DojoCase c) async {
     final s = ref.read(tapProvider);
-    final pay = ref.read(paymentsProvider);
     switch (c.run) {
       case CaseRun.sale || CaseRun.saleTap:
         final outcome = await Navigator.of(context).push<PaymentOutcome>(MaterialPageRoute(
@@ -203,13 +202,9 @@ class _DojoChecklistPageState extends ConsumerState<DojoChecklistPage> {
         final r = outcome ?? const PaymentOutcome(PayResult.cancelled);
         _record(c, CaseResult(passed: r.result == c.expect, at: DateTime.now(), outcome: r.result.name, reference: r.paymentId, note: r.message));
       case CaseRun.tapSetUp:
-        if (pay is! DojoTapToPay) return _say('Tap to Pay on iPhone is not this device\'s card reader.');
-        final why = await pay.setUp();
-        _record(c, CaseResult(passed: why == null, at: DateTime.now(), outcome: why == null ? 'linked' : 'error', note: why));
       case CaseRun.tapGuide:
-        if (pay is! DojoTapToPay) return _say('Tap to Pay on iPhone is not this device\'s card reader.');
-        final why = await pay.showGuide();
-        _record(c, CaseResult(passed: why == null, at: DateTime.now(), outcome: why == null ? 'shown' : 'error', note: why));
+        // Dojo's Tap to Pay was removed (owner, 2026-11-18); its cases no longer run.
+        return _say('Dojo Tap to Pay is no longer in Vesopa Go: Tap to Pay on this device is Vesopa Tap to Pay.');
       case CaseRun.manual:
         final ok = await showAdaptiveDialog<bool>(
           context: context,

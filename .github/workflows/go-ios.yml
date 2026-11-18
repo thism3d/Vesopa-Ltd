@@ -55,9 +55,11 @@ permissions:
 
 jobs:
   ios:
-    # macOS 26, which carries Xcode 27: App Store Connect (ITMS-90725, build
-    # 1.2.66) wants apps built with the iOS 27 SDK from April 2027.
-    runs-on: macos-26
+    # Xcode 27 and the iOS 27 SDK: App Store Connect (ITMS-90725, builds
+    # 1.2.66 and 1.2.67) wants apps built with them from April 2027. GitHub's
+    # macos-26 image stops at Xcode 26.6; Xcode 27 is on the xcode-27 image
+    # (actions/runner-images #14404).
+    runs-on: xcode-27
     timeout-minutes: 120
     environment: App Store Connect API
     env:
@@ -76,8 +78,9 @@ jobs:
           sdk=$(xcrun --sdk iphoneos --show-sdk-version)
           echo "iOS SDK $sdk"
           case "$sdk" in
-            1*|2[0-6].*) echo "::warning::Built with the iOS $sdk SDK. App Store Connect needs the iOS 27 SDK (Xcode 27) from April 2027." ;;
+            1*|2[0-6].*) echo "::error::Only the iOS $sdk SDK here. App Store Connect needs the iOS 27 SDK (Xcode 27)."; exit 1 ;;
           esac
+          echo "### Xcode $(xcodebuild -version | head -1 | awk '{print $2}'), iOS SDK $sdk" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -123,7 +126,14 @@ jobs:
         env:
           TAPTOPAY: ${{ steps.asc.outputs.taptopay }}
           NFC: ${{ steps.asc.outputs.nfc }}
+          LINKS: ${{ steps.asc.outputs.links }}
+          APPLEPAY: ${{ steps.asc.outputs.applepay }}
         run: |
+          [ "$LINKS" = "true" ] || /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.associated-domains" Runner.entitlements
+          [ "$APPLEPAY" = "true" ] || /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.in-app-payments" Runner.entitlements
+          # The card sheet offers Apple Pay only in a build that carries the entitlement.
+          /usr/libexec/PlistBuddy -c "Delete :VesopaApplePay" Info.plist 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :VesopaApplePay bool $([ "$APPLEPAY" = "true" ] && echo true || echo false)" Info.plist
           [ "$TAPTOPAY" = "true" ] || /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.proximity-reader.payment.acceptance" Runner.entitlements
           [ "$NFC" = "true" ] || /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.nfc.readersession.formats" Runner.entitlements
           echo "Signed with: $(/usr/libexec/PlistBuddy -c Print Runner.entitlements | grep -o 'com.apple[^ ]*' | tr '\n' ' ')"

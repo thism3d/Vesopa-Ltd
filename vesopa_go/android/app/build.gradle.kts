@@ -17,8 +17,7 @@ val keyProperties = Properties().apply {
 
 android {
     namespace = "com.vesopa.go"
-    // 37: Dojo's Tap to Pay on Pocket SDK is built against it (minSdk and
-    // targetSdk are unchanged, so no device is left out).
+    // 37 at least (minSdk and targetSdk are unchanged, so no device is left out).
     compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
@@ -31,7 +30,7 @@ android {
         applicationId = "com.vesopa.go"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        // 26: secure storage, NFC and biometric sign-in. Dojo's Android Tap to Pay SDK may need more.
+        // 26: secure storage, NFC and biometric sign-in.
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
@@ -69,9 +68,3 @@ flutter {
     source = "../.."
 }
 
-// Dojo Tap to Pay on Pocket (docs.dojo.tech/tap-to-pay-on-pocket/sdk-integration).
-// Talks to the Dojo payment app on a Pocket; MainActivity.kt uses it when the
-// venue's Dojo account is known, and its own intents otherwise.
-dependencies {
-    implementation("tech.dojo.pos:tap-to-pay-on-pocket:1.0.0")
-}

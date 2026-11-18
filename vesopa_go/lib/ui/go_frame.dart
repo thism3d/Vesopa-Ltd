@@ -58,7 +58,7 @@ class StatusChips extends ConsumerWidget {
     final sandbox = stripe ? stripeStatus?.live != true : (teya ? s.config.teya.environment : s.config.environment) != 'live';
     final cardName = teya
         ? 'Teya card machine'
-        : (via == 'tap' ? 'Tap to Pay on this device' : (stripe ? 'Stripe card reader' : 'Dojo card machine'));
+        : (via == 'tap' ? 'Tap to Pay on this device' : (stripe ? 'Vesopa card reader' : 'Dojo card machine'));
     final lan = LanService.instance;
     // A phone's bar has room for one light: the link to the back office.
     final phone = MediaQuery.sizeOf(context).width < 600;

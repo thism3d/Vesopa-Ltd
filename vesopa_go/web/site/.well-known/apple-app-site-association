@@ -1,0 +1,13 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["G238FR2ZC9.com.vesopa.go"],
+        "components": [
+          { "/": "/link/*", "comment": "A screen's or TV's QR: Vesopa Go opens at Connect this screen" },
+          { "/": "/link", "comment": "The same without the trailing slash" }
+        ]
+      }
+    ]
+  }
+}

@@ -1026,6 +1026,26 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
     }
   }
 
+  /**
+   * What a scanned code is, before anyone says yes: the screen's own name and
+   * whether it is a TV, so the phone can ask "Connect Living room TV?"
+   * (owner, 2026-11-18: "get the TV name and show that to the app while
+   * accepting the prompt").
+   */
+  router.get('/api/device/link/:code', linkApprover, (req, res) => {
+    linkSweep();
+    const link = links.get(cleanCode(req.params.code));
+    if (!link) return res.status(404).json({ error: 'That code is not on a screen now. Check it, or get a new one on the screen.' });
+    res.json({
+      code: cleanCode(req.params.code),
+      name: link.device.name,
+      tv: link.device.tv,
+      version: link.device.version || null,
+      connected: Boolean(link.grant),
+      expires_in: Math.max(0, Math.round((link.until - Date.now()) / 1000)),
+    });
+  });
+
   router.post('/api/device/link/approve', express.json(), linkApprover, async (req, res, next) => {
     try {
       const ip = req.ip;
@@ -1044,7 +1064,20 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
 
       const mode = ['epos', 'kitchen', 'display', 'terminal'].includes(body.mode) ? body.mode : 'display';
       const name = clamp(body.name, 80) || link.device.name;
-      const made = await store.create(req.office, { kind: 'go', name, by: req.linkBy, enforce: true });
+      let made;
+      try {
+        made = await store.create(req.office, { kind: 'go', name, by: req.linkBy, enforce: true });
+      } catch (e) {
+        if (e.status !== 409) throw e;
+        // No Go seat free, or none ever given: say which, and what to do.
+        const limit = await licences.limitFor(pool, req.office, 'go');
+        return res.status(409).json({
+          error: limit === 0
+            ? 'Vesopa Go is not on this venue\'s licence yet, so a screen cannot be added. Finish Account checks in Vesopa Go (the 14-day trial opens it), or ask Vesopa.'
+            : `All ${limit} of this venue's Vesopa Go devices are in use. Remove one in the back office (Devices, Terminals), or ask Vesopa for more.`,
+          seats_full: true,
+        });
+      }
       const row = await store.get(req.office, made.id);
       const [[venue]] = await pool.query('SELECT id, name FROM offices WHERE contact_email = ?', [req.office]);
       link.grant = {

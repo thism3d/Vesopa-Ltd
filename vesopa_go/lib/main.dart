@@ -32,6 +32,7 @@ import 'modes/mode_chooser_page.dart';
 import 'modes/terminal_mode_page.dart';
 import 'payments/go_terminal.dart';
 import 'data/session.dart';
+import 'ui/deep_links.dart';
 import 'ui/accent.dart';
 import 'ui/appearance.dart';
 import 'ui/device_prefs.dart';
@@ -120,7 +121,10 @@ class GoApp extends ConsumerWidget {
       // Signed on: the licence, offline and idle rules over every page.
       // The start animation over the first screen, then the frame's rules.
       builder: (context, child) => TvRemote(
-        child: GoSplash(child: !signup && phase == Phase.ready && (!modes || device.mode == DeviceMode.epos) ? GoFrame(child: child!) : child!),
+        // A screen's QR, opened with the phone's camera (ui/deep_links.dart).
+        child: GoLinks(
+          child: GoSplash(child: !signup && phase == Phase.ready && (!modes || device.mode == DeviceMode.epos) ? GoFrame(child: child!) : child!),
+        ),
       ),
       title: appName,
       debugShowCheckedModeBanner: false,

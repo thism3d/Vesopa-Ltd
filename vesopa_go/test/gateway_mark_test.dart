@@ -14,12 +14,13 @@ void main() {
 
   test('each payment service names its own gateway', () {
     expect(gatewayOf(StripeTapToPay(TapApi())), CardGateway.stripe);
-    expect(gatewayOf(DojoTapToPay(TapApi())), CardGateway.dojo);
+    expect(gatewayOf(DojoCardMachine(TapApi())), CardGateway.dojo);
     expect(gatewayOf(DemoPayments()), isNull);
   });
 
   test('every logo is in the app', () async {
-    for (final g in CardGateway.values) {
+    // Vesopa Pay draws its own mark (no picture): Stripe is never shown.
+    for (final g in CardGateway.values.where((g) => g.asset.isNotEmpty)) {
       expect((await rootBundle.load(g.asset)).lengthInBytes, greaterThan(0), reason: g.label);
     }
   });

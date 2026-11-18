@@ -10,13 +10,7 @@ import UIKit
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  /// Dojo Tap to Pay on iPhone, for lib/payments/payment_service.dart.
-  private var dojo: DojoTapToPayBridge?
-
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "DojoTapToPayBridge") {
-      dojo = DojoTapToPayBridge(messenger: registrar.messenger())
-    }
   }
 }

@@ -307,6 +307,41 @@
       + (actions ? '<div class="act">' + actions + '</div>' : '') + '</section>';
   }
 
+  // -*-*-*-*-: one segment a step (owner, 2026-11-18), as in the app.
+  function progress(s) {
+    var st = s.steps, lic = s.licence || {}, sk = s.skipped || [];
+    var idOk = st.identity === 'verified' || (st.identity === 'via_connect' && st.stripe === 'complete');
+    var parts = [
+      ['Business', st.business ? 'done' : 'todo'],
+      ['Identity', idOk ? 'done' : (st.identity === 'processing' || st.identity === 'via_connect' || sk.indexOf('identity') >= 0) ? 'waiting' : s.identity_error ? 'problem' : 'todo'],
+      ['Checks', st.stripe === 'complete' ? 'done' : (sk.indexOf('stripe') >= 0 || (st.stripe === 'in_review' && !s.requirements_due)) ? 'waiting' : st.stripe === 'more_needed' ? 'problem' : 'todo'],
+      ['Trial', (lic.status === 'trialing' || lic.status === 'active') ? 'done' : 'todo'],
+      ['PIN', s.owner_pin_set ? 'done' : 'todo'],
+    ];
+    var done = parts.filter(function (p) { return p[1] === 'done'; }).length;
+    return '<div class="su-progress" role="list" aria-label="' + done + ' of 5 steps done">'
+      + parts.map(function (p) { return '<div class="seg ' + p[1] + '" role="listitem"><span></span><small>' + p[0] + '</small></div>'; }).join('')
+      + '</div><p class="su-count">' + done + ' of 5 done</p>';
+  }
+
+  function checklist(c) {
+    if (!c || !c.rows) return '';
+    return '<ul class="su-check">' + c.rows.map(function (r) {
+      return '<li class="' + (r.done ? 'ok' : 'due') + '"><i aria-hidden="true">' + (r.done ? '✓' : '') + '</i>' + esc(r.label)
+        + (r.done ? '' : '<em>' + (r.due ? 'Needed' : 'Waiting') + '</em>') + '</li>';
+    }).join('') + '</ul>' + (c.other_due ? '<p class="small">' + c.other_due + ' other item' + (c.other_due === 1 ? '' : 's') + ' to add.</p>' : '');
+  }
+
+  function skip(step) {
+    state.busy = 'skip';
+    render();
+    return api('POST', '/api/go/onboarding/skip', { step: step }).then(function (s) { state.status = s; state.busy = null; render(); }).catch(fail);
+  }
+
+  function unskip(step) {
+    return api('POST', '/api/go/onboarding/unskip', { step: step }).then(function (s) { state.status = s; render(); }).catch(fail);
+  }
+
   function btn(id, text, primary, disabled) {
     return '<button type="button" class="btn ' + (primary ? 'primary' : 'ghost') + ' small" data-do="' + id + '"' + (disabled ? ' disabled' : '') + '>' + esc(text) + '</button>';
   }
@@ -357,10 +392,22 @@
     if (!s) { app.innerHTML = h + '<p>Loading your checks…</p>'; return bind(); }
     var st = s.steps;
     var modeText = {
-      test: ['Test mode', 'Everything works, but card payments are pretend until Stripe has checked your business.'],
+      test: ['Test mode', 'Everything works, but card payments are pretend until your business is checked.'],
       capped: ['Live, with limits', 'Up to ' + pounds(s.limits && s.limits.per_payment_minor) + ' a payment and ' + pounds(s.limits && s.limits.per_day_minor) + ' a day until every check below has passed.'],
       live: ['Live', 'Every check has passed. Card payments have no Vesopa limits.'],
     }[s.mode] || ['', ''];
+    if (s.ready_to_use) {
+      var lic0 = s.licence || {};
+      h += '<section class="su-done"><div class="burst" aria-hidden="true">' + new Array(28).join('<i></i>') + '</div>'
+        + '<div class="tick" aria-hidden="true">✓</div><h2>You\'re all set!</h2>'
+        + '<p>' + (lic0.trial_end ? 'Your 14 days free run until ' + esc(dateOf(lic0.trial_end)) + '. We\'ve emailed you the details.' : 'Your venue is ready on Vesopa Go.') + '</p>'
+        + '<div class="open"><span>EPOS</span><span>Kitchen</span><span>Display</span><span>Card terminal</span></div>'
+        + ((s.pending || []).length ? '<p class="later">Still to finish: ' + (s.pending || []).map(function (p) { return p === 'identity' ? 'your identity' : 'the business and bank checks'; }).join(' and ') + '. Card payments stay limited until then.</p>' : '')
+        + '<p><a class="btn primary" href="/install/">Get Vesopa Go on your phone</a> <a class="btn ghost" href="https://backoffice.vesopaepos.com">Open the back office</a></p></section>';
+    }
+    h += progress(s);
+    // Finished: the checks fold away under the celebration.
+    if (s.ready_to_use) h += '<details class="su-past"><summary>Your checks</summary>';
     h += '<div class="mode ' + esc(s.mode) + '"><span class="dot"></span><div><b>' + esc(modeText[0]) + '</b>' + esc(modeText[1]) + '</div></div>';
 
     // 1. Business
@@ -387,26 +434,35 @@
     var viaConnect = st.identity === 'via_connect';
     var idTag = st.identity === 'verified' || (viaConnect && st.stripe === 'complete') ? ['done', 'Done']
       : viaConnect ? ['waiting', 'In step 3'] : st.identity === 'processing' ? ['waiting', 'Being checked'] : s.identity_error ? ['problem', 'Needs you'] : ['todo', 'To do'];
-    var idBody = st.identity === 'verified' ? '<p>Verified by Stripe.</p>'
-      : viaConnect ? '<p>' + (st.stripe === 'complete' ? 'Checked by Stripe with the business and bank checks.' : 'Stripe checks your photo ID in the next step, with the business and bank checks.') + '</p>'
-      : st.identity === 'processing' ? '<p>Stripe is checking your ID. This usually takes a minute or two; this page updates by itself.</p>'
-        : '<p>' + esc(s.identity_error || 'A photo of your passport, driving licence or ID card and a live selfie, taken with your camera. On a computer without a camera, Stripe offers to continue on your phone.') + '</p>';
+    var skippedId = (s.skipped || []).indexOf('identity') >= 0;
+    if (skippedId && idTag[0] === 'todo') idTag = ['waiting', 'Left for later'];
+    var idBody = st.identity === 'verified' ? '<p>Verified.</p>'
+      : viaConnect ? '<p>' + (st.stripe === 'complete' ? 'Checked with the business and bank checks.' : 'Your photo ID is checked in the next step, with the business and bank checks.') + '</p>'
+      : st.identity === 'processing' ? '<p>Your ID is being checked. This usually takes a minute or two; this page updates by itself.</p>'
+        : skippedId ? '<p>Left for later. Card payments stay limited until your identity is verified.</p>'
+        : '<p>' + esc(s.identity_error || 'A photo of your passport, driving licence or ID card and a live selfie, taken with your camera. On a computer without a camera, you can continue on your phone.') + '</p>';
     h += step(2, 'Your identity', idTag[0], idTag[1], idBody,
       st.business && st.identity !== 'verified' && st.identity !== 'processing' && !viaConnect
-        ? btn('identity', state.busy === 'identity' ? 'Opening Stripe…' : (s.identity_error ? 'Try again' : 'Verify my identity'), s.next === 'identity', !!state.busy) : '',
+        ? btn('identity', state.busy === 'identity' ? 'Opening the secure check…' : (s.identity_error ? 'Try again' : 'Verify my identity'), s.next === 'identity', !!state.busy)
+          + (skippedId ? '' : btn('skip-identity', 'Skip for now', false, !!state.busy)) : '',
       s.next === 'identity');
 
     // 3. Stripe
     var stTag = st.stripe === 'complete' ? ['done', 'Done'] : st.stripe === 'more_needed' ? ['problem', 'Needs you'] : st.stripe === 'in_review' && !s.requirements_due ? ['waiting', 'Being checked'] : ['todo', 'To do'];
-    var stBody = {
-      complete: '<p>Stripe has checked the business and the bank account it pays into.</p>',
-      in_review: '<p>Stripe is reviewing what you sent. We\'ll show here if they need anything else.</p>',
-      more_needed: '<p>Stripe needs a little more information before every limit comes off.</p>',
-    }[st.stripe] || '<p>Stripe checks the business, its directors and owners, and the bank account your takings are paid into.</p>';
+    var skippedSt = (s.skipped || []).indexOf('stripe') >= 0;
+    if (skippedSt && stTag[0] === 'todo') stTag = ['waiting', 'Left for later'];
+    var stBody = ({
+      complete: '<p>Your business and the bank account your takings are paid into are verified.</p>',
+      in_review: '<p>Everything you sent is being reviewed. We\'ll show here if anything else is needed.</p>',
+      more_needed: '<p>A little more information is needed before every limit comes off.</p>',
+    }[st.stripe] || (skippedSt ? '<p>Left for later. Card payments stay limited until these checks are done.</p>' : '<p>Your business details, its directors and owners, and the bank account your takings are paid into.</p>'))
+      + (st.stripe !== 'not_started' ? checklist(s.checklist) : '');
     if (state.pane && state.pane.kind === 'stripe') stBody += '<p class="err" id="pane-error" role="alert"></p><div class="pane" id="connect-onboarding"></div>';
     h += step(3, 'Business and bank checks', stTag[0], stTag[1], stBody,
       st.business && st.stripe !== 'complete' && !(state.pane && state.pane.kind === 'stripe')
-        ? btn('stripe', state.busy === 'stripe' ? 'Opening Stripe…' : (st.stripe === 'not_started' ? 'Start' : 'Continue'), s.next === 'stripe', !!state.busy) : '',
+        ? btn('stripe', state.busy === 'stripe' ? 'Opening the secure checks…' : (st.stripe === 'not_started' ? 'Start the checks' : 'Continue the checks'), s.next === 'stripe', !!state.busy)
+          + (st.stripe !== 'not_started' ? btn('refresh', 'Check again', false, !!state.busy) : '')
+          + (skippedSt ? '' : btn('skip-stripe', 'Skip for now', false, !!state.busy)) : '',
       s.next === 'stripe');
 
     // 4. Licence
@@ -420,9 +476,9 @@
     if (st.business && !licOk) {
       licAct = state.pane && state.pane.kind === 'licence'
         ? btn('licence-confirm', state.busy === 'licence-confirm' ? 'Saving…' : 'Save card and start free trial', true, !!state.busy)
-        : btn('licence', state.busy === 'licence' ? 'Opening…' : 'Add a card', s.next === 'licence', !!state.busy);
+        : btn('licence', state.busy === 'licence' ? 'Opening…' : 'Add a card or wallet', s.next === 'licence', !!state.busy);
     }
-    h += step(4, 'Your Vesopa licence', licOk ? 'done' : (lic.status === 'past_due' || lic.status === 'unpaid') ? 'problem' : 'todo', licOk ? 'Done' : 'To do', licBody, licAct, s.next === 'licence');
+    h += step(4, 'Start your free trial', licOk ? 'done' : (lic.status === 'past_due' || lic.status === 'unpaid') ? 'problem' : 'todo', licOk ? 'Done' : 'To do', licBody, licAct, s.next === 'licence');
 
     // 5. The owner's manager PIN, once everything else is done.
     var pinBody = s.owner_pin_set
@@ -437,9 +493,8 @@
         : '<p>Once the steps above are done, choose the PIN you sign in to EPOS with.</p>';
     h += step(5, 'Your manager PIN', s.owner_pin_set ? 'done' : 'todo', s.owner_pin_set ? 'Done' : 'To do', pinBody, '', s.complete && !s.owner_pin_set);
 
-    if (s.ready_to_use) {
-      h += '<p><strong>All done.</strong> Install Vesopa Go on your iPhone or Android phone and sign in with the same Vesopa account. Manage your venue at <a href="https://backoffice.vesopaepos.com">backoffice.vesopaepos.com</a>.</p>';
-    } else {
+    if (s.ready_to_use) h += '</details>';
+    if (!s.ready_to_use) {
       h += '<p class="small">You can stop at any point and come back here, or finish in the Vesopa Go app (More, Account checks).</p>';
     }
     h += '<p class="small">Signed in as ' + esc(state.email || '') + ' · <a href="#" data-do="signout">Sign out</a></p>';
@@ -464,6 +519,11 @@
         if (what === 'signup') signIn(true);
         else if (what === 'signin') signIn(false);
         else if (what === 'edit-business') { state.editing = true; render(); }
+        else if (what === 'skip-identity') skip('identity');
+        else if (what === 'skip-stripe') skip('stripe');
+        else if (what === 'unskip-identity') unskip('identity');
+        else if (what === 'unskip-stripe') unskip('stripe');
+        else if (what === 'refresh') load(true);
         else if (what === 'identity') verifyIdentity();
         else if (what === 'stripe') startStripe();
         else if (what === 'licence') startLicence();

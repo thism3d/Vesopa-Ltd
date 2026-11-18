@@ -99,6 +99,10 @@ def cmd_prepare():
     asc.note(f"{NAME} ({APP_ID})")
     bundle = asc.ensure_bundle_id(c, APP_ID, NAME)
     asc.ensure_capability(c, bundle, "NFC_TAG_READING")
+    # Universal links: a TV's QR (go.vesopa.com/link/?c=...) opens Go itself
+    # (owner, 2026-11-18). The domain's apple-app-site-association names this app.
+    asc.ensure_capability(c, bundle, "ASSOCIATED_DOMAINS")
+    applepay = ensure_apple_pay(c, bundle)
     caps = {x["attributes"].get("capabilityType") or "" for x in c.all(f"/v1/bundleIds/{bundle['id']}/bundleIdCapabilities")}
     taptopay = any("PROXIMITY" in x or "TAP_TO_PAY" in x for x in caps)
     asc.note(f"  Tap to Pay on iPhone: {'granted' if taptopay else 'not granted to this App ID yet (built without it)'}")
@@ -114,7 +118,42 @@ def cmd_prepare():
     build = asc.next_build(c, app["id"], version(), 1)
     asc.note(f"  build number: {build} for version {version()}")
     output(build=build, version=version(), app=app["id"], taptopay=str(taptopay).lower(),
-           nfc=str("NFC_TAG_READING" in caps).lower())
+           nfc=str("NFC_TAG_READING" in caps).lower(),
+           links=str("ASSOCIATED_DOMAINS" in caps).lower(), applepay=str(applepay).lower())
+
+
+MERCHANT_ID = "merchant.com.vesopa.go"
+
+
+def ensure_apple_pay(c, bundle):
+    """Apple Pay for the licence card sheet (owner, 2026-11-18): the Merchant
+    ID made once, Apple Pay switched on for the App ID and the merchant named
+    on it. True only when Apple confirms all three; otherwise the app is built
+    without Apple Pay and the card sheet offers the card and Link."""
+    try:
+        found = [m for m in c.all("/v1/merchantIds", **{"filter[identifier]": MERCHANT_ID})
+                 if m["attributes"].get("identifier") == MERCHANT_ID]
+        merchant = found[0] if found else c.post("/v1/merchantIds", {"data": {
+            "type": "merchantIds", "attributes": {"identifier": MERCHANT_ID, "name": "Vesopa Go"}}})["data"]
+        asc.note(f"  Apple Pay merchant: {MERCHANT_ID}{' (made now)' if not found else ''}")
+    except asc.AppleError as e:
+        asc.note(f"  Apple Pay merchant ID not available through Apple's API: {e.detail()}")
+        return False
+    asc.ensure_capability(c, bundle, "APPLE_PAY")
+    try:
+        cap = next((x for x in c.all(f"/v1/bundleIds/{bundle['id']}/bundleIdCapabilities")
+                    if x["attributes"].get("capabilityType") == "APPLE_PAY"), None)
+        if not cap:
+            return False
+        linked = c.all(f"/v1/bundleIdCapabilities/{cap['id']}/merchantIds")
+        if not any(m["id"] == merchant["id"] for m in linked):
+            c.call("POST", f"/v1/bundleIdCapabilities/{cap['id']}/relationships/merchantIds",
+                   {"data": [{"type": "merchantIds", "id": merchant["id"]}]})
+            asc.note(f"  {MERCHANT_ID} named on {APP_ID}'s Apple Pay")
+        return True
+    except asc.AppleError as e:
+        asc.todo(f"Name {MERCHANT_ID} on {APP_ID}'s Apple Pay (developer.apple.com > Identifiers > {APP_ID} > Apple Pay > Edit): {e.detail()}")
+        return False
 
 
 def cmd_signing(out_dir):

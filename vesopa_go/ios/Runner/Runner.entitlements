@@ -8,6 +8,18 @@
 	<key>com.apple.developer.proximity-reader.payment.acceptance</key>
 	<true/>
 	<!-- Staff cards and fobs (ISO 14443 tags, read by id only). -->
+	<!-- Universal links (2026-11-18): a TV's QR opens Go at "Connect this
+	     screen". go.vesopa.com/.well-known/apple-app-site-association. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:go.vesopa.com</string>
+	</array>
+	<!-- Apple Pay on the licence card sheet. Removed at build time when the
+	     Merchant ID is not yet named on the App ID (testflight.py). -->
+	<key>com.apple.developer.in-app-payments</key>
+	<array>
+		<string>merchant.com.vesopa.go</string>
+	</array>
 	<key>com.apple.developer.nfc.readersession.formats</key>
 	<array>
 		<string>TAG</string>
