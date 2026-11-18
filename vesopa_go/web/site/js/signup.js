@@ -193,6 +193,9 @@
     state.error = null;
     render();
     api('POST', '/api/go/onboarding/identity', { return_url: REDIRECT }).then(function (s) {
+      // Stripe will not run Identity for Vesopa's account: the ID is checked
+      // in step 3 with the business and bank checks, and the sign-up goes on.
+      if (s.via_connect) return null;
       return stripeFor(s.publishable_key).verifyIdentity(s.client_secret);
     }).then(function (r) {
       state.busy = null;
@@ -381,12 +384,15 @@
       st.business && !state.editing && st.stripe === 'not_started' ? btn('edit-business', 'Change', false) : '', s.next === 'business');
 
     // 2. Identity
-    var idTag = st.identity === 'verified' ? ['done', 'Done'] : st.identity === 'processing' ? ['waiting', 'Being checked'] : s.identity_error ? ['problem', 'Needs you'] : ['todo', 'To do'];
+    var viaConnect = st.identity === 'via_connect';
+    var idTag = st.identity === 'verified' || (viaConnect && st.stripe === 'complete') ? ['done', 'Done']
+      : viaConnect ? ['waiting', 'In step 3'] : st.identity === 'processing' ? ['waiting', 'Being checked'] : s.identity_error ? ['problem', 'Needs you'] : ['todo', 'To do'];
     var idBody = st.identity === 'verified' ? '<p>Verified by Stripe.</p>'
+      : viaConnect ? '<p>' + (st.stripe === 'complete' ? 'Checked by Stripe with the business and bank checks.' : 'Stripe checks your photo ID in the next step, with the business and bank checks.') + '</p>'
       : st.identity === 'processing' ? '<p>Stripe is checking your ID. This usually takes a minute or two; this page updates by itself.</p>'
         : '<p>' + esc(s.identity_error || 'A photo of your passport, driving licence or ID card and a live selfie, taken with your camera. On a computer without a camera, Stripe offers to continue on your phone.') + '</p>';
     h += step(2, 'Your identity', idTag[0], idTag[1], idBody,
-      st.business && st.identity !== 'verified' && st.identity !== 'processing'
+      st.business && st.identity !== 'verified' && st.identity !== 'processing' && !viaConnect
         ? btn('identity', state.busy === 'identity' ? 'Opening Stripe…' : (s.identity_error ? 'Try again' : 'Verify my identity'), s.next === 'identity', !!state.busy) : '',
       s.next === 'identity');
 

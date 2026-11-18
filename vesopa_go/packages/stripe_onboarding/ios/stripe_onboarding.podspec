@@ -9,7 +9,7 @@ Pod::Spec.new do |s|
   s.source           = { :path => '.' }
   s.source_files     = 'stripe_onboarding/Sources/stripe_onboarding/**/*.swift'
   s.dependency 'Flutter'
-  s.dependency 'StripeIdentity', '~> 26.16'
+  s.dependency 'StripeIdentity', '~> 26.16', '>= 26.16.1'
   s.dependency 'StripeConnect', '~> 26.16'
   s.dependency 'StripePaymentSheet', '~> 26.16'
   s.platform         = :ios, '15.0'

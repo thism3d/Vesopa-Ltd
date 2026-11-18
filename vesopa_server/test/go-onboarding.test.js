@@ -78,7 +78,13 @@ function fakeStripe(state) {
       createTerminalPayment: async (acct, p) => { calls.push(['pay', acct, p.amountMinor]); return { id: 'pi_1', client_secret: 'pi_1_secret', status: 'requires_payment_method' }; },
     },
     onboarding: {
-      createIdentitySession: async (a, opts) => { calls.push(['identity', a.office, opts && opts.key]); return { id: 'vs_1', status: 'requires_input', client_secret: 'vs_1_secret', url: 'https://verify.stripe.com/x' }; },
+      createIdentitySession: async (a, opts) => {
+        calls.push(['identity', a.office, opts && opts.key]);
+        if (state.refuseIdentity) {
+          throw new stripe.StripeError(400, 'invalid_request_error',
+            'For more information on Stripe Identity supported use-cases and locations, please see https://docs.stripe.com/identity/use-cases.');
+        }
+        return { id: 'vs_1', status: 'requires_input', client_secret: 'vs_1_secret', url: 'https://verify.stripe.com/x' }; },
       retrieveIdentitySession: async () => ({ id: 'vs_1', status: state.identity || 'requires_input', client_secret: 'vs_1_secret' }),
       identityEphemeralKey: async () => ({ secret: 'ek_test_1' }),
       createCustomer: async () => ({ id: 'cus_1' }),
@@ -261,6 +267,26 @@ function signed(event) {
     r = await call(s2, 'POST', '/api/go/onboarding/stripe', { token: phone });
     ok(r.status === 201 && fake2.calls.filter((c) => c[0] === 'createAccount').length === 2, 'falls back to a plain account');
     s2.close();
+
+    // Stripe refusing Identity for Vesopa's account does not stop the sign-up:
+    // the owner's ID is checked in step 3, and Identity is tried again later.
+    const pool4 = fakePool();
+    const state4 = { card: 'inactive', payouts: 'inactive', due: 2, refuseIdentity: true };
+    const s4 = await listen(appWith(pool4, fakeStripe(state4)));
+    await call(s4, 'PUT', '/api/go/onboarding/business', { token: phone, body: { business_type: 'sole_trader', legal_name: 'Ann Owner', expected_monthly_minor: 500000, average_sale_minor: 800 } });
+    r = await call(s4, 'POST', '/api/go/onboarding/identity', { token: phone, body: { mobile: true } });
+    ok(r.status === 200 && r.body.via_connect === true && r.body.steps.identity === 'via_connect', 'refused Identity: checked in step 3');
+    ok(r.body.next === 'stripe' && r.body.identity_error === null, 'the sign-up goes on to Stripe\'s checks');
+    r = await call(s4, 'GET', '/api/go/onboarding?refresh=1', { token: phone });
+    ok(r.body.steps.identity === 'via_connect', 'a refresh keeps it');
+    state4.card = 'active'; state4.payouts = 'active'; state4.due = 0;
+    await call(s4, 'POST', '/api/go/onboarding/stripe', { token: phone });
+    r = await call(s4, 'GET', '/api/go/onboarding?refresh=1', { token: phone });
+    ok(r.body.steps.stripe === 'complete' && r.body.next === 'licence', 'Stripe\'s checks done: on to the licence');
+    state4.refuseIdentity = false;
+    r = await call(s4, 'POST', '/api/go/onboarding/identity', { token: phone, body: { mobile: true } });
+    ok(r.status === 201 && r.body.id === 'vs_1', 'once Stripe opens Identity it is used');
+    s4.close();
 
     // The website: code exchanged on the server, a new email gets a sign-up token.
     const issued = [];

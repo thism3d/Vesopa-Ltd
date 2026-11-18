@@ -55,7 +55,9 @@ permissions:
 
 jobs:
   ios:
-    runs-on: macos-latest
+    # macOS 26, which carries Xcode 27: App Store Connect (ITMS-90725, build
+    # 1.2.66) wants apps built with the iOS 27 SDK from April 2027.
+    runs-on: macos-26
     timeout-minutes: 120
     environment: App Store Connect API
     env:
@@ -63,6 +65,19 @@ jobs:
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Newest Xcode (the newest iOS SDK)
+        run: |
+          ls -d /Applications/Xcode*.app || true
+          best=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|release_candidate|_rc' \
+            | sed -E 's#.*/Xcode_([0-9.]+)\.app#\1#' | sort -V | tail -1)
+          if [ -n "$best" ]; then sudo xcode-select -s "/Applications/Xcode_${best}.app"; fi
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iOS SDK $sdk"
+          case "$sdk" in
+            1*|2[0-6].*) echo "::warning::Built with the iOS $sdk SDK. App Store Connect needs the iOS 27 SDK (Xcode 27) from April 2027." ;;
+          esac
 
       - uses: subosito/flutter-action@v2
         with:
