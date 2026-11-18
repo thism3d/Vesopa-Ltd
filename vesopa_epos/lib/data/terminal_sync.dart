@@ -168,6 +168,15 @@ Future<void> _write(SharedPreferences prefs, Map<String, Object> values) async {
   }
 }
 
+/// Forget which revision of the back office's settings this machine holds, so
+/// the next restore takes all of them: a machine that has just become another
+/// terminal (data/terminal_number.dart) takes that terminal's settings.
+Future<void> forgetTerminalRevision() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove(_revKey);
+  await prefs.remove(_sentKey);
+}
+
 Future<String?> _deviceToken(SharedPreferences prefs) async {
   final raw = prefs.getString('session');
   if (raw == null) return null;

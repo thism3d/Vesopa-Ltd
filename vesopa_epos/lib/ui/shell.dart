@@ -30,6 +30,8 @@ import '../data/staff_repository.dart' show defaultScreenFor;
 import '../data/staff_session.dart';
 import '../data/sync_service.dart';
 import '../data/terminal_identity.dart';
+import '../data/terminal_number.dart';
+import 'terminal_picker.dart';
 import '../data/terminal_service.dart';
 import '../data/till_seat.dart';
 import '../data/training_mode.dart';
@@ -163,6 +165,17 @@ class _PosShellState extends ConsumerState<PosShell> {
           actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Got it'))],
         ),
       );
+    });
+    // Which of the venue's terminals this till is, asked once after a sign-in
+    // (Nicky, 2026-11-18). After the note above, so the two never overlap.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      while (ModalRoute.of(context)?.isCurrent == false) {
+        await Future<void>.delayed(const Duration(seconds: 1));
+        if (!mounted) return;
+      }
+      await askTerminalNumberIfNeeded(context, ref);
     });
     // Start syncing only once the terminal knows which venue it belongs to —
     // before sign-in there is no catalogue to pull.
@@ -500,7 +513,7 @@ class _PosShellState extends ConsumerState<PosShell> {
       // and never while a sale is open on it.
       lan.onCall('xreport', (data, from) async {
         final x = await ref.read(sessionRepositoryProvider).xReport(
-              terminalName: ref.read(terminalNameProvider),
+              terminalName: ref.read(terminalTitleProvider),
               staffName: ref.read(servedByProvider),
             );
         return x.toJson();
@@ -512,7 +525,7 @@ class _PosShellState extends ConsumerState<PosShell> {
         }
         final by = data is Map ? '${data['by'] ?? ''}'.trim() : '';
         final z = await ref.read(sessionRepositoryProvider).zReport(
-              terminalName: ref.read(terminalNameProvider),
+              terminalName: ref.read(terminalTitleProvider),
               staffName: by.isEmpty ? ref.read(servedByProvider) : by,
             );
         ref.invalidate(xReportProvider);
@@ -1405,6 +1418,7 @@ class _PosShellState extends ConsumerState<PosShell> {
           onGoToReports: () => _goTo('Reports'),
           onGoToReceipts: () => _goTo('Receipts'),
           onGoToTables: () => _goTo('Table'),
+          onGoToSale: () => _goTo('Sale'),
         );
       default:
         return _sectionInfo(_index);

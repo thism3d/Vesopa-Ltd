@@ -22,6 +22,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../ui/tv.dart';
 import '../../data/api.dart';
 import '../../data/session.dart';
 import '../../modes/mode_settings.dart';
@@ -487,8 +488,10 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
         backgroundColor: const Color(0xFF0B0E0A),
         foregroundColor: Colors.white,
         titleSpacing: 16,
-        title: GestureDetector(
+        title: TvTap(
           onTap: _pickBoard,
+          radius: 10,
+          label: 'Choose the board',
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(profile.name, style: t.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
             Text(
@@ -973,9 +976,11 @@ class _ClippedState extends State<_Clipped> {
           left: 0,
           right: 0,
           bottom: 0,
-          child: GestureDetector(
+          child: TvTap(
             key: const ValueKey('ticket-more'),
             onTap: widget.onOpen,
+            radius: 0,
+            label: 'See the whole ticket',
             child: Container(
               padding: const EdgeInsets.fromLTRB(14, 22, 14, 6),
               decoration: const BoxDecoration(

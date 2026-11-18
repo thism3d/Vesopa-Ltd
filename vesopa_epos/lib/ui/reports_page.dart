@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/terminal_number.dart';
 import '../data/session_repository.dart';
 import '../main.dart';
 import '../printing/print_service.dart';
@@ -18,17 +19,18 @@ import 'widgets/basket_panel.dart' show money;
 import 'dart:async';
 
 import '../data/lan/lan_service.dart';
-import '../data/terminal_identity.dart';
 
 final xReportProvider = FutureProvider<TillReport>(
   // Who is signed on goes on the report, as it does on the reference one this
   // was matched against: a Z is a handover document, and "who took it" is half
-  // of what makes it one. There is no terminal name to put beside it — Vesopa
-  // has no per-till name to read — so that line is simply not printed rather
-  // than filled with something invented.
+  // of what makes it one. The terminal's number and name head it as well
+  // (Nicky, 2026-11-18): "Terminal 2 · Lounge".
   (ref) => ref
       .watch(sessionRepositoryProvider)
-      .xReport(staffName: ref.watch(servedByProvider)),
+      .xReport(
+        terminalName: ref.watch(terminalTitleProvider),
+        staffName: ref.watch(servedByProvider),
+      ),
 );
 
 /// The last Z run on this terminal, held so it can be printed again.
@@ -278,6 +280,7 @@ class ReportsPage extends ConsumerWidget {
     }
 
     final z = await ref.read(sessionRepositoryProvider).zReport(
+          terminalName: ref.read(terminalTitleProvider),
           staffName: ref.read(servedByProvider),
           declaredCashMinor: declared,
         );
@@ -617,7 +620,7 @@ class _AllTillsDialogState extends ConsumerState<_AllTillsDialog> {
     unawaited(_load());
   }
 
-  String get _here => ref.read(terminalNameProvider);
+  String get _here => ref.read(terminalTitleProvider);
 
   Future<void> _load() async {
     final lan = LanService.instance;

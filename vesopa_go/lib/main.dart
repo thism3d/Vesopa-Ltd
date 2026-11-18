@@ -112,7 +112,10 @@ class GoApp extends ConsumerWidget {
     // checks until they are finished and the owner's PIN is set: no PIN pad,
     // no EPOS, no other mode before then (owner, 2026-11-17).
     final signup = signedOn && !demo && holdForSignup(ref.watch(onboardingGateProvider).value);
-    return MaterialApp(
+    // The focus ring comes on with the first key from a remote (ui/tv.dart).
+    return ValueListenableBuilder<bool>(
+      valueListenable: GoDevice.remote,
+      builder: (context, _, _) => MaterialApp(
       navigatorKey: goNavigator,
       // Signed on: the licence, offline and idle rules over every page.
       // The start animation over the first screen, then the frame's rules.
@@ -144,6 +147,6 @@ class GoApp extends ConsumerWidget {
           Phase.ready => orMode(modes ? const GoDisplayFeed(key: ValueKey('ready'), child: Shell()) : const Shell(key: ValueKey('ready'))),
         },
       ),
-    );
+    ));
   }
 }

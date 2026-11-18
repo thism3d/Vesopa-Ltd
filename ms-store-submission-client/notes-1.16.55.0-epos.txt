@@ -1,0 +1,7 @@
+Version 1.16.55.0 - Bill arrows, line discounts and terminal numbers
+
+A picked item on the bill is now just highlighted, with no item box. Void and Cancel take items off.
+Arrows beside the totals move down and up the bill, and Select all picks every item.
+Functions has a Discount key: money off the highlighted items, or off the whole bill when none are highlighted.
+After signing in, the till asks which terminal it is. A replacement till takes over the terminal it replaces, so its sales, X and Z carry on under it.
+X and Z reports show the terminal number and name.

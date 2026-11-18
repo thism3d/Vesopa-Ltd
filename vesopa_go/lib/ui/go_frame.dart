@@ -15,6 +15,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
@@ -219,12 +220,27 @@ class _GoFrameState extends ConsumerState<GoFrame> {
   void initState() {
     super.initState();
     _touch();
+    HardwareKeyboard.instance.addHandler(_key);
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_key);
     _idle?.cancel();
     super.dispose();
+  }
+
+  /// A key from a remote or a keyboard is a touch: it keeps the screen
+  /// awake, and the first one wakes it from the idle screen (and goes no
+  /// further, as a tap on the idle screen does).
+  bool _key(KeyEvent event) {
+    if (event is! KeyDownEvent || !mounted) return false;
+    if (_idleShown) {
+      _wake();
+      return true;
+    }
+    _touch();
+    return false;
   }
 
   void _touch() {

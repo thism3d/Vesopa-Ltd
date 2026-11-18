@@ -477,6 +477,94 @@ function terminalStore(pool) {
     return row;
   }
 
+  /**
+   * Which terminal this machine is (Nicky, 2026-11-18): "when we sign in to a
+   * new terminal ... ask which terminal number this till is. ... if a till
+   * dies or breaks it will be listed by its PC name and new terminal, which is
+   * incorrect and needs to report under the terminal it's replacing."
+   *
+   * `number` empty: a new terminal, the next number. `number` given: this
+   * machine becomes that terminal. The machine it replaces gives its seat
+   * back; a row this machine made for itself before it was asked was never a
+   * terminal of its own, and goes. A terminal still in use elsewhere in the
+   * last ten minutes is only taken when `confirm` says so.
+   */
+  async function claim(office, { kind, deviceId, deviceName, number, name, seatId, confirm }) {
+    await ensure();
+    const [[mine]] = await pool.query(
+      'SELECT * FROM bo_terminals WHERE office = ? AND kind = ? AND device_id = ? AND revoked_at IS NULL',
+      [office, kind, deviceId]
+    );
+    const rename = async (id) => {
+      if (name) await pool.execute('UPDATE bo_terminals SET name = ? WHERE id = ?', [name, id]);
+      return get(office, id);
+    };
+    if (!number) {
+      const row = mine || (await enrol(office, { kind, deviceId, deviceName }));
+      return { row: await rename(row.id) };
+    }
+    const [[target]] = await pool.query(
+      'SELECT * FROM bo_terminals WHERE office = ? AND kind = ? AND terminal_no = ?',
+      [office, kind, number]
+    );
+    if (target && mine && target.id === mine.id) return { row: await rename(target.id) };
+    if (target && target.device_id && target.device_id !== deviceId && !confirm && target.last_ping_at &&
+        Date.now() - new Date(target.last_ping_at).getTime() < 10 * 60 * 1000) {
+      return {
+        busy: {
+          number: target.terminal_no,
+          name: target.name,
+          device_name: target.device_name,
+          last_ping_at: target.last_ping_at,
+        },
+      };
+    }
+    if (mine) {
+      if (mine.created_by === 'enrolled' && !mine.key_hash) {
+        await pool.execute('DELETE FROM bo_terminal_settings WHERE terminal_id = ?', [mine.id]);
+        await pool.execute('DELETE FROM bo_terminals WHERE id = ?', [mine.id]);
+      } else {
+        // A terminal of its own (it had a key): it lets go of this machine,
+        // and keeps its number and settings for whatever replaces it.
+        await pool.execute(
+          `UPDATE bo_terminals SET device_id = NULL, device_fingerprint = NULL, device_name = NULL,
+                  seat_id = NULL WHERE id = ?`,
+          [mine.id]
+        );
+      }
+    }
+    if (!target) {
+      await pool.execute(
+        `INSERT INTO bo_terminals
+           (office, kind, terminal_no, name, device_id, device_name, seat_id, licensed_at, last_ping_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 'claimed')`,
+        [office, kind, number, name || null, deviceId, deviceName || null, seatId || null]
+      );
+    } else {
+      if (target.seat_id && target.seat_id !== seatId) {
+        await tillSeats.releaseSeat(pool, {
+          office,
+          seatId: target.seat_id,
+          by: deviceName || 'a replacement till',
+          reason: 'replaced by another machine',
+        });
+      }
+      await pool.execute(
+        `UPDATE bo_terminals
+            SET device_id = ?, device_name = ?, device_fingerprint = NULL, seat_id = ?,
+                name = COALESCE(?, name), revoked_at = NULL, revoked_by = NULL,
+                licensed_at = COALESCE(licensed_at, NOW()), last_ping_at = NOW()
+          WHERE id = ?`,
+        [deviceId, deviceName || null, seatId || null, name || null, target.id]
+      );
+    }
+    const [[row]] = await pool.query(
+      'SELECT * FROM bo_terminals WHERE office = ? AND kind = ? AND terminal_no = ?',
+      [office, kind, number]
+    );
+    return { row };
+  }
+
   async function ping(id, { version, appliedRev, fingerprint }) {
     await pool.execute(
       `UPDATE bo_terminals
@@ -490,7 +578,7 @@ function terminalStore(pool) {
 
   return {
     pool, ensure, list, get, create, reissue, update, unbind, revoke, settings,
-    writeSettings, copy, enrol, ping,
+    writeSettings, copy, enrol, claim, ping,
   };
 }
 
@@ -678,6 +766,7 @@ function requireDevice(secret) {
     const asked = clamp((req.body && req.body.kind) || req.query.kind, 24);
     req.deviceKind = kinds.includes(asked) ? asked : kinds[0];
     req.office = claims.office;
+    req.deviceSeat = claims.jti || null;
     next();
   };
 }
@@ -1009,6 +1098,60 @@ function terminalLicenceRoutes({ pool, secret, auth, requireAdmin }) {
         rev: Number(row.settings_rev),
         settings: rows.map((r) => ({ category: r.category, name: r.name, value: parse(r.value) })),
       });
+    } catch (e) { next(e); }
+  });
+
+  /**
+   * The venue's terminals of this kind, for a till being signed in to say
+   * which one it is: number, name, and the machine each was last on.
+   */
+  router.get('/api/device/terminals', device, async (req, res, next) => {
+    try {
+      const deviceId = clamp(req.query.device_id, 64);
+      const rows = (await store.list(req.office)).filter(
+        (r) => r.kind === req.deviceKind && !r.revoked_at
+      );
+      res.json({
+        terminals: rows.map((r) => ({
+          number: r.terminal_no,
+          name: r.name,
+          device_name: r.device_name,
+          last_ping_at: r.last_ping_at,
+          version: r.app_version,
+          mine: Boolean(deviceId) && r.device_id === deviceId,
+        })),
+      });
+    } catch (e) { next(e); }
+  });
+
+  /** This machine is terminal `number` (or a new one). See store.claim. */
+  router.post('/api/device/terminal/claim', express.json(), device, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const deviceId = clamp(body.device_id, 64);
+      if (!deviceId) return res.status(400).json({ error: 'device_id is required' });
+      const number = body.number == null || body.number === '' ? null : asInt(body.number);
+      if (body.number != null && body.number !== '' && !number) {
+        return res.status(400).json({ error: 'A terminal number is a whole number from 1.' });
+      }
+      const done = await store.claim(req.office, {
+        kind: req.deviceKind,
+        deviceId,
+        deviceName: clamp(body.device_name, 120),
+        number,
+        name: clamp(body.name, 80) || null,
+        seatId: req.deviceSeat,
+        confirm: body.confirm === true,
+      });
+      if (done.busy) {
+        const b = done.busy;
+        return res.status(409).json({
+          busy: true,
+          error: `Terminal ${b.number}${b.name ? ` (${b.name})` : ''} is still in use on ` +
+            `${b.device_name || 'another machine'}. Replace it anyway? That machine will be signed out.`,
+        });
+      }
+      res.json({ terminal: terminalView(done.row) });
     } catch (e) { next(e); }
   });
 

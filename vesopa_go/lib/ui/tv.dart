@@ -28,11 +28,27 @@ class GoDevice {
   /// Whether this is a television. False until [load] has answered.
   static bool get isTv => _tv;
 
+  /// Whether a remote (or a D-pad) is driving the app: a television, or any
+  /// box that has sent an arrow or OK key. Many Android TV boxes call
+  /// themselves tablets (no leanback, normal UI mode), so the first key from
+  /// the remote turns the remote's behaviour on as well (owner, 2026-11-18:
+  /// "left right up down button not working").
+  static final remote = ValueNotifier<bool>(false);
+
   /// Set by tests and by the screenshot harness.
   @visibleForTesting
-  static set debugTv(bool value) => _tv = value;
+  static set debugTv(bool value) {
+    _tv = value;
+    remote.value = value;
+  }
+
+  static bool _listening = false;
 
   static Future<void> load() async {
+    if (!_listening) {
+      _listening = true;
+      HardwareKeyboard.instance.addHandler(_noticeKey);
+    }
     if (!Platform.isAndroid) return;
     try {
       final info = await const MethodChannel('com.vesopa.go/dojo').invokeMapMethod<String, Object?>('deviceInfo');
@@ -40,7 +56,78 @@ class GoDevice {
     } catch (_) {
       _tv = false;
     }
-    if (_tv) FocusManager.instance.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    if (_tv) _useRemote();
+  }
+
+  static final _remoteKeys = <LogicalKeyboardKey>{
+    LogicalKeyboardKey.arrowUp,
+    LogicalKeyboardKey.arrowDown,
+    LogicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowRight,
+    LogicalKeyboardKey.select,
+    LogicalKeyboardKey.gameButtonA,
+    LogicalKeyboardKey.contextMenu,
+  };
+
+  static bool _noticeKey(KeyEvent event) {
+    if (!remote.value && event is KeyDownEvent && _remoteKeys.contains(event.logicalKey)) _useRemote();
+    return false;
+  }
+
+  static void _useRemote() {
+    FocusManager.instance.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    if (!remote.value) remote.value = true;
+  }
+}
+
+/// Something to press that the remote can reach as well as a finger: it takes
+/// the focus, draws the lime ring while it has it, and OK presses it. For the
+/// custom tiles that were a bare GestureDetector, which a remote cannot reach.
+class TvTap extends StatefulWidget {
+  const TvTap({super.key, required this.onTap, required this.child, this.radius = 14, this.onLongPress, this.label});
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final Widget child;
+  final double radius;
+  final String? label;
+  @override
+  State<TvTap> createState() => _TvTapState();
+}
+
+class _TvTapState extends State<TvTap> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = widget.onTap != null;
+    return Semantics(
+      button: true,
+      label: widget.label,
+      child: FocusableActionDetector(
+        enabled: on,
+        onShowFocusHighlight: (v) => setState(() => _focused = v),
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) {
+            widget.onTap?.call();
+            return null;
+          }),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          onLongPress: widget.onLongPress,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(widget.radius),
+              border: Border.all(color: _focused ? Tp.lime : Colors.transparent, width: 3),
+              color: _focused ? Tp.lime.withValues(alpha: 0.12) : Colors.transparent,
+            ),
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -69,7 +156,9 @@ class TvRemote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!GoDevice.isTv) return child;
+    // The same shape always (a widget that came and went would rebuild the
+    // whole app under it); on Android the arrows move the focus or scroll.
+    if (!Platform.isAndroid) return child;
     return Shortcuts(
       shortcuts: _keys,
       child: Actions(
@@ -84,14 +173,18 @@ class TvRemote extends StatelessWidget {
 
 /// Move the focus; where it cannot move, scroll what is under it instead.
 class _MoveOrScroll extends Action<DirectionalFocusIntent> {
+  /// Inside a text box the left and right keys move the caret: the action
+  /// stands aside, so the key goes on to the text box's own shortcuts.
+  @override
+  bool isEnabled(DirectionalFocusIntent intent, [BuildContext? context]) {
+    final inText = primaryFocus?.context?.widget is EditableText;
+    return !(inText && (intent.direction == TraversalDirection.left || intent.direction == TraversalDirection.right));
+  }
+
   @override
   void invoke(DirectionalFocusIntent intent) {
     final focus = primaryFocus;
     if (focus == null) return;
-    if (focus.context?.widget is EditableText && (intent.direction == TraversalDirection.left || intent.direction == TraversalDirection.right)) {
-      // Inside a text box the left and right keys move the caret.
-      return;
-    }
     if (focus.focusInDirection(intent.direction)) {
       final context = primaryFocus?.context;
       if (context != null) {
@@ -120,9 +213,10 @@ class _MoveOrScroll extends Action<DirectionalFocusIntent> {
 }
 
 /// The theme with a focus ring nobody can miss from a sofa: a lime outline on
-/// every button, tile and field. Applied on a TV only.
+/// every button, tile and field. Applied once a remote is in use
+/// ([GoDevice.remote]); main.dart rebuilds the theme when that changes.
 ThemeData tvFocusTheme(ThemeData base) {
-  if (!GoDevice.isTv) return base;
+  if (!GoDevice.remote.value) return base;
   final ring = BorderSide(color: Tp.lime, width: 3);
   WidgetStateProperty<BorderSide?> side(BorderSide? rest) =>
       WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.focused) ? ring : rest);
