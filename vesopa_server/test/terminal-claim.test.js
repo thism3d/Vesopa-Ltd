@@ -144,6 +144,35 @@ function fakePool() {
   checks += 1;
 
   tillSeats.releaseSeat = realRelease;
+
+  // Scan and connect: the phone sees the TV's own name before it says yes.
+  const express = require('express');
+  const jwt = require('jsonwebtoken');
+  const { terminalLicenceRoutes } = require('../src/terminal_licences');
+  const app = express();
+  app.use(terminalLicenceRoutes({ pool, secret: 's3cret', auth: (_q, _r, n) => n(), requireAdmin: (_q, _r, n) => n() }));
+  const srv = await new Promise((ok) => { const h = app.listen(0, () => ok(h)); });
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const started = await (await fetch(`${base}/api/device/link/start`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_name: 'Bar TV', tv: true, app_version: '1.2.68' }),
+  })).json();
+  assert.ok(/^[A-Z0-9]{8}$/.test(started.code) && started.url.includes(started.code));
+  checks += 1;
+  const phone = jwt.sign({ scope: 'terminal', office: 'v@x' }, 's3cret');
+  let info = await fetch(`${base}/api/device/link/${started.code}`, { headers: { Authorization: `Bearer ${phone}` } });
+  const body = await info.json();
+  assert.strictEqual(info.status, 200);
+  assert.strictEqual(body.name, 'Bar TV');
+  assert.strictEqual(body.tv, true);
+  checks += 1;
+  info = await fetch(`${base}/api/device/link/${started.code}`);
+  assert.strictEqual(info.status, 401, 'nobody unsigned reads a code');
+  info = await fetch(`${base}/api/device/link/ZZZZZZZZ`, { headers: { Authorization: `Bearer ${phone}` } });
+  assert.strictEqual(info.status, 404);
+  checks += 1;
+  srv.close();
+
   console.log(`terminal-claim: ${checks} checks passed`);
 })().catch((e) => {
   console.error(e);

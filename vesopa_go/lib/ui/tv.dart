@@ -51,7 +51,7 @@ class GoDevice {
     }
     if (!Platform.isAndroid) return;
     try {
-      final info = await const MethodChannel('com.vesopa.go/dojo').invokeMapMethod<String, Object?>('deviceInfo');
+      final info = await const MethodChannel('com.vesopa.go/device').invokeMapMethod<String, Object?>('deviceInfo');
       _tv = info?['tv'] == true;
     } catch (_) {
       _tv = false;

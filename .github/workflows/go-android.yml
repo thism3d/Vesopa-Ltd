@@ -218,6 +218,26 @@ jobs:
           "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$APP" --listing || ok=1
           exit $ok
 
+      # go.vesopa.com/.well-known/assetlinks.json: lets a screen's QR open Go
+      # itself on Android (vesopa_go/tool/assetlinks.py), for the upload key and
+      # Play's app-signing key.
+      - name: App links (assetlinks.json)
+        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        continue-on-error: true
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+          KSP: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KA: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          [ -n "$VESOPA_SSH_PASSWORD" ] || { echo "::warning::VESOPA_SSH_PASSWORD is not set: assetlinks.json not published"; exit 0; }
+          sha=$(keytool -list -v -keystore "$RUNNER_TEMP/keys/upload.jks" -storepass "$KSP" -alias "$KA" | awk '/SHA256:/{print $2; exit}')
+          mkdir -p ~/.ssh "$RUNNER_TEMP/ssh"
+          printf 'Host *\n  StrictHostKeyChecking accept-new\n  ConnectTimeout 20\n  ServerAliveInterval 30\n  ControlMaster auto\n  ControlPath %s/cm-%%r@%%h\n  ControlPersist 30m\n' "$RUNNER_TEMP/ssh" > ~/.ssh/config
+          printf '#!/bin/sh\nprintf "%%s\n" "$VESOPA_SSH_PASSWORD"\n' > "$RUNNER_TEMP/ssh/askpass"; chmod 700 "$RUNNER_TEMP/ssh/askpass"
+          export SSH_ASKPASS="$RUNNER_TEMP/ssh/askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=':0'
+          "$RUNNER_TEMP/py/bin/python" vesopa_go/tool/assetlinks.py --upload "$sha" --version-code "${{ steps.num.outputs.build }}"
+          rm -rf "$RUNNER_TEMP/ssh"
+
       - name: Remove the keys
         if: always()
         run: rm -rf "$RUNNER_TEMP/keys" "$APP/android/key.properties"

@@ -323,6 +323,14 @@ class TapApi {
   /// The licence's SetupIntent: 14 days free, then £29 a month.
   Future<Map<String, dynamic>> licenceSession() => _send('POST', '/api/go/onboarding/licence');
 
+  /// Leave a sign-up step for later (identity, stripe), or come back to it.
+  /// The venue stays capped until it is done (go_onboarding.js).
+  Future<Map<String, dynamic>> onboardingSkip(String step) => _send('POST', '/api/go/onboarding/skip', {'step': step});
+  Future<Map<String, dynamic>> onboardingUnskip(String step) => _send('POST', '/api/go/onboarding/unskip', {'step': step});
+
+  /// A screen's own name before connecting it ("Connect Bar TV?").
+  Future<Map<String, dynamic>> linkInfo(String code) => _send('GET', '/api/device/link/${Uri.encodeComponent(code)}');
+
   /// The owner's manager PIN, once the checks are done: they become the
   /// venue's first manager, and Go's EPOS opens.
   Future<Map<String, dynamic>> setOwnerPin({required String name, required String pin}) =>
@@ -587,7 +595,6 @@ class TapApi {
 
   /// What Dojo's Tap to Pay on Pocket SDK needs (/api/tap/pocket-config):
   /// the venue's Dojo API key and partner ids. Kept in memory only.
-  Future<Map<String, dynamic>> pocketConfig() => _send('GET', '/api/tap/pocket-config');
 
   /// A Tap to Pay problem on this device, for the server's log (2026-11-04):
   /// what Dojo's SDK said, and the phone it said it on. Never card data.

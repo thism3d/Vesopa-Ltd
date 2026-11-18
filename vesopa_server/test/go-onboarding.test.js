@@ -26,11 +26,23 @@ const OFFICE = 'owner@newvenue.test';
 
 /** Just enough MySQL for the two settings tables and offices. */
 function fakePool() {
-  const tables = { epos_stripe_settings: new Map(), go_onboarding: new Map() };
+  const tables = { epos_stripe_settings: new Map(), go_onboarding: new Map(), bo_licence_limits: new Map() };
   const offices = new Map([[OFFICE, { name: 'The New Venue', contact_email: OFFICE }]]);
   const clerks = [];
   const answer = async (sql, params = []) => {
     const one = sql.replace(/\s+/g, ' ').trim();
+    if (/^INSERT INTO bo_licence_limits/.test(one)) {
+      tables.bo_licence_limits.set(params[0], { office: params[0], kind: 'go', seats: params[1], source: 'trial', status: params[2], ends_at: params[3] });
+      return [{ affectedRows: 1 }, []];
+    }
+    if (/^UPDATE bo_licence_limits SET seats = \?, source = 'trial'/.test(one)) {
+      Object.assign(tables.bo_licence_limits.get(params[3]), { seats: params[0], source: 'trial', status: params[1], ends_at: params[2] });
+      return [{ affectedRows: 1 }, []];
+    }
+    if (/^UPDATE bo_licence_limits SET seats = 0/.test(one)) {
+      Object.assign(tables.bo_licence_limits.get(params[1]), { seats: 0, status: params[0] });
+      return [{ affectedRows: 1 }, []];
+    }
     let m = one.match(/^SELECT \* FROM (\w+) WHERE office = \?/);
     if (m) return [[tables[m[1]].get(params[0])].filter(Boolean), []];
     m = one.match(/^SELECT \* FROM (\w+) WHERE account_id = \?/);
@@ -267,6 +279,35 @@ function signed(event) {
     r = await call(s2, 'POST', '/api/go/onboarding/stripe', { token: phone });
     ok(r.status === 201 && fake2.calls.filter((c) => c[0] === 'createAccount').length === 2, 'falls back to a plain account');
     s2.close();
+
+    // The trial opened Vesopa Go for the venue: five Go devices, every mode.
+    ok(pool.tables.bo_licence_limits.get(OFFICE) && pool.tables.bo_licence_limits.get(OFFICE).seats === 5
+      && pool.tables.bo_licence_limits.get(OFFICE).source === 'trial', 'trial opens Go: 5 seats');
+    r = await call(server, 'GET', '/api/go/onboarding?refresh=1', { token: phone });
+    ok(r.body.checklist && r.body.checklist.rows.find((x) => x.id === 'cards').done === true, "Stripe's checklist read");
+
+    // Leaving identity for later: the sign-up goes on, the venue stays capped,
+    // Go's banner knows, and the welcome email says what is left.
+    const mails = [];
+    const pool5 = fakePool();
+    const state5 = { card: 'inactive', payouts: 'inactive', due: 2, cardSaved: true };
+    const s5 = await listen(appWith(pool5, fakeStripe(state5), { sendWelcome: async (m) => { mails.push(m); } }));
+    await call(s5, 'PUT', '/api/go/onboarding/business', { token: phone, body: { business_type: 'sole_trader', legal_name: 'Ann Owner', expected_monthly_minor: 500000, average_sale_minor: 800 } });
+    ok((await call(s5, 'POST', '/api/go/onboarding/skip', { token: phone, body: { step: 'licence' } })).status === 400, 'the licence cannot be skipped');
+    r = await call(s5, 'POST', '/api/go/onboarding/skip', { token: phone, body: { step: 'identity' } });
+    ok(r.status === 200 && r.body.next === 'stripe' && r.body.skipped.includes('identity'), 'identity skipped: on to Stripe');
+    r = await call(s5, 'POST', '/api/go/onboarding/skip', { token: phone, body: { step: 'stripe' } });
+    ok(r.body.next === 'licence' && r.body.pending.includes('identity') && r.body.pending.includes('stripe'), 'both left for later, both pending');
+    await call(s5, 'POST', '/api/go/onboarding/licence', { token: phone });
+    r = await call(s5, 'GET', '/api/go/onboarding?refresh=1', { token: phone });
+    ok(r.body.complete === true && r.body.verified === false && r.body.mode !== 'live', 'complete but still capped');
+    ok(pool5.tables.bo_licence_limits.get(OFFICE).seats === 5, 'trial seats with steps left for later');
+    ok(mails.length === 1 && /Welcome to Vesopa Go/.test(mails[0].subject) && /verify your identity/.test(mails[0].text), 'welcome email, with what is left');
+    await call(s5, 'GET', '/api/go/onboarding?refresh=1', { token: phone });
+    ok(mails.length === 1, 'welcome sent once');
+    r = await call(s5, 'POST', '/api/go/onboarding/unskip', { token: phone, body: { step: 'identity' } });
+    ok(r.body.next === 'identity' && !r.body.skipped.includes('identity'), 'back to a skipped step');
+    s5.close();
 
     // Stripe refusing Identity for Vesopa's account does not stop the sign-up:
     // the owner's ID is checked in step 3, and Identity is tried again later.

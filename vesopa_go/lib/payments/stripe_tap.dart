@@ -63,11 +63,11 @@ String tapProblemWords(TerminalException e) {
     TerminalExceptionCode.requestTimedOut ||
     TerminalExceptionCode.stripeApiConnectionError ||
     TerminalExceptionCode.internalNetworkError =>
-      'This phone lost its connection to Stripe. Check Wi-Fi or mobile data and check the payment before taking it again.',
+      'This phone lost its connection to Vesopa Tap to Pay. Check Wi-Fi or mobile data and check the payment before taking it again.',
     TerminalExceptionCode.stripeApiError || TerminalExceptionCode.stripeApiResponseDecodingError =>
-      'Stripe had a problem with this payment (${e.message}). Check the payment before taking it again.',
+      'Vesopa Tap to Pay had a problem with this payment (${e.message}). Check the payment before taking it again.',
     TerminalExceptionCode.connectionTokenProviderError || TerminalExceptionCode.sessionExpired =>
-      'Tap to Pay needs to sign in to Stripe again. Nothing was taken. Try again in a moment.',
+      'Vesopa Tap to Pay needs to sign in again. Nothing was taken. Try again in a moment.',
     TerminalExceptionCode.notConnectedToReader || TerminalExceptionCode.readerBusy =>
       'Tap to Pay was not ready on this phone. Nothing was taken. Try again.',
     TerminalExceptionCode.tapToPayUnsupportedDevice ||
@@ -87,9 +87,9 @@ String tapProblemWords(TerminalException e) {
     TerminalExceptionCode.tapToPayReaderAccountDeactivated ||
     TerminalExceptionCode.tapToPayReaderDeviceBanned ||
     TerminalExceptionCode.featureNotEnabledOnAccount =>
-      "The venue's Stripe account cannot take Tap to Pay on this device right now. Use the card machine and contact Vesopa.",
+      "The venue's account cannot take Vesopa Tap to Pay on this device right now. Use the card machine and contact Vesopa.",
     TerminalExceptionCode.passcodeNotEnabled => 'Tap to Pay needs a screen lock (passcode) on this phone. Set one in Settings, then try again.',
-    TerminalExceptionCode.invalidAmount => 'Card payments with Stripe must be at least £0.30. Nothing was taken.',
+    TerminalExceptionCode.invalidAmount => 'Card payments must be at least £0.30. Nothing was taken.',
     _ => '${e.message.trim().isEmpty ? 'Tap to Pay stopped.' : e.message.trim()} Nothing was taken. Try again, or pay another way.',
   };
 }
@@ -113,7 +113,7 @@ class StripeTapToPay implements PaymentService {
     try {
       final config = await api.stripeConfig();
       if (config['enabled'] != true || config['ready'] != true) {
-        return 'This venue\'s Stripe account is not ready to take cards yet.';
+        return 'This venue\'s Vesopa Tap to Pay account is not ready to take cards yet. Finish Account checks.';
       }
       await _init();
       final simulated = config['environment'] != 'live';
@@ -174,7 +174,7 @@ class StripeTapToPay implements PaymentService {
     final terminal = Terminal.instance;
     final config = await api.stripeConfig();
     final locationId = config['location'] as String?;
-    if (locationId == null) throw const TapApiError(0, 'This venue has no Stripe location yet.');
+    if (locationId == null) throw const TapApiError(0, 'Vesopa Tap to Pay is not set up for this venue yet.');
     final live = config['environment'] == 'live';
     final want = '${live ? 'live' : 'sandbox'}|$locationId';
     final connected = await terminal.getConnectedReader();
@@ -481,7 +481,7 @@ class StripeTapToPay implements PaymentService {
       return PaymentOutcome(
         PayResult.uncertain,
         paymentId: id,
-        message: 'Could not reach Stripe to check this payment. Check it before taking it again.',
+        message: 'Could not reach Vesopa Tap to Pay to check this payment. Check it before taking it again.',
       );
     }
   }
@@ -493,7 +493,7 @@ String declineWords(Map<String, dynamic> error) {
   // same card tried again straight away is stopped again (2026-11-09, a
   // Bangladeshi debit card at the Kitchen after its bank's first refusal).
   if (error['blocked'] == true) {
-    return 'Stripe stopped this card as too risky after the earlier tries, before the bank saw it. '
+    return 'Vesopa Tap to Pay stopped this card as too risky after the earlier tries, before the bank saw it. '
         'No money was taken. Do not try this card again now: ask for another card, or pay another way.';
   }
   final code = '${error['decline_code'] ?? error['code'] ?? ''}';
@@ -549,7 +549,7 @@ extension on StripeTapToPay {
     if (reader == null) {
       return const PaymentOutcome(
         PayResult.unavailable,
-        message: 'This venue has no Stripe card reader yet. Add one under Cards, Card reader.',
+        message: 'This venue has no Vesopa card reader yet. Add one under Cards, Card reader.',
       );
     }
     final readerId = '${reader['id']}';

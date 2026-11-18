@@ -24,7 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/session.dart';
 import '../data/till_permissions.dart';
-import '../payments/payment_service.dart';
+import '../payments/stripe_tap.dart';
 import 'tap_to_pay_mark.dart';
 import 'theme.dart';
 
@@ -39,7 +39,7 @@ Future<void> maybeShowTapToPayIntro(BuildContext context, WidgetRef ref) async {
   if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
   if (MediaQuery.sizeOf(context).shortestSide >= 600) return; // iPhone only
   final pay = ref.read(paymentsProvider);
-  if (pay is! DojoTapToPay) return;
+  if (pay is! StripeTapToPay) return;
   final office = ref.read(tapProvider).venue?.office ?? '';
   final key = 'go_ttp_intro_$office';
   final prefs = await SharedPreferences.getInstance();
@@ -71,7 +71,7 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
   bool? _linked;
   String? _problem;
 
-  /// How long set-up has run: Dojo provisions a new iPhone (pending,
+  /// How long set-up has run: Stripe provisions a new iPhone (pending,
   /// provisioning, operational) before Apple's terms can appear, a minute or
   /// two the first time, like a card being added to Wallet (2026-11-04).
   final Stopwatch _clock = Stopwatch();
@@ -89,17 +89,11 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
   void initState() {
     super.initState();
     if (widget.setUp) WidgetsBinding.instance.addPostFrameCallback((_) => _setUp());
-    final pay = ref.read(paymentsProvider);
-    if (pay is DojoTapToPay) {
-      pay.isLinked().then((v) {
-        if (mounted) setState(() => _linked = v);
-      });
-    }
   }
 
   Future<void> _setUp() async {
     final pay = ref.read(paymentsProvider);
-    if (pay is! DojoTapToPay) return;
+    if (pay is! StripeTapToPay) return;
     setState(() => _stage = _Stage.preparing);
     _clock
       ..reset()
@@ -108,8 +102,7 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
-    await pay.askNotifications();
-    final why = await pay.setUp();
+    final why = await pay.prepare();
     _tick?.cancel();
     _clock.stop();
     if (!mounted) return;
@@ -121,17 +114,11 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
       return;
     }
     _linked = true;
-    // Apple 4.2: education straight after the terms.
-    await pay.showGuide();
     final p = await SharedPreferences.getInstance();
     await p.setBool('go_ttp_guide_seen', true);
     if (mounted) setState(() => _stage = _Stage.ready);
   }
 
-  Future<void> _guide() async {
-    final pay = ref.read(paymentsProvider);
-    if (pay is DojoTapToPay) await pay.showGuide();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -152,7 +139,7 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
           const SizedBox(height: 10),
           Text(
               _clock.elapsed.inSeconds < 150
-                  ? 'Dojo is setting up this iPhone, usually a minute or two the first time. '
+                  ? 'Vesopa is setting up Tap to Pay on this iPhone, usually a minute or two the first time. '
                       "Apple's Tap to Pay terms appear when it is done: accept them. Keep Vesopa Go open."
                   : 'Still setting up. This can take a few minutes on a new iPhone; keep Vesopa Go open.',
               textAlign: TextAlign.center, style: t.bodyMedium?.copyWith(color: context.goMuted)),
@@ -170,7 +157,6 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
         ]);
         buttons = [
           FilledButton(key: const ValueKey('ttp-try'), onPressed: () => Navigator.pop(context), child: const Text('Try it now')),
-          TextButton(onPressed: _guide, child: const Text('How to use Tap to Pay on iPhone')),
         ];
       case _Stage.problem:
         body = Column(mainAxisSize: MainAxisSize.min, children: [
@@ -194,20 +180,15 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
           Text(ttpBody, textAlign: TextAlign.center, style: t.titleMedium),
           if (notAdmin) ...[
             const SizedBox(height: 16),
-            Text(DojoTapToPay.notAdmin, textAlign: TextAlign.center, style: t.bodyMedium?.copyWith(color: context.goMuted)),
+            Text(_notAdmin, textAlign: TextAlign.center, style: t.bodyMedium?.copyWith(color: context.goMuted)),
           ],
         ]);
         buttons = [
-          if (_linked == true)
-            FilledButton(key: const ValueKey('ttp-guide'), onPressed: () async {
-              await _guide();
-              if (context.mounted) Navigator.pop(context);
-            }, child: const Text('How to use Tap to Pay on iPhone'))
-          else if (!notAdmin)
+          if (!notAdmin)
             FilledButton.icon(
               key: const ValueKey('ttp-setup'),
               // Never waits on the "already accepted?" check (2026-11-04: it
-              // can hang on Dojo, which left this button grey): set-up asks
+              // could hang, which left this button grey): set-up asks
               // again itself and shows Apple's terms when they are needed.
               onPressed: _setUp,
               icon: const TapToPayMark(size: 20),
@@ -236,5 +217,8 @@ class _TapToPayIntroPageState extends ConsumerState<TapToPayIntroPage> {
     );
   }
 }
+
+/// Apple 3.8.1: only an administrator accepts the terms for the venue.
+const _notAdmin = "Tap to Pay on iPhone isn't set up for this venue yet. Ask a manager to set it up in Settings, or to sign on and take this payment.";
 
 String _elapsed(Duration d) => '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';

@@ -407,7 +407,7 @@ final paymentsProvider = Provider<PaymentService>((ref) {
   // A Teya venue (back office, Card Payments) pays on its Teya machines.
   final teya = ref.watch(tapProvider.select((s) => s.config.teya));
   if (teya.enabled) return TeyaCardMachine(ref.watch(apiProvider), teya, tillName: ref.read(tapProvider.notifier).terminalName);
-  return DojoTapToPay(ref.watch(apiProvider));
+  return DojoCardMachine(ref.watch(apiProvider));
 });
 
 final tapProvider = NotifierProvider<TapSession, TapState>(TapSession.new);

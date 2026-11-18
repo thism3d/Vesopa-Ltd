@@ -192,11 +192,10 @@ Future<bool> runRefund(BuildContext context, WidgetRef ref, RefundPlan plan, {Sa
         final reference = card!.reference!;
         try {
           if (reference.startsWith('pocket:')) {
-            final pay = ref.read(paymentsProvider);
-            if (pay is! DojoTapToPay || !await pay.refundOnPocket(plan.amountMinor)) {
-              messenger.showSnackBar(const SnackBar(content: Text('The Dojo app did not refund it. Nothing went back.')));
-              return false;
-            }
+            // Taken on a Dojo Pocket, which Go no longer drives (2026-11-18):
+            // the refund is done in Dojo's own app on the Pocket.
+            messenger.showSnackBar(const SnackBar(content: Text('This was paid on a Dojo Pocket. Refund it in the Dojo app on the Pocket.')));
+            return false;
           } else {
             await api.refund(reference, amountMinor: plan.amountMinor, approvedBy: manager, reason: reason);
             ref.read(tapProvider.notifier).refunded(reference, (sale?.refundedMinor ?? 0) + plan.amountMinor);
