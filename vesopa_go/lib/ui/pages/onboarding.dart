@@ -786,8 +786,9 @@ class _ModeLine extends StatelessWidget {
   }
 }
 
-/// What the payments partner still wants, as a checklist (owner, 2026-11-18:
-/// "show the steps or not done yet, checklist").
+/// What the payments partner still wants, and only that (owner, 2026-11-18:
+/// "only show specific tasks to each progress screen so that users don't see
+/// it as heavy tasks"): the items still needed, and one line for what is done.
 class _Checklist extends StatelessWidget {
   const _Checklist({required this.checklist});
   final Map<String, dynamic> checklist;
@@ -796,40 +797,32 @@ class _Checklist extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final rows = ((checklist['rows'] as List?) ?? const []).cast<Map>();
+    final open = rows.where((r) => r['done'] != true).toList();
+    final done = rows.length - open.length;
     final reviewing = (checklist['stripe_reviewing'] as num?)?.toInt() ?? 0;
     final other = (checklist['other_due'] as num?)?.toInt() ?? 0;
+    Widget row(IconData icon, Color colour, String words, {String? tag}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(children: [
+            Icon(icon, color: colour),
+            const SizedBox(width: 12),
+            Expanded(child: Text(words, style: t.bodyLarge)),
+            if (tag != null) Text(tag, style: t.labelMedium?.copyWith(color: Tp.amber, fontWeight: FontWeight.w700)),
+          ]),
+        );
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       decoration: BoxDecoration(color: context.goCard, borderRadius: BorderRadius.circular(18), border: Border.all(color: context.goLine)),
       child: Column(children: [
-        for (final r in rows)
+        for (final r in open)
+          row(Icons.radio_button_unchecked_rounded, context.goMuted, '${r['label']}', tag: (r['due'] as num? ?? 0) > 0 ? 'Needed' : 'Waiting'),
+        if (other > 0) row(Icons.radio_button_unchecked_rounded, context.goMuted, '$other more detail${other == 1 ? '' : 's'}', tag: 'Needed'),
+        if (done > 0)
+          row(Icons.check_circle_rounded, Tp.green, open.isEmpty && other == 0 ? 'All done' : '$done of ${rows.length} done'),
+        if (reviewing > 0 && open.isEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(children: [
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                child: Icon(
-                  r['done'] == true ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                  key: ValueKey(r['done']),
-                  color: r['done'] == true ? Tp.green : context.goMuted,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: Text('${r['label']}', style: t.bodyLarge)),
-              if (r['done'] != true)
-                Text((r['due'] as num? ?? 0) > 0 ? 'Needed' : 'Waiting', style: t.labelMedium?.copyWith(color: Tp.amber, fontWeight: FontWeight.w700)),
-            ]),
-          ),
-        if (other > 0 || reviewing > 0)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, bottom: 4),
-            child: Text(
-              [
-                if (other > 0) '$other other item${other == 1 ? '' : 's'} to add.',
-                if (reviewing > 0) 'Being reviewed: we\'ll tell you here when it is done.',
-              ].join(' '),
-              style: t.bodySmall?.copyWith(color: context.goMuted),
-            ),
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text('Being reviewed: we\'ll tell you here when it is done.', style: t.bodySmall?.copyWith(color: context.goMuted)),
           ),
       ]),
     );
