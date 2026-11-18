@@ -55,6 +55,9 @@ jobs:
           SSH_ASKPASS: ${{ runner.temp }}/ssh/askpass
           SSH_ASKPASS_REQUIRE: force
           DISPLAY: ':0'
+          # Into the live back office's .env (go_server.py stripe_live_keys).
+          STRIPE_LIVE_SECRET_KEY: ${{ secrets.STRIPE_LIVE_SECRET_KEY }}
+          STRIPE_LIVE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_LIVE_PUBLISHABLE_KEY }}
         run: python3 vesopa_go/tool/go_server.py "${{ inputs.mode }}"
 
       - name: Close SSH
