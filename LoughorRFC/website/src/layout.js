@@ -127,12 +127,21 @@ sessionStorage.setItem('lrfc-croeso','1');d.classList.add('curtain-on');}}catch(
 </head>`;
 }
 
-/** The members' app: on its way to the stores, and on the web today. */
+/** The members' app: on its way to the stores; try it now in the public
+ *  tests (owner, 2026-11-19: TestFlight and Google Play links), and the card
+ *  is on the web today. */
 function appSoon({ cls = '' } = {}) {
+  const w = club.web;
+  const tries = [
+    w.ios_test && `<a class="app-try" href="${esc(w.ios_test)}" rel="noopener">iPhone and iPad: TestFlight</a>`,
+    w.android_test && `<a class="app-try" href="${esc(w.android_test)}" rel="noopener">Android and Wear OS: Google Play</a>`,
+  ].filter(Boolean);
   return `<div class="app-soon${cls ? ` ${cls}` : ''}">
-  <p class="app-soon-tag">Coming soon</p>
+  <p class="app-soon-tag">${tries.length ? 'Try it now' : 'Coming soon'}</p>
   <p>The Loughor RFC app for iPhone, Apple Watch, Android and Wear OS is on its way to the App Store and Google Play.</p>
-  <p>Until then your card is on the web: <a href="${MEMBERS}/">member.loughorrfc.site</a>.</p>
+  ${tries.length ? `<p class="app-tries">${tries.join(' ')}</p>
+  <p class="app-try-note">On iPhone, TestFlight (Apple's app for trying apps) installs first, then the app. On Android, join the test, then install from Google Play.</p>` : ''}
+  <p>Or use your card on the web: <a href="${MEMBERS}/">member.loughorrfc.site</a>.</p>
 </div>`;
 }
 

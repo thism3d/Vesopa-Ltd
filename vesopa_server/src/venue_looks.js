@@ -87,8 +87,10 @@ const LOOKS = {
     },
     name: 'Loughor RFC',
     website: 'https://loughorrfc.site', phone: '01792 894109', email: 'info@loughorrfc.site',
-    ios_app: 'https://member.loughorrfc.site/',
-    android_app: 'https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc',
+    // The apps' public tests (owner, 2026-11-19): TestFlight's public link and
+    // Google Play's open testing, until they are in the stores.
+    ios_app: 'https://testflight.apple.com/join/tegkU2kN',
+    android_app: 'https://play.google.com/apps/testing/com.vesopaepos.loughorrfc',
     web: 'node',
     art: '/assets/venues/loughor-rfc/',
     // The club's Google Wallet passes (owner, 2026-11-19). Class ids read as

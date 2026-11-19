@@ -74,8 +74,8 @@ secrets only).
 | Deep links (owner's choice, 2026-11-19: "Members' site + /app"): member.loughorrfc.site (every page) and loughorrfc.site/app open the app; news, fixtures and /app/privacy, /app/terms stay in the browser | venue.json `app_links`; the app declares them (make_venue_app.py); the sites name the app (website server.js, back office loyalty_host.js); Android fingerprint read from Play at deploy (tool/play_signing.py). In the next Loughor build |
 | iOS build with the newest Xcode (xcode-27 runner, iOS 27 SDK), as Vesopa Go | done: ios-venue-app.yml |
 | Firebase iOS app (added by the owner): the build reads its GoogleService-Info.plist from Firebase | done: firebase_ios_app.py in ios-venue-app.yml |
-| TestFlight public link and Google Play link on loughorrfc.site and member.loughorrfc.site (owner, 2026-11-19) | the TestFlight step makes the public link (app_store_connect.py); the sites show it once Apple's Beta App Review passes |
-| Add to Google Wallet on iPhone and iPad (owner, 2026-11-19) | done in the club app (card page and settings); in the next Loughor iOS build |
+| TestFlight public link and Google Play link on loughorrfc.site and member.loughorrfc.site (owner, 2026-11-19) | TestFlight public link https://testflight.apple.com/join/tegkU2kN (made by the TestFlight step, group "Vesopa Testers") and Google Play open testing https://play.google.com/apps/testing/com.vesopaepos.loughorrfc: "Try it now" on loughorrfc.site, /app sends each phone to its test, the members' site's badges (venue_looks.js). The Play link works once the owner rolls out the first open-testing release |
+| Add to Google Wallet on iPhone and iPad (owner, 2026-11-19) | in Loughor iOS 1.0.0 (3), on TestFlight 2026-11-19 |
 | Store links: account deletion https://auth.vesopa.com/delete-account/loughor-rfc, privacy https://loughorrfc.site/app/privacy, terms and trader link https://loughorrfc.site/app/terms | in progress (the owner pastes into Play Console what its API cannot set) |
 | Firebase: SHA fingerprints, Apple and Web apps added by the owner | the builds use them |
 

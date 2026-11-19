@@ -107,7 +107,13 @@ app.get(['/app', '/app/'], (req, res) => {
   const ua = String(req.headers['user-agent'] || '');
   res.set('Cache-Control', 'no-store').set('Vary', 'User-Agent');
   const phone = /iPhone|iPad|iPod|Android/.test(ua);
-  if (phone && !club.web.apps_live) return res.redirect(302, `${club.web.members.replace(/\/+$/, '')}/`);
+  // Before the stores: the public tests (TestFlight, Google Play open
+  // testing), else the members' card on the web.
+  if (phone && !club.web.apps_live) {
+    if (/iPhone|iPad|iPod/.test(ua) && club.web.ios_test) return res.redirect(302, club.web.ios_test);
+    if (/Android/.test(ua) && club.web.android_test) return res.redirect(302, club.web.android_test);
+    return res.redirect(302, `${club.web.members.replace(/\/+$/, '')}/`);
+  }
   if (/iPhone|iPad|iPod/.test(ua)) return res.redirect(302, club.web.ios_app);
   if (/Android/.test(ua)) return res.redirect(302, club.web.android_app);
   return res.redirect(302, '/membership');

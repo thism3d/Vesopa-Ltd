@@ -211,16 +211,19 @@ test('tickets: events on sale with a form, buying goes to card payment, the orde
   venue.set('events', null);
 });
 
-test('the club app: not in the stores yet, so no store badges; /app opens the card on the web', async () => {
+test('the club app: not in the stores yet, so no store badges; the public tests are offered (owner, 2026-11-19)', async () => {
   for (const p of ['/', '/membership', '/app/help']) {
     const html = await (await fetch(`${base}${p}`)).text();
     assert.ok(!/Download on the App Store|Get it on Google Play|play\.google\.com\/store/.test(html), `${p}: no store links before publication`);
     assert.match(html, /href="https:\/\/member\.loughorrfc\.site\/"/);
   }
-  assert.match(await (await fetch(`${base}/membership`)).text(), /Coming soon/);
+  const membership = await (await fetch(`${base}/membership`)).text();
+  assert.match(membership, /Try it now/);
+  assert.match(membership, /href="https:\/\/testflight\.apple\.com\/join\/tegkU2kN"/);
+  assert.match(membership, /href="https:\/\/play\.google\.com\/apps\/testing\/com\.vesopaepos\.loughorrfc"/);
   const go = (ua) => fetch(`${base}/app`, { redirect: 'manual', headers: { 'User-Agent': ua } }).then((r) => r.headers.get('location'));
-  assert.strictEqual(await go('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'), 'https://member.loughorrfc.site/');
-  assert.strictEqual(await go('Mozilla/5.0 (Linux; Android 15; Pixel 9)'), 'https://member.loughorrfc.site/');
+  assert.strictEqual(await go('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'), 'https://testflight.apple.com/join/tegkU2kN');
+  assert.strictEqual(await go('Mozilla/5.0 (Linux; Android 15; Pixel 9)'), 'https://play.google.com/apps/testing/com.vesopaepos.loughorrfc');
   assert.strictEqual(await go('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), '/membership');
 });
 
