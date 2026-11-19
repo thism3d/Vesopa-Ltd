@@ -46,6 +46,7 @@ secrets only).
 | Read the Loughor members' card by NFC (Android phone and Wear OS) | 1.2.70 |
 | go.vesopa.com/install: Android and Android TV downloads (owner, 2026-11-19) | live with 1.2.72: the page has an Android TV section (the same APK, via Google Play on the TV or the Downloader app); publish_install.py stamps its version |
 | Publish the new Go to Play open testing, matching the Wallet cards' NFC (owner, 2026-11-19) | 1.2.72: the card sheet also reads a Wallet NFC reader that types the card number (Google Smart Tap / Apple VAS readers by USB or Bluetooth). Live 2026-11-19: 1.2.72 (73) on Play open testing (beta) and Android TV open testing (tv:beta, 2000073); go.vesopa.com/install 200 |
+| A new Android TV open-testing release on its own (owner, 2026-11-19) | Go - Android with part "tv": only the TV bundle to tv:<track>. Done: 1.2.72 (74), version code 2000074, on tv:beta |
 | Faster workflows: cache tools between runs | done (Gradle, NDK, SwiftPM, Flutter caches) |
 
 ## Loughor RFC (`LoughorRFC/`)
