@@ -65,7 +65,10 @@ jobs:
       - name: Google Wallet API on in the service account's project
         if: inputs.mode == 'site'
         env:
-          GOOGLE_SA_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          # The Firebase admin account first (owner, 2026-11-19: "Firebase admin
+          # account is the admin there"), then Play's.
+          GOOGLE_SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SA_JSON_2: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           python3 -c "import cryptography" 2>/dev/null || python3 -m pip install -q cryptography
           python3 tool/google_api_enable.py walletobjects.googleapis.com
