@@ -87,7 +87,13 @@ jobs:
           elif [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ] && n=$("$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$APP" --next-build 2> "$RUNNER_TEMP/next-build.err"); then
             :
           else
-            echo "::warning::Play did not say which build numbers it has ($(tail -1 "$RUNNER_TEMP/next-build.err" 2>/dev/null)); using venue.json's $floor."
+            if [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+              # Never guess: a number Play already has wastes the whole build,
+              # and the website's APK would carry it (2026-11-19, Go 1.2.70).
+              echo "::error::Play did not say which build numbers it has ($(tail -1 "$RUNNER_TEMP/next-build.err" 2>/dev/null)). Run again in a few minutes, or give the build number."
+              exit 1
+            fi
+            echo "::warning::No Play key: using venue.json's build number $floor."
             n=$floor
           fi
           case "$n" in ''|*[!0-9]*) echo "::error::Could not work out the build number ($n)"; exit 1;; esac

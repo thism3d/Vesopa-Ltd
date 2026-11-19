@@ -84,7 +84,7 @@ Future<void> showModeSettings(BuildContext context, WidgetRef ref, {List<Widget>
                     },
             ),
           ),
-          for (final other in DeviceMode.values)
+          for (final other in DeviceMode.available)
             if (other != m.mode)
               Card(
                 child: ListTile(

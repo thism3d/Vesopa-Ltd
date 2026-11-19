@@ -309,7 +309,8 @@ Future<void> connectScreenCode(BuildContext context, WidgetRef ref, String code)
               child: Text('What is it for?', style: t.titleSmall?.copyWith(color: sheet.goMuted)),
             ),
             for (final (key, label, detail, icon) in linkModes)
-              if (!(tv && key == 'terminal'))
+              // A TV is a kitchen screen or a customer display, nothing else.
+              if (!tv || key == 'kitchen' || key == 'display')
                 ListTile(
                   leading: Icon(icon),
                   title: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
