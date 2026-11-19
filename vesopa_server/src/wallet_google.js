@@ -425,7 +425,8 @@ function buildPass({ kind, config, office, brand = {}, subject = {} }) {
           ? {
               merchantSignupInfo: {
                 signupWebsite: { uri: g.discoverable.signup, description: 'Join' },
-                signupSharedDatas: g.discoverable.share || ['FIRST_NAME', 'LAST_NAME', 'EMAIL'],
+                // Only where the signup page takes Google's POST of them.
+                signupSharedDatas: g.discoverable.share || undefined,
               },
               merchantSigninInfo: { signinWebsite: { uri: g.discoverable.signin || g.discoverable.signup } },
               state: g.discoverable.state || 'TRUSTED_TESTERS',
@@ -801,8 +802,31 @@ function makeClient(config, fetchImpl = fetch) {
         if (e.googleStatus !== 400 || !extras.length) throw e;
         const plain = { ...klass };
         for (const f of extras) delete plain[f];
-        const saved = await put(plain);
-        return { ...saved, droppedFields: extras, droppedBecause: e.message };
+        let saved = await put(plain);
+        // Then each extra on its own, so one Google refuses (it says only
+        // "invalid argument") does not take the others with it. Smart Tap's
+        // two fields go together.
+        const groups = [];
+        for (const f of extras) {
+          if (f === 'redemptionIssuers' && extras.includes('enableSmartTap')) continue;
+          groups.push(f === 'enableSmartTap' && extras.includes('redemptionIssuers') ? [f, 'redemptionIssuers'] : [f]);
+        }
+        const kept = {};
+        const dropped = [];
+        let because = e.message;
+        for (const group of groups) {
+          const attempt = { ...plain, ...kept };
+          for (const f of group) attempt[f] = klass[f];
+          try {
+            saved = await put(attempt);
+            for (const f of group) kept[f] = klass[f];
+          } catch (err) {
+            if (err.googleStatus !== 400) throw err;
+            dropped.push(...group);
+            because = err.message;
+          }
+        }
+        return dropped.length ? { ...saved, droppedFields: dropped, droppedBecause: because } : saved;
       }
     },
 
