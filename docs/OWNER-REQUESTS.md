@@ -53,6 +53,7 @@ secrets only).
 | Control the TV kitchen and customer display from Go on Android, iPhone and iPad | 1.2.73: More (or Settings > Screens and TVs) > Control a screen or TV: arrows, OK, Back, adverts, reload, Settings after a manager's PIN on the phone. Server: src/go_remote.js (keys over the venue's live connection) |
 | Why one TV is compatible and another not | the plugins' permissions made Play require a camera, Bluetooth and GPS; 1.2.73 marks every such feature not required (AndroidManifest.xml) |
 | The Vesopa Kitchen: promotion banners with real food | 9 banners (real food photos, Unsplash licence) in vesopa_server/tool/kitchen-adverts, put on the venue's displays by tool/kitchen-display-adverts.js (Back office - patch, run kitchen-display-adverts) |
+| "I did not get the updates" (2026-11-19) | Go 1.2.73 had gone to open testing only, while the owner's devices take internal testing (still 1.2.71): 1.2.73 (75) and TV 2000075 now also on internal and tv:internal; Go iOS 1.2.73 (1) on TestFlight, sent to Beta App Review (public link https://testflight.apple.com/join/zgg5YSn8). Check any time with Go - Android / Android - venue app, mode status |
 | Faster workflows: cache tools between runs | done (Gradle, NDK, SwiftPM, Flutter caches) |
 
 ## Loughor RFC (`LoughorRFC/`)
@@ -75,7 +76,7 @@ secrets only).
 | iOS build with the newest Xcode (xcode-27 runner, iOS 27 SDK), as Vesopa Go | done: ios-venue-app.yml |
 | Firebase iOS app (added by the owner): the build reads its GoogleService-Info.plist from Firebase | done: firebase_ios_app.py in ios-venue-app.yml |
 | TestFlight public link and Google Play link on loughorrfc.site and member.loughorrfc.site (owner, 2026-11-19) | TestFlight public link https://testflight.apple.com/join/tegkU2kN (made by the TestFlight step, group "Vesopa Testers") and Google Play open testing https://play.google.com/apps/testing/com.vesopaepos.loughorrfc: "Try it now" on loughorrfc.site, /app sends each phone to its test, the members' site's badges (venue_looks.js). The Play link works once the owner rolls out the first open-testing release |
-| Add to Google Wallet on iPhone and iPad (owner, 2026-11-19) | in Loughor iOS 1.0.0 (3), on TestFlight 2026-11-19 |
+| Add to Google Wallet on iPhone and iPad (owner, 2026-11-19) | Loughor iOS 1.0.0 (4) on TestFlight and sent to Beta App Review for the external testers (build 2 was the last one approved). Android 1.0.0 (5) on open testing (beta) and wear:beta, completed |
 | Store links: account deletion https://auth.vesopa.com/delete-account/loughor-rfc, privacy https://loughorrfc.site/app/privacy, terms and trader link https://loughorrfc.site/app/terms | in progress (the owner pastes into Play Console what its API cannot set) |
 | Firebase: SHA fingerprints, Apple and Web apps added by the owner | the builds use them |
 
