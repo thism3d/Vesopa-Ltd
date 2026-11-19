@@ -79,5 +79,5 @@ secrets only).
 | Page indexing: /blog?tag=… (47) "Alternate page with proper canonical" | each tag is now its own page /blog/tag/<tag> (self-canonical, in the sitemap); the old ?tag= links 301 there; blog ?kind= and ?page= pages are their own canonical |
 | www.vesopaepos.com | 301 to vesopaepos.com |
 | /trial?period=1 | correct as it is: a version of /trial, which is the page to index |
-| Deploy route | Back office - patch, target "website" (vesopa_web files, checked against git, backed up, health-checked) |
+| Deploy route | Back office - patch, target "website" (vesopa_web files, checked against git, backed up, health-checked). Deployed live 2026-11-19 06:06, healthy. Owner: press Validate fix in Search Console |
 
