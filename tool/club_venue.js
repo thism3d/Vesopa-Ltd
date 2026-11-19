@@ -76,7 +76,7 @@ async function step(name, fn) {
     await fn();
   } catch (e) {
     if (!missingTable(e)) throw e;
-    console.log(`  ! ${name}: ${e.code} (that part of the schema is not on this server yet)`);
+    console.log(`  ! ${name}: ${e.code} (that part of the schema is not on this server yet): ${String(e.sqlMessage || e.message || '').slice(0, 160)}`);
   }
 }
 
@@ -207,18 +207,22 @@ async function main() {
             keys.map((k) => row[k]));
           return true;
         };
-        const named = async (table, name) => {
-          const [[r]] = await db.query(`SELECT 1 AS x FROM ${table} WHERE office_id = ? AND name = ? LIMIT 1`, [office.id, name]);
-          return Boolean(r);
-        };
-        const lists = [['bo_tax_rates', data.tax_rates || [], (t, i) => ({ office_id: office.id, name: t.name, percentage: t.percentage, sort_order: t.sort_order ?? i + 1 })],
-          ['bo_product_departments', data.departments || [], (d, i) => ({ office_id: office.id, name: d, sort_order: i + 1 })],
-          ['bo_product_groups', data.groups || [], (g, i) => ({ office_id: office.id, name: g, sort_order: i + 1 })]];
+        // The live tables can be keyed by the office's id or by its email
+        // (the older back office): each row carries both and keeps what the
+        // table has; a name column may be called name or <thing>_name.
+        const keyOf = (have) => (have.has('office_id') ? ['office_id', office.id] : have.has('email') ? ['email', EMAIL] : have.has('office') ? ['office', EMAIL] : null);
+        const lists = [['bo_tax_rates', data.tax_rates || [], (t, i) => ({ name: t.name, tax_name: t.name, percentage: t.percentage, rate: t.percentage, sort_order: t.sort_order ?? i + 1 })],
+          ['bo_product_departments', data.departments || [], (d, i) => ({ name: d, department_name: d, sort_order: i + 1 })],
+          ['bo_product_groups', data.groups || [], (g, i) => ({ name: g, group_name: g, sort_order: i + 1 })]];
         for (const [table, items, row] of lists) {
-          if (!(await cols(table)).size) { console.log(`  ! no ${table} table: skipped`); continue; }
+          const have = await cols(table);
+          const key = keyOf(have);
+          const nameCol = ['name', 'department_name', 'group_name', 'tax_name'].find((c) => have.has(c));
+          if (!have.size || !key || !nameCol) { console.log(`  ! ${table}: not a shape this knows (skipped)`); continue; }
           for (const [i, item] of items.entries()) {
-            const r = row(item, i);
-            if (!(await named(table, r.name))) await insert(table, r);
+            const r = { [key[0]]: key[1], ...row(item, i) };
+            const [[had]] = await db.query(`SELECT 1 AS x FROM ${table} WHERE ${key[0]} = ? AND ${nameCol} = ? LIMIT 1`, [key[1], r[nameCol]]);
+            if (!had) await insert(table, r);
           }
         }
         let added = 0;
