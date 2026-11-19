@@ -37,6 +37,7 @@ import '../data/providers.dart';
 import '../data/screen_profile.dart';
 import '../data/ticket.dart';
 import '../kitchen_printer.dart';
+import '../../remote/go_remote.dart';
 
 const _amber = Color(0xFFFF9F0A);
 const _red = Color(0xFFFF453A);
@@ -56,15 +57,51 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
   String? _boardFor;
   final Set<String> _flash = {};
 
+  ScreenBeacon? _beacon;
+  bool _unlocked = false;
+
   @override
   void initState() {
     super.initState();
     WakelockPlus.enable().catchError((Object _) {});
     WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+    GoRemote.listen(_remoteKey);
+  // The phone's remote finds this screen, and its keys arrive here (lib/remote/go_remote.dart).
+    _beacon = ScreenBeacon(() {
+      final session = ref.read(tapProvider.notifier);
+      return ref.read(apiProvider).screenHello(
+            deviceId: session.deviceId,
+            name: session.terminalName,
+            mode: 'kitchen',
+            live: session.live,
+            tv: GoDevice.isTv,
+          );
+    })
+      ..start();
+  }
+
+  /// Settings or a refresh from Vesopa Go on a phone; the arrows, OK and Back
+  /// move round the board as the TV's own remote does.
+  bool _remoteKey(String key) {
+    if (!mounted) return false;
+    if (key == 'settings') {
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        _unlocked = true;
+        unawaited(_settings());
+      }
+      return true;
+    }
+    if (key == 'refresh') {
+      unawaited(ref.read(kitchenSessionProvider.notifier).refreshProfile());
+      return true;
+    }
+    return false;
   }
 
   @override
   void dispose() {
+    GoRemote.forget(_remoteKey);
+    _beacon?.stop();
     WakelockPlus.disable().catchError((Object _) {});
     super.dispose();
   }
@@ -337,7 +374,13 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
     if (picked != null) await ref.read(kitchenSessionProvider.notifier).chooseScreen(picked.id);
   }
 
-  Future<void> _settings() => showModeSettings(context, ref, extra: [
+  Future<void> _settings() {
+    final unlocked = _unlocked;
+    _unlocked = false;
+    return _openSettings(unlocked);
+  }
+
+  Future<void> _openSettings(bool unlocked) => showModeSettings(context, ref, unlocked: unlocked, extra: [
         Consumer(builder: (c, ref, _) {
           final s = ref.watch(kitchenSessionProvider).value ?? KitchenSession.empty;
           void go(VoidCallback then) {

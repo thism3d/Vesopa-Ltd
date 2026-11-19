@@ -16,6 +16,7 @@ import 'package:flutter/services.dart';
 
 import '../ui/pages/scan_sheet.dart';
 import '../ui/theme.dart';
+import '../ui/tv.dart';
 import 'staff_card.dart';
 
 const _useCamera = '\u0000camera';
@@ -45,7 +46,7 @@ Future<String?> readCard(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => _CardReadSheet(title: title, hint: hint, camera: camera, typing: typing),
+    builder: (_) => _CardReadSheet(title: title, hint: hint, camera: camera && GoDevice.hasCamera, typing: typing),
   );
   if (answer != _useCamera) return answer;
   if (!context.mounted) return null;

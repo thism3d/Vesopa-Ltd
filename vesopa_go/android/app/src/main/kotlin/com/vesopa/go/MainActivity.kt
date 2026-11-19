@@ -52,6 +52,12 @@ class MainActivity : FlutterFragmentActivity() {
                     // A television (Android TV, Google TV, Fire TV): a remote, no
                     // touch, no browser. Go opens as a screen there (lib/ui/tv.dart).
                     "tv" to isTelevision(),
+                    // What the device really has, so Go offers only what it can
+                    // do (owner, 2026-11-19: a TV with no camera offered "Scan
+                    // your pass" and "Tap member card").
+                    "camera" to packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY),
+                    "nfcHardware" to packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_NFC),
+                    "touch" to packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN),
                 ))
                 "isIgnoringBatteryOptimizations" -> {
                     val power = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager

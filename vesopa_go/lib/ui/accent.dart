@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'theme.dart';
+import 'tv.dart';
 
 class Accent extends Notifier<GoPalette> {
   static const _key = 'go_accent';
@@ -95,56 +96,21 @@ class AccentSwatches extends ConsumerWidget {
     final muted = context.goMuted;
     return Wrap(spacing: spacing, runSpacing: spacing, alignment: alignment, children: [
       for (final p in GoPalette.all)
-        Semantics(
-          button: true,
+        _Swatch(
+          key: ValueKey('accent-${p.id}'),
+          palette: p,
           selected: p == current,
-          label: p.name,
-          excludeSemantics: true,
-          child: InkResponse(
-            key: ValueKey('accent-${p.id}'),
-            onTap: () {
-              HapticFeedback.selectionClick();
-              ref.read(accentProvider.notifier).set(p);
-            },
-            radius: size / 2 + 6,
-            child: SizedBox(
-              width: size + 8,
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: size,
-                  height: size,
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: p == current ? context.goText : Colors.transparent, width: 2.5),
-                  ),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: p.colour,
-                      shape: BoxShape.circle,
-                      boxShadow: context.goDark ? [BoxShadow(color: p.colour.withValues(alpha: 0.45), blurRadius: 16, spreadRadius: -2)] : null,
-                    ),
-                    child: p == current ? Icon(Icons.check_rounded, color: p.on, size: size * 0.46) : null,
-                  ),
-                ),
-                if (labels) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    p.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: p == current ? context.goText : muted,
-                      fontWeight: p == current ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ]),
-            ),
-          ),
+          size: size,
+          labels: labels,
+          muted: muted,
+          // With a remote the chosen colour has the focus first, so OK and the
+          // arrows start from it (owner, 2026-11-19: colours not working with
+          // the remote).
+          autofocus: p == current && GoDevice.remote.value,
+          onPick: () {
+            HapticFeedback.selectionClick();
+            ref.read(accentProvider.notifier).set(p);
+          },
         ),
     ]);
   }
@@ -225,6 +191,106 @@ class AccentWelcomePage extends ConsumerWidget {
           ),
         ),
       ]),
+    );
+  }
+}
+
+
+/// One colour: a tap, a click or the remote's OK picks it. With the remote,
+/// the one in focus grows and gets a thick white ring, so it is always clear
+/// which colour OK will choose.
+class _Swatch extends StatefulWidget {
+  const _Swatch({
+    super.key,
+    required this.palette,
+    required this.selected,
+    required this.size,
+    required this.labels,
+    required this.muted,
+    required this.autofocus,
+    required this.onPick,
+  });
+  final GoPalette palette;
+  final bool selected;
+  final double size;
+  final bool labels;
+  final Color muted;
+  final bool autofocus;
+  final VoidCallback onPick;
+
+  @override
+  State<_Swatch> createState() => _SwatchState();
+}
+
+class _SwatchState extends State<_Swatch> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.palette;
+    final size = widget.size;
+    final ring = _focused ? Colors.white : (widget.selected ? context.goText : Colors.transparent);
+    return Semantics(
+      button: true,
+      selected: widget.selected,
+      label: p.name,
+      excludeSemantics: true,
+      child: FocusableActionDetector(
+        autofocus: widget.autofocus,
+        onShowFocusHighlight: (v) => setState(() => _focused = v),
+        actions: {ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) => widget.onPick())},
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.gameButtonA): ActivateIntent(),
+        },
+        mouseCursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: widget.onPick,
+          child: AnimatedScale(
+            scale: _focused ? 1.15 : 1,
+            duration: const Duration(milliseconds: 140),
+            child: SizedBox(
+              width: size + 8,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: size,
+                  height: size,
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: ring, width: _focused ? 4 : 2.5),
+                  ),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: p.colour,
+                      shape: BoxShape.circle,
+                      boxShadow: context.goDark ? [BoxShadow(color: p.colour.withValues(alpha: 0.45), blurRadius: 16, spreadRadius: -2)] : null,
+                    ),
+                    child: widget.selected ? Icon(Icons.check_rounded, color: p.on, size: size * 0.46) : null,
+                  ),
+                ),
+                if (widget.labels) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    p.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: widget.selected || _focused ? context.goText : widget.muted,
+                      fontWeight: widget.selected || _focused ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ]),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

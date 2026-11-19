@@ -21,6 +21,7 @@ import 'connection_page.dart';
 import '../gateway_mark.dart';
 import '../app_version.dart';
 import 'onboarding.dart';
+import '../../remote/remote_page.dart';
 
 class MorePage extends ConsumerStatefulWidget {
   const MorePage({super.key});
@@ -153,6 +154,16 @@ class _MorePageState extends ConsumerState<MorePage> {
             subtitle: const Text('Scan the code a new screen shows to add it to this venue'),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () => connectScreen(context, ref),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.settings_remote_rounded),
+            title: const Text('Control a screen or TV'),
+            subtitle: const Text('Use this device as the remote for a kitchen TV or customer display'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ScreensRemotePage())),
           ),
         ),
       ],

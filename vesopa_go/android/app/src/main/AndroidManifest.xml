@@ -15,6 +15,31 @@
          the card machine (no NFC). -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
+    <!-- Nothing below is needed to run Go: without these lines the plugins'
+         permissions (the camera scanner, card readers over Bluetooth, the
+         location Stripe asks for) make Google Play require a camera, Bluetooth
+         or GPS, and a TV without them was "not compatible" while another was
+         (owner, 2026-11-19). Each feature is used where the device has it
+         (lib/ui/tv.dart GoDevice.hasCamera / hasNfc). -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.camera.flash" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.location" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.location.network" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.nfc.hce" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.faketouch" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.screen.landscape" android:required="false" tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.fingerprint" android:required="false" tools:replace="android:required" />
     <application
         android:label="Vesopa Go"
         android:usesCleartextTraffic="true"

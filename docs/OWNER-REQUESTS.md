@@ -47,6 +47,12 @@ secrets only).
 | go.vesopa.com/install: Android and Android TV downloads (owner, 2026-11-19) | live with 1.2.72: the page has an Android TV section (the same APK, via Google Play on the TV or the Downloader app); publish_install.py stamps its version |
 | Publish the new Go to Play open testing, matching the Wallet cards' NFC (owner, 2026-11-19) | 1.2.72: the card sheet also reads a Wallet NFC reader that types the card number (Google Smart Tap / Apple VAS readers by USB or Bluetooth). Live 2026-11-19: 1.2.72 (73) on Play open testing (beta) and Android TV open testing (tv:beta, 2000073); go.vesopa.com/install 200 |
 | A new Android TV open-testing release on its own (owner, 2026-11-19) | Go - Android with part "tv": only the TV bundle to tv:<track>. Done: 1.2.72 (74), version code 2000074, on tv:beta |
+| TV: offer only what the hardware has (owner, 2026-11-19: "There is no camera on a TV ... check hardware first and then offer items and functionality") | 1.2.73: Go reads the device's camera, NFC and touchscreen (MainActivity deviceInfo); Tap member card / Scan your pass only where they work, the scan sheet types the number where there is no camera |
+| TV settings PIN with the remote, no on-screen keyboard | 1.2.73: the remote's number buttons, or Up/Down/Right/OK; or unlock from a phone |
+| First screen colours with the remote | 1.2.73: focus ring and OK on each colour |
+| Control the TV kitchen and customer display from Go on Android, iPhone and iPad | 1.2.73: More (or Settings > Screens and TVs) > Control a screen or TV: arrows, OK, Back, adverts, reload, Settings after a manager's PIN on the phone. Server: src/go_remote.js (keys over the venue's live connection) |
+| Why one TV is compatible and another not | the plugins' permissions made Play require a camera, Bluetooth and GPS; 1.2.73 marks every such feature not required (AndroidManifest.xml) |
+| The Vesopa Kitchen: promotion banners with real food | 9 banners (real food photos, Unsplash licence) in vesopa_server/tool/kitchen-adverts, put on the venue's displays by tool/kitchen-display-adverts.js (Back office - patch, run kitchen-display-adverts) |
 | Faster workflows: cache tools between runs | done (Gradle, NDK, SwiftPM, Flutter caches) |
 
 ## Loughor RFC (`LoughorRFC/`)
@@ -68,6 +74,8 @@ secrets only).
 | Deep links (owner's choice, 2026-11-19: "Members' site + /app"): member.loughorrfc.site (every page) and loughorrfc.site/app open the app; news, fixtures and /app/privacy, /app/terms stay in the browser | venue.json `app_links`; the app declares them (make_venue_app.py); the sites name the app (website server.js, back office loyalty_host.js); Android fingerprint read from Play at deploy (tool/play_signing.py). In the next Loughor build |
 | iOS build with the newest Xcode (xcode-27 runner, iOS 27 SDK), as Vesopa Go | done: ios-venue-app.yml |
 | Firebase iOS app (added by the owner): the build reads its GoogleService-Info.plist from Firebase | done: firebase_ios_app.py in ios-venue-app.yml |
+| TestFlight public link and Google Play link on loughorrfc.site and member.loughorrfc.site (owner, 2026-11-19) | the TestFlight step makes the public link (app_store_connect.py); the sites show it once Apple's Beta App Review passes |
+| Add to Google Wallet on iPhone and iPad (owner, 2026-11-19) | done in the club app (card page and settings); in the next Loughor iOS build |
 | Store links: account deletion https://auth.vesopa.com/delete-account/loughor-rfc, privacy https://loughorrfc.site/app/privacy, terms and trader link https://loughorrfc.site/app/terms | in progress (the owner pastes into Play Console what its API cannot set) |
 | Firebase: SHA fingerprints, Apple and Web apps added by the owner | the builds use them |
 
