@@ -6,7 +6,7 @@
   "full_description": "The official members' app of Loughor RFC, the Blues, est. 1882.\n\nYour membership card lives on your phone and your watch. At the bar, hold your phone or watch near the reader, or show the QR code, and your members' discount is applied every time, with no card to carry or lose.\n\n• Tap to show your card: on Android phones and Wear OS watches with NFC, hold it near the reader\n• Your card's QR code for any till, with the screen turned up so it scans first time\n• Members' discount on every visit\n• See what you have spent, earned and saved\n• Club news, fixtures and offers, sent straight to your phone as notifications\n• Dark or light, your photo on your card, and a quick welcome tour\n\nOn your Wear OS watch\n\n• Your members' card on your wrist: hold your watch near the reader, or show the QR code, with no phone needed at the bar\n• \"My card\" Tile and a \"Points\" complication\n\nSign in with Google, your phone, a passkey, or your email address with a one-time code or a password. The app is for club members: if you are not a member yet, ask at the club.",
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://loughorrfc.site/",
-  "track": "alpha",
+  "track": "beta",
   "release_notes": "The first Loughor RFC members' app: your card on your phone and watch, tap or scan at the bar, and club news.",
   "images": {
     "icon": [

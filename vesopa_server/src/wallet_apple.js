@@ -72,6 +72,17 @@ function readConfig(env = process.env) {
   const featuredActions =
     String(env.APPLE_WALLET_FEATURED_ACTIONS ?? '').trim().toLowerCase() !== 'off';
 
+  // "Hold near reader" on the iPhone (owner, 2026-11-19): Apple Wallet's NFC
+  // (Value Added Services). Off until Apple has issued an NFC-enabled pass
+  // certificate: a pass carrying `nfc` signed with an ordinary certificate is
+  // refused by the iPhone outright. APPLE_WALLET_NFC_KEY is the reader's
+  // public key (base64 DER, P-256), from the NFC reader's set-up; the reader
+  // keeps the private half. APPLE_WALLET_NFC_KINDS: which cards (membership
+  // and loyalty by default).
+  const nfcKey = String(env.APPLE_WALLET_NFC_KEY || '').replace(/\s+/g, '');
+  const nfcKinds = String(env.APPLE_WALLET_NFC_KINDS || 'loyalty,customer')
+    .split(/[,\s]+/).map((k) => k.trim()).filter(Boolean);
+
   // Where the public certificates live. They are committed, so this defaults to
   // them and a deployment normally sets only the two secrets above.
   const certDir = String(
@@ -128,6 +139,8 @@ function readConfig(env = process.env) {
     passphrase,
     webServiceUrl,
     featuredActions,
+    nfcKey,
+    nfcKinds,
     openssl,
     teamId: String(env.APPLE_TEAM_ID || APPLE_TEAM_ID).trim(),
     configured: problems.length === 0,
@@ -750,6 +763,16 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken, link }
       },
     ],
   };
+
+  // Hold near reader: a VAS reader with the matching private key reads the
+  // card number, the same as the QR code, and types it into the till.
+  if (config.nfcKey && (config.nfcKinds || []).includes(kind)) {
+    pass.nfc = {
+      message: String(subject.card_number || subject.id).slice(0, 64),
+      encryptionPublicKey: config.nfcKey,
+      requiresAuthentication: false,
+    };
+  }
 
   if (config.webServiceUrl) {
     // What lets a pass update itself in somebody's pocket. Both are required

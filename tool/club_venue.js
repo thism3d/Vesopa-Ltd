@@ -345,6 +345,10 @@ async function googleClasses(db, w) {
   const brand = {
     office: EMAIL, ...w, hex_foreground: '#FFFFFF', hex_label: (club.colours && club.colours.gold) || '#F5C518', look_art: SLUG,
   };
+  // The club's own Wallet profile (venue_looks.js `google`): its class ids,
+  // modules, links, place, Smart Tap and callbacks, as the back office uses.
+  const look = require(path.join(process.cwd(), 'src', 'venue_looks.js')).lookFor(SLUG);
+  if (look && look.google) brand.google = look.google;
   for (const kind of ['loyalty', 'customer']) {
     const built = G.buildPass({ kind, config, office: EMAIL, brand, subject: { id: 'template' } });
     let review = config.reviewStatus;
@@ -353,6 +357,9 @@ async function googleClasses(db, w) {
       const saved = await client.upsertClass(kind, built.klass);
       review = (saved && saved.reviewStatus) || review;
       ok(`Google Wallet ${kind} class ${built.classId}: ${review}`);
+      if (saved && saved.droppedFields) {
+        console.log(`  ! Google Wallet ${kind} class saved without ${saved.droppedFields.join(', ')}: ${String(saved.droppedBecause).slice(0, 200)}`);
+      }
     } catch (e) {
       error = String(e.message || e).slice(0, 500);
       console.log(`  ! Google Wallet ${kind} class: ${error.slice(0, 200)}`);

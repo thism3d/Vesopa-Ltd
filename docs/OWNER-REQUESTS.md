@@ -28,6 +28,9 @@ secrets only).
   `firebase-adminsdk-fbsvc@vesopa.iam.gserviceaccount.com`, an Admin in the
   Google Pay & Wallet Console, in Google Cloud project `vesopa`
   (561180189171).
+- **Loughor RFC app releases** go to Play **open testing** (`beta`, and
+  `wear:beta` for the watch) from now on (owner, 2026-11-19): `LoughorRFC/store/play.json`
+  `track`. iPhone builds go to TestFlight and its external groups.
 - **Decisions:** "Go on, finish all the tasks. Full consent given. Do pick
   the best decisions." Ask the owner straight away when something is
   genuinely theirs to decide.
@@ -41,6 +44,8 @@ secrets only).
 | Dedicated Android TV and Wear OS tracks (switched on by the owner, 2026-11-19). Play's TV track takes only a bundle that requires leanback, so each Go release builds a TV-only bundle (version code 2,000,000 + build) for tv:<track> (else tv:internal); TV screenshots, banner and the TV opt-in are done | go-android.yml, tool/play_upload.py |
 | On a TV offer only Kitchen and Customer display (same app, same `com.vesopa.go` listing; Android TV is a form factor, not a second app) | 1.2.71 |
 | Read the Loughor members' card by NFC (Android phone and Wear OS) | 1.2.70 |
+| go.vesopa.com/install: Android and Android TV downloads (owner, 2026-11-19) | the page has an Android TV section (the same APK, via Google Play on the TV or the Downloader app); publish_install.py stamps its version |
+| Publish the new Go to Play open testing, matching the Wallet cards' NFC (owner, 2026-11-19) | 1.2.72: the card sheet also reads a Wallet NFC reader that types the card number (Google Smart Tap / Apple VAS readers by USB or Bluetooth); to open testing (beta, tv:beta) |
 | Faster workflows: cache tools between runs | done (Gradle, NDK, SwiftPM, Flutter caches) |
 
 ## Loughor RFC (`LoughorRFC/`)
@@ -49,12 +54,15 @@ secrets only).
 | --- | --- |
 | Website loughorrfc.site: brand new, nothing like Pontardawe's ("Heritage programme"), new friendly opening animation, no store badges until the apps are published | live |
 | Members' site member.loughorrfc.site; mail info@ and contact@ | live |
-| Apps `com.vesopaepos.loughorrfc` (watch `…watchkitapp`), name "Loughor RFC"; App Store Apple ID 6836592429, SKU LoughorRFC | iOS 1.0.0 (1) on TestFlight; Android phone on Play closed testing (alpha) as a draft |
+| Apps `com.vesopaepos.loughorrfc` (watch `…watchkitapp`), name "Loughor RFC"; App Store Apple ID 6836592429, SKU LoughorRFC | iOS 1.0.0 (1) on TestFlight; Android phone on Play closed testing (alpha) as a draft. From now on: open testing (owner, 2026-11-19) |
 | Wear OS app on Play | Play makes Wear OS internal, open and production tracks (no closed): the watch goes on wear:internal (private) |
 | Crest: transparent PNG and round icon from the club's own crest | done (`LoughorRFC/brand/`) |
 | Back office venue "Loughor RFC" (office 99): login info@loughorrfc.site with every module, realistic demo data, the review member test@test.com / 123456 for the app stores | done |
 | Vesopa accounts info@loughorrfc.site and loughorrfc@vesopa.com, and the loughorrfc@vesopa.com mailbox on Vesopa Cloud (password in the `LOUGHOR_ACCOUNT_PASSWORD` secret) | done. Mail from outside arrives only once vesopa.com's MX points at Vesopa Cloud |
 | Google Wallet pass classes (loyalty, customer) through the workflow | done 2026-11-19: loyalty class approved, customer class under Google's review (issuer Vesopa Software Ltd) |
+| Google Wallet passes done properly (owner, 2026-11-19): class ids `com.loughorrfc.loyalty` and `com.loughorrfc.customers` (several devices and holders); image modules (banner), wordmark, text modules, messages; links loughorrfc.com and vesopaepos.com (loughorrfc.site is temporary: move to loughorrfc.com before the final release); homepage loughorrfc.com; the ground's latitude/longitude (51.6627, -4.0655); loyalty labels as Pontardawe's card (points, tier); discoverable on the members' site (trusted testers first); callback https://backoffice.vesopaepos.com/wallet/google/callback (Google's signature checked; "update request URL" is deprecated by Google, so none); Smart Tap on, redemption issuer = Vesopa Software Ltd | in the code: venue_looks.js `google`, wallet_google.js, wallet.js. Live once the back office is deployed and Club site (wallet) re-run |
+| Smart Tap "hold near reader" for Google Wallet: what is a redemption issuer? | the company whose readers read the pass: Vesopa Software Ltd itself. To work, the owner adds a Smart Tap authentication key in the Google Pay & Wallet Console (Google Wallet API > Smart Tap), which gives a Collector ID, and buys a Google-certified Smart Tap reader (e.g. Socket Mobile, Elatec, Dot Origin) set up with that Collector ID and key. Google keeps the reader protocol to certified makers, so a phone running Vesopa Go cannot read a Google Wallet pass by NFC: the reader types the card number into the till like a scan |
+| Apple Wallet "hold near reader" for the membership and loyalty cards | in the code (wallet_apple.js `nfc`), off until set up: the owner asks Apple for NFC on the pass type IDs (developer.apple.com/contact/passkit), Apple issues NFC-enabled pass certificates, and a VAS reader (Apple Wallet NFC, e.g. Socket Mobile, Elatec, VTAP) gives the public key for `APPLE_WALLET_NFC_KEY` |
 | NFC "hold near reader" and QR on the members' card | Android phone and Wear OS done. iPhone shows the QR, and an Apple Wallet NFC pass needs Apple's NFC certificate |
 | Deep links (owner's choice, 2026-11-19: "Members' site + /app"): member.loughorrfc.site (every page) and loughorrfc.site/app open the app; news, fixtures and /app/privacy, /app/terms stay in the browser | venue.json `app_links`; the app declares them (make_venue_app.py); the sites name the app (website server.js, back office loyalty_host.js); Android fingerprint read from Play at deploy (tool/play_signing.py). In the next Loughor build |
 | iOS build with the newest Xcode (xcode-27 runner, iOS 27 SDK), as Vesopa Go | done: ios-venue-app.yml |
