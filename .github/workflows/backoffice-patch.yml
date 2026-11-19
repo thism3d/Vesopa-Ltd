@@ -131,7 +131,6 @@ jobs:
             new=$(git rev-parse "HEAD:$local_path")
             last=$(git log -1 --format=%H -- "$local_path")
             before=$(git rev-parse "$last^:$local_path" 2>/dev/null || echo none)
-            remote=$(ssh -n "$SERVER" "cat '$REMOTE_APP/$f' 2>/dev/null" | git hash-object --stdin)
             exists=$(ssh -n "$SERVER" "test -e '$REMOTE_APP/$f' && echo yes || echo no")
             if [ "$exists" = no ] && [ "$before" = none ]; then
               # A file new in git that the server does not have yet.
@@ -139,6 +138,7 @@ jobs:
               echo "$f" >> "$RUNNER_TEMP/to-copy"
               continue
             fi
+            remote=$( { ssh -n "$SERVER" "cat '$REMOTE_APP/$f' 2>/dev/null" || true; } | git hash-object --stdin)
             if [ "$remote" = "$new" ]; then
               echo "$f: already the new version, left as it is"
             elif [ "$remote" = "$before" ]; then
