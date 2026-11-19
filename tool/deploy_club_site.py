@@ -228,16 +228,16 @@ setkey GOOGLE_WALLET_ORIGINS "{origins}"
                 + f" && node scripts/grant-venue-apps.js '{email}'", check=False)
         box = accounts.get("mailbox")
         if box and password:
-            local, domain = box.split("@", 1)
+            local, box_domain = box.split("@", 1)
             print(f"▶ mailbox {box}", flush=True)
             ssh(f"""export PATH=$PATH:/usr/local/hestia/bin
-owner=$(v-search-domain-owner {domain} mail 2>/dev/null || true)
-mx=$(dig +short MX {domain} | sort -n | awk '{{print $2}}' | head -1)
+owner=$(v-search-domain-owner {box_domain} mail 2>/dev/null || true)
+mx=$(dig +short MX {box_domain} | sort -n | awk '{{print $2}}' | head -1)
 mxip=$(dig +short "$mx" | tail -1); here=$(curl -fsS https://api.ipify.org 2>/dev/null || true)
-if [ -z "$owner" ]; then echo "  ! {domain} is not a mail domain on this box: make {box} where {domain}'s mail is hosted ($mx)"
-elif [ -n "$mxip" ] && [ "$mxip" != "$here" ]; then echo "  ! {domain}'s mail is delivered to $mx, not this box: make {box} there (a mailbox here would never receive)"
-elif v-list-mail-account "$owner" {domain} {local} >/dev/null 2>&1; then v-change-mail-account-password "$owner" {domain} {local} "$(cat {pw})" && echo "  ✓ {box}: password set"
-else v-add-mail-account "$owner" {domain} {local} "$(cat {pw})" && echo "  ✓ {box} created"; fi
+if [ -z "$owner" ]; then echo "  ! {box_domain} is not a mail domain on this box: make {box} where {box_domain}'s mail is hosted ($mx)"
+elif [ -n "$mxip" ] && [ "$mxip" != "$here" ]; then echo "  ! {box_domain}'s mail is delivered to $mx, not this box: make {box} there (a mailbox here would never receive)"
+elif v-list-mail-account "$owner" {box_domain} {local} >/dev/null 2>&1; then v-change-mail-account-password "$owner" {box_domain} {local} "$(cat {pw})" && echo "  ✓ {box}: password set"
+else v-add-mail-account "$owner" {box_domain} {local} "$(cat {pw})" && echo "  ✓ {box} created"; fi
 """, check=False)
     finally:
         ssh(f"rm -f {pw}", check=False)
