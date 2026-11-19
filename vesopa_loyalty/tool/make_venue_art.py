@@ -101,6 +101,18 @@ class Art:
         edge = [rgb.getpixel((x, y)) for x in range(0, rgb.width, 8) for y in (1, rgb.height - 2)]
         edge += [rgb.getpixel((x, y)) for y in range(0, rgb.height, 8) for x in (1, rgb.width - 2)]
         self.edge = tuple(sum(c[i] for c in edge) // len(edge) for i in range(3))
+        # The club's own square picture of its crest, when it has one
+        # (brand/crest-square.png, Loughor RFC): used whole, edge to edge, for
+        # the icons that must have a ground (iPhone, App Store, Play), and its
+        # edge colour is the ground behind the transparent crest elsewhere
+        # (Android's adaptive icon, the Watch), so the two blend.
+        sq = venue_dir / "brand" / "crest-square.png"
+        self.square = Image.open(sq).convert("RGB") if sq.exists() else None
+        if self.square is not None:
+            px = [self.square.getpixel((x, y)) for x in range(0, self.square.width, 8) for y in (1, self.square.height - 2)]
+            self.edge = tuple(sum(c[i] for c in px) // len(px) for i in range(3))
+        circ = venue_dir / "brand" / "crest-circle.png"
+        self.circle = Image.open(circ).convert("RGBA") if circ.exists() else None
         self.overlay = venue_dir / "overlay"
         self.store = venue_dir / "store"
         # How far the crest's farthest corner is from its middle, as a
@@ -161,6 +173,13 @@ class Art:
         crest = self.crest_h(crest_height)
         canvas.alpha_composite(crest, ((size - crest.width) // 2, (size - crest.height) // 2))
         return canvas
+
+    def grounded(self, size, crest_height, ground):
+        """An icon that must have a ground: the club's square picture whole,
+        when it has one, else the crest on [ground]."""
+        if self.square is not None:
+            return self.square.resize((size, size), Image.LANCZOS).convert("RGBA")
+        return self.icon(size, crest_height, ground)
 
     def silhouette(self, size, height_frac):
         """White crest for the status bar and themed icons: shape only.
@@ -355,7 +374,8 @@ class Art:
             # Android 7: the crest as it is, on nothing.
             crest = self.icon(px, px * 0.94)
             save_png(crest, mip / "ic_launcher.png")
-            save_png(crest, mip / "ic_launcher_round.png")
+            save_png(self.circle.resize((px, px), Image.LANCZOS) if self.circle is not None else crest,
+                     mip / "ic_launcher_round.png")
             # Android 8+: a 108dp canvas of which a 72dp circle or squircle
             # shows. The background layer is transparent (the XML below), and
             # the whole crest sits inside the 66dp safe circle, so no
@@ -377,8 +397,8 @@ class Art:
 
         v26 = res / "mipmap-anydpi-v26"
         v26.mkdir(parents=True, exist_ok=True)
-        if self.opaque:
-            # A square crest: the launcher's shape is filled with the crest's
+        if self.opaque or self.square is not None:
+            # A square crest, or one with its own square picture: the launcher's shape is filled with the crest's
             # own edge colour, the whole crest inside the safe circle.
             values = res / "values"
             values.mkdir(parents=True, exist_ok=True)
@@ -427,7 +447,7 @@ class Art:
             shutil.rmtree(icons)
         icons.mkdir(parents=True)
         size, height = 1024, 1024 * 0.80
-        master = self.icon(size, height, WHITE).convert("RGB")
+        master = self.grounded(size, height, WHITE).convert("RGB")
         dark = self.icon(size, height)
         r, g, b, a = dark.split()
         grey = ImageOps.autocontrast(Image.merge("RGB", (r, g, b)).convert("L"), cutoff=1)
@@ -455,7 +475,8 @@ class Art:
         watch.mkdir(parents=True, exist_ok=True)
         # The Watch shows its icon in a circle on black and refuses alpha:
         # the crest on black, inside the circle.
-        save_png(self.icon(1024, self.in_circle(1024 * 0.9), (0, 0, 0)).convert("RGB"), watch / "AppIcon-1024.png")
+        save_png(self.icon(1024, self.in_circle(1024 * 0.9), self.edge if self.square is not None else (0, 0, 0)).convert("RGB"),
+                 watch / "AppIcon-1024.png")
         return master
 
     def app_art(self):
@@ -494,7 +515,8 @@ class Art:
         self.store.mkdir(parents=True, exist_ok=True)
         save_png(master, self.store / "app-store-icon-1024.png")
         # Play takes a 32-bit PNG: the crest on nothing.
-        save_png(self.icon(512, 512 * 0.88, self.edge if self.opaque else None), self.store / "play-icon-512.png")
+        save_png(self.grounded(512, 512 * 0.88, None) if self.square is not None
+                 else self.icon(512, 512 * 0.88, self.edge if self.opaque else None), self.store / "play-icon-512.png")
 
         w, h = 1024, 500
         crest_h = h * 0.74
@@ -530,7 +552,7 @@ class Art:
         def write(folder: Path, names):
             folder.mkdir(parents=True, exist_ok=True)
             save_png(self.icon(32, 32 * 0.97), folder / names["favicon"])
-            save_png(self.icon(180, 180 * 0.80, WHITE).convert("RGB"), folder / "apple-touch-icon.png")
+            save_png(self.grounded(180, 180 * 0.80, WHITE).convert("RGB"), folder / "apple-touch-icon.png")
             save_png(self.icon(192, 192 * 0.94), folder / names["192"])
             save_png(self.icon(512, 512 * 0.94), folder / names["512"])
             # Maskable: the whole crest inside the middle 80% circle.
