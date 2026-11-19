@@ -31,6 +31,10 @@ secrets only).
 - **Loughor RFC app releases** go to Play **open testing** (`beta`, and
   `wear:beta` for the watch) from now on (owner, 2026-11-19): `LoughorRFC/store/play.json`
   `track`. iPhone builds go to TestFlight and its external groups.
+  Straight to open testing only (owner, 2026-11-19: "Directly publish to
+  open testing no need to submit to internal and closed testing from now
+  on"): never upload or promote a Loughor build to `internal`, `alpha`,
+  `wear:internal` or wear closed testing.
 - **Decisions:** "Go on, finish all the tasks. Full consent given. Do pick
   the best decisions." Ask the owner straight away when something is
   genuinely theirs to decide.
