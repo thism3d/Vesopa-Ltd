@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The members' card by NFC: on for venues whose venue.json has "nfc": true
+         (their overlay sets this true; vesopa_loyalty/tool/make_venue_app.py). -->
+    <bool name="nfc_card">false</bool>
+    <string name="nfc_card_description">Members\' card</string>
+</resources>

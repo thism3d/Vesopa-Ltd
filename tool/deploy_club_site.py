@@ -178,6 +178,35 @@ echo "changed=$changed"
 """
         out = ssh(env_script) if slug and app_id else ""
 
+        # Google Wallet on the back office, the first time (owner, 2026-11-19:
+        # "We now have the access of Google Wallet Pass api"): the issuer and
+        # the service account that signs the passes, as Back office - patch's
+        # google-wallet setting does, when the server has none yet. The key
+        # file sits beside the app, mode 600; nothing is printed.
+        issuer = os.environ.get("GOOGLE_WALLET_ISSUER_ID", "").strip()
+        sa_json = os.environ.get("GOOGLE_WALLET_SA_JSON", "").strip()
+        has = ssh(f"grep -c '^GOOGLE_WALLET_ISSUER_ID=.' {BACKOFFICE}/.env || true", check=False).strip()
+        if has not in ("", "0"):
+            print("  ✓ Google Wallet is set up on the back office")
+        elif not (issuer and sa_json):
+            print("  ! Google Wallet is not set up on the back office, and the workflow has no "
+                  "GOOGLE_WALLET_ISSUER_ID / PLAY_SERVICE_ACCOUNT_JSON secrets to set it up with")
+        elif check:
+            print("  ! would set up Google Wallet on the back office (issuer and service account from the secrets)")
+        else:
+            sa = f"/home/{USER}/web/backoffice.vesopaepos.com/private/google-wallet-sa.json"
+            ssh(f"umask 077 && cat > {sa} && chown {USER}:{USER} {sa}", data=sa_json.encode())
+            origins = ",".join(dict.fromkeys([
+                "https://backoffice.vesopaepos.com", "https://loyalty.vesopa.com", "https://member.pontardawerfc.com",
+                members, site_url]))
+            ssh(f"""E={BACKOFFICE}/.env; cp -p $E $E.bak-$(date +%s)
+setkey() {{ if grep -q "^$1=" $E; then sed -i "s|^$1=.*|$1=$2|" $E; else printf '%s=%s\\n' "$1" "$2" >> $E; fi; echo "  ▶ .env: $1 set"; }}
+setkey GOOGLE_WALLET_ISSUER_ID "$(cat)"
+setkey GOOGLE_WALLET_SA_FILE "{sa}"
+setkey GOOGLE_WALLET_ORIGINS "{origins}"
+""", data=issuer.encode())
+            out += "\nchanged=1"
+
         if check:
             print("check only: nothing changed.")
             return

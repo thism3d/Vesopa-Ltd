@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- NFC card emulation where the device has it; never required. -->
+    <uses-feature android:name="android.hardware.nfc.hce" android:required="false"/>
+
     <!-- A watch app: Play offers it only on Wear OS. -->
     <uses-feature android:name="android.hardware.type.watch"/>
 
@@ -23,6 +26,21 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- The members' card by NFC: hold near the club's reader (CardHceService.kt).
+             Enabled per venue by @bool/nfc_card. -->
+        <service
+            android:name=".CardHceService"
+            android:exported="true"
+            android:enabled="@bool/nfc_card"
+            android:permission="android.permission.BIND_NFC_SERVICE">
+            <intent-filter>
+                <action android:name="android.nfc.cardemulation.action.HOST_APDU_SERVICE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.nfc.cardemulation.host_apdu_service"
+                android:resource="@xml/card_apdu_service"/>
+        </service>
 
         <!-- Woken when the phone puts a new card in the Data Layer. -->
         <service

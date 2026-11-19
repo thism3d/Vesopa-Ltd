@@ -29,6 +29,8 @@ class WearBridge(context: Context, messenger: BinaryMessenger) {
         MethodChannel(messenger, "vesopa_loyalty/watch").setMethodCallHandler { call, result ->
             when (call.method) {
                 "update" -> {
+                    // The same card is what the phone answers an NFC reader with.
+                    (call.arguments as? Map<*, *>)?.let { CardNfc.save(app, it) }
                     send(call.arguments as? Map<*, *>)
                     result.success(null)
                 }
