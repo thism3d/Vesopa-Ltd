@@ -54,7 +54,7 @@ secrets only).
 | Crest: transparent PNG and round icon from the club's own crest | done (`LoughorRFC/brand/`) |
 | Back office venue "Loughor RFC" (office 99): login info@loughorrfc.site with every module, realistic demo data, the review member test@test.com / 123456 for the app stores | done |
 | Vesopa accounts info@loughorrfc.site and loughorrfc@vesopa.com, and the loughorrfc@vesopa.com mailbox on Vesopa Cloud (password in the `LOUGHOR_ACCOUNT_PASSWORD` secret) | done. Mail from outside arrives only once vesopa.com's MX points at Vesopa Cloud |
-| Google Wallet pass classes (loyalty, customer) through the workflow | Wallet API switched on by the owner; Club site creates the classes |
+| Google Wallet pass classes (loyalty, customer) through the workflow | done 2026-11-19: loyalty class approved, customer class under Google's review (issuer Vesopa Software Ltd) |
 | NFC "hold near reader" and QR on the members' card | Android phone and Wear OS done. iPhone shows the QR, and an Apple Wallet NFC pass needs Apple's NFC certificate |
 | Deep links (owner's choice, 2026-11-19: "Members' site + /app"): member.loughorrfc.site (every page) and loughorrfc.site/app open the app; news, fixtures and /app/privacy, /app/terms stay in the browser | venue.json `app_links`; the app declares them (make_venue_app.py); the sites name the app (website server.js, back office loyalty_host.js); Android fingerprint read from Play at deploy (tool/play_signing.py). In the next Loughor build |
 | iOS build with the newest Xcode (xcode-27 runner, iOS 27 SDK), as Vesopa Go | done: ios-venue-app.yml |
@@ -79,5 +79,5 @@ secrets only).
 | Page indexing: /blog?tag=… (47) "Alternate page with proper canonical" | each tag is now its own page /blog/tag/<tag> (self-canonical, in the sitemap); the old ?tag= links 301 there; blog ?kind= and ?page= pages are their own canonical |
 | www.vesopaepos.com | 301 to vesopaepos.com |
 | /trial?period=1 | correct as it is: a version of /trial, which is the page to index |
-| Deploy route | Back office - patch, target "website" (vesopa_web files, checked against git, backed up, health-checked) |
+| Deploy route | Back office - patch, target "website" (vesopa_web files, checked against git, backed up, health-checked). Deployed live 2026-11-19 06:06, healthy. Owner: press Validate fix in Search Console |
 
