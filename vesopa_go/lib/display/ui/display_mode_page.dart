@@ -52,6 +52,7 @@ import '../data/control.dart';
 import '../data/display_options.dart';
 import '../data/local_adverts.dart';
 import '../data/till_link.dart';
+import '../../remote/go_remote.dart';
 
 const _ease = Cubic(0.2, 0, 0, 1);
 
@@ -106,6 +107,8 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
   bool _hint = false;
   Timer? _hintTimer;
   bool _inSettings = false;
+  bool _unlocked = false;
+  ScreenBeacon? _beacon;
 
   @override
   void initState() {
@@ -121,6 +124,19 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
+    GoRemote.listen(_remoteKey);
+  // The phone's remote finds this screen, and its keys arrive here (lib/remote/go_remote.dart).
+    _beacon = ScreenBeacon(() {
+      final session = ref.read(tapProvider.notifier);
+      return ref.read(apiProvider).screenHello(
+            deviceId: session.deviceId,
+            name: session.terminalName,
+            mode: 'display',
+            live: session.live,
+            tv: GoDevice.isTv,
+          );
+    })
+      ..start();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _start();
       // On a TV, say once what the remote does.
@@ -128,8 +144,39 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
     });
   }
 
+  /// A key from Vesopa Go on a phone: the adverts, the settings, a refresh.
+  bool _remoteKey(String key) {
+    if (!mounted) return false;
+    final onTop = ModalRoute.of(context)?.isCurrent ?? true;
+    switch (key) {
+      case 'next':
+        _slides.currentState?.next();
+        return true;
+      case 'previous':
+        _slides.currentState?.previous();
+        return true;
+      case 'left' || 'right' when onTop && _keys.hasPrimaryFocus:
+        key == 'left' ? _slides.currentState?.previous() : _slides.currentState?.next();
+        return true;
+      case 'ok' when onTop && _keys.hasPrimaryFocus:
+        unawaited(_settings());
+        return true;
+      case 'settings':
+        if (!onTop) return true;
+        _unlocked = true;
+        unawaited(_settings());
+        return true;
+      case 'refresh':
+        unawaited(_loadAdverts());
+        return true;
+    }
+    return false;
+  }
+
   @override
   void dispose() {
+    GoRemote.forget(_remoteKey);
+    _beacon?.stop();
     _tick?.cancel();
     _status?.cancel();
     _hintTimer?.cancel();
@@ -376,7 +423,9 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
   }
 
   Future<void> _openSettings() async {
-    await showModeSettings(context, ref, extra: [
+    final unlocked = _unlocked;
+    _unlocked = false;
+    await showModeSettings(context, ref, unlocked: unlocked, extra: [
       Card(
         child: ListTile(
           leading: const Icon(Icons.link_rounded),
@@ -662,7 +711,7 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
             words('QR code for customers', o.customerQr, till?.customerQr ?? '', (v) async => set(o.copyWith(customerQr: v)), hint: 'A web address, e.g. https://…'),
             if (o.customerQr.isNotEmpty)
               words('Line under the QR', o.customerQrCaption, '', (v) async => set(o.copyWith(customerQrCaption: v)), hint: 'Scan to join'),
-            flag('Member buttons', 'Tap a member card or scan a pass on the waiting screen.', o.memberButtons, (v) => o.copyWith(memberButtons: v)),
+            flag('Member buttons', GoDevice.hasTouch ? 'Tap a member card or scan a pass on the waiting screen.' : 'For a touchscreen with NFC or a camera. This screen has no touch, so they stay hidden.', o.memberButtons, (v) => o.copyWith(memberButtons: v)),
           ]),
           section('Paying', Icons.contactless_rounded, [
             flag('Pay from a phone', 'Show the QR code when the till offers it.', o.showQr, (v) => o.copyWith(showQr: v)),
@@ -755,8 +804,10 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
         venue: venue,
         control: _ctl,
         dim: _options.idleDim,
-        onMemberCard: _options.memberButtons ? _tapMemberCard : null,
-        onScanPass: _options.memberButtons ? _scanPass : null,
+        // Only what this screen can do, and only where a customer can touch
+        // it: a TV has no touch, no camera and no NFC (owner, 2026-11-19).
+        onMemberCard: _options.memberButtons && GoDevice.hasTouch && GoDevice.hasNfc ? _tapMemberCard : null,
+        onScanPass: _options.memberButtons && GoDevice.hasTouch && GoDevice.hasCamera ? _scanPass : null,
       );
     } else if (_basket.state == 'paid') {
       screen = _ThankYou(basket: _basket, words: _ctl.thankYou);
@@ -1218,12 +1269,14 @@ class _Idle extends StatelessWidget {
         right: 0,
         bottom: 0,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          if (onMemberCard != null)
+          if (onMemberCard != null || onScanPass != null)
             Padding(
               padding: const EdgeInsets.all(12),
               child: Wrap(spacing: 12, runSpacing: 8, alignment: WrapAlignment.center, children: [
-                FilledButton.icon(onPressed: onMemberCard, icon: const Icon(Icons.nfc_rounded), label: const Text('Tap member card')),
-                OutlinedButton.icon(onPressed: onScanPass, icon: const Icon(Icons.qr_code_scanner_rounded), label: const Text('Scan your pass')),
+                if (onMemberCard != null)
+                  FilledButton.icon(onPressed: onMemberCard, icon: const Icon(Icons.nfc_rounded), label: const Text('Tap member card')),
+                if (onScanPass != null)
+                  OutlinedButton.icon(onPressed: onScanPass, icon: const Icon(Icons.qr_code_scanner_rounded), label: const Text('Scan your pass')),
               ]),
             ),
           band,

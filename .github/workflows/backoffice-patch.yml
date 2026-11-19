@@ -46,6 +46,11 @@ on:
         type: choice
         options: [none, google-wallet, apns-pontardawe, both]
         default: none
+      run:
+        description: After the deploy, run one of the server's set-up tools (back office targets only)
+        type: choice
+        options: [none, kitchen-display-adverts]
+        default: none
       confirm:
         description: Type deploy to change the live server
         required: false
@@ -73,6 +78,7 @@ jobs:
       TARGET: ${{ inputs.target }}
       FILES: ${{ inputs.files }}
       SETTINGS: ${{ inputs.settings }}
+      RUN_TOOL: ${{ inputs.run }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -126,6 +132,13 @@ jobs:
             last=$(git log -1 --format=%H -- "$local_path")
             before=$(git rev-parse "$last^:$local_path" 2>/dev/null || echo none)
             remote=$(ssh -n "$SERVER" "cat '$REMOTE_APP/$f' 2>/dev/null" | git hash-object --stdin)
+            exists=$(ssh -n "$SERVER" "test -e '$REMOTE_APP/$f' && echo yes || echo no")
+            if [ "$exists" = no ] && [ "$before" = none ]; then
+              # A file new in git that the server does not have yet.
+              echo "$f: new, will be added"
+              echo "$f" >> "$RUNNER_TEMP/to-copy"
+              continue
+            fi
             if [ "$remote" = "$new" ]; then
               echo "$f: already the new version, left as it is"
             elif [ "$remote" = "$before" ]; then
@@ -158,14 +171,14 @@ jobs:
           R "cp -p '$app/.env' '$app/.env.bak-$ts'"
           while read -r f; do
             [ -n "$f" ] || continue
-            R "cp -p '$app/$f' '$app/$f.bak-$ts'"
+            R "if [ -e '$app/$f' ]; then cp -p '$app/$f' '$app/$f.bak-$ts'; fi"
           done < "$RUNNER_TEMP/to-copy"
           rollback() {
             echo "::error::Restoring the backups ($ts)."
             R "cp -p '$app/.env.bak-$ts' '$app/.env'" || true
             while read -r f; do
               [ -n "$f" ] || continue
-              R "cp -p '$app/$f.bak-$ts' '$app/$f'" || true
+              R "if [ -e '$app/$f.bak-$ts' ]; then cp -p '$app/$f.bak-$ts' '$app/$f'; else rm -f '$app/$f'; fi" || true
             done < "$RUNNER_TEMP/to-copy"
             restart || true
             exit 1
@@ -174,6 +187,7 @@ jobs:
 
           while read -r f; do
             [ -n "$f" ] || continue
+            R "mkdir -p \"\$(dirname '$app/$f')\" && chown $APP_USER:$APP_USER \"\$(dirname '$app/$f')\""
             ssh "$SERVER" "cat > '$app/$f.new' && chown $APP_USER:$APP_USER '$app/$f.new' && mv '$app/$f.new' '$app/$f'" < "$SRC/$f"
             echo "copied $f"
           done < "$RUNNER_TEMP/to-copy"
@@ -217,6 +231,17 @@ jobs:
           [ "${ok:-}" = 1 ] || { echo "::error::https://$DOMAIN/health did not answer after the restart"; false; }
           trap - ERR
           echo "Healthy: https://$DOMAIN/health"
+
+          # One of the server's own set-up tools, from a fixed list (never a
+          # free command): as the app's user, with the app's .env.
+          case "$RUN_TOOL" in
+            none|'') ;;
+            kitchen-display-adverts)
+              [ "$SRC" = vesopa_server ] || { echo "::error::$RUN_TOOL is a back office tool"; exit 1; }
+              R "su - $APP_USER -c 'cd $app && node tool/kitchen-display-adverts.js'"
+              ;;
+            *) echo "::error::Unknown tool $RUN_TOOL"; exit 1 ;;
+          esac
           echo "### Back office patch ($TARGET)" >> "$GITHUB_STEP_SUMMARY"
           echo "Backups on the server end in .bak-$ts" >> "$GITHUB_STEP_SUMMARY"
           if [ "$TARGET" = live ]; then

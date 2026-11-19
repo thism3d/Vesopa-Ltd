@@ -44,6 +44,26 @@ class GoDevice {
 
   static bool _listening = false;
 
+  static bool _camera = true;
+  static bool _nfc = true;
+  static bool _touch = true;
+
+  /// A camera to scan codes with. A TV, a Fire TV stick or a box has none.
+  static bool get hasCamera => _camera;
+
+  /// NFC hardware, for member cards, staff fobs and Tap to Pay.
+  static bool get hasNfc => _nfc;
+
+  /// A touchscreen. False on a television: only the remote.
+  static bool get hasTouch => _touch;
+
+  @visibleForTesting
+  static void debugHardware({bool camera = true, bool nfc = true, bool touch = true}) {
+    _camera = camera;
+    _nfc = nfc;
+    _touch = touch;
+  }
+
   static Future<void> load() async {
     if (!_listening) {
       _listening = true;
@@ -53,6 +73,10 @@ class GoDevice {
     try {
       final info = await const MethodChannel('com.vesopa.go/device').invokeMapMethod<String, Object?>('deviceInfo');
       _tv = info?['tv'] == true;
+      // Older builds of the native side did not answer these: assume a phone.
+      _camera = info?['camera'] != false && !(_tv && info?['camera'] == null);
+      _nfc = info?['nfcHardware'] != false && !(_tv && info?['nfcHardware'] == null);
+      _touch = info?['touch'] != false && !(_tv && info?['touch'] == null);
     } catch (_) {
       _tv = false;
     }

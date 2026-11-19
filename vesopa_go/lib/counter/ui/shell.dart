@@ -53,6 +53,7 @@ import 'sell_page.dart';
 import '../../ui/tap_to_pay_intro.dart';
 import '../../ui/app_version.dart';
 import '../../ui/gateway_mark.dart';
+import 'package:vesopa_go/remote/remote_page.dart';
 
 /// The drawer's name for Vesopa AI, and how the top bar's shortcut finds it.
 const advisorTitle = 'Vesopa AI';
@@ -343,6 +344,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             subtitle: const Text('Scan the code a new screen shows to add it as a display, a kitchen screen, a till or a card terminal.'),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () => connectScreen(context, ref),
+          ),
+          ListTile(
+            leading: const Icon(Icons.settings_remote_rounded),
+            title: const Text('Control a screen or TV'),
+            subtitle: const Text('Use this device as the remote for a kitchen TV or customer display: arrows, OK, adverts and settings.'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ScreensRemotePage())),
           ),
           ListTile(
             leading: const Icon(Icons.contactless_rounded),

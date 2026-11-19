@@ -169,6 +169,19 @@ class TapApi {
   // Card terminal mode (vesopa_server src/go_terminal.js).
 
   /// The terminal: "I am here", answered with the payment waiting for it.
+  /// A TV or screen (Kitchen, Customer display): "I am here", for the remote
+  /// on a phone or tablet (src/go_remote.js).
+  Future<Map<String, dynamic>> screenHello({required String deviceId, required String name, required String mode, bool live = true, bool tv = false}) =>
+      _send('POST', '/api/go/screen/hello', {'device_id': deviceId, 'name': name, 'mode': mode, 'live': live, 'tv': tv});
+
+  /// The venue's screens awake now, for the remote.
+  Future<Map<String, dynamic>> awakeScreens(String deviceId) =>
+      _send('GET', '/api/go/screens?device_id=${Uri.encodeQueryComponent(deviceId)}');
+
+  /// Press a key on a screen: up, down, left, right, ok, back, next, previous, settings, refresh.
+  Future<Map<String, dynamic>> screenKey(String deviceId, String key) =>
+      _send('POST', '/api/go/screens/${Uri.encodeComponent(deviceId)}/key', {'key': key});
+
   Future<Map<String, dynamic>> terminalHello({required String deviceId, required String name, String? gateway, bool ready = true, String? why}) =>
       _send('POST', '/api/go/terminal/hello', {'device_id': deviceId, 'name': name, 'gateway': ?gateway, 'ready': ready, 'why': ?why});
 
