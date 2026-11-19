@@ -38,7 +38,7 @@ secrets only).
 | --- | --- |
 | Every release goes to go.vesopa.com/install as well as the stores | done (the `install_page` input of Go - Android, on by default) |
 | Android TV: proper TV app, TV screenshots, TV banner, TV store listing, remote buttons work | 1.2.71: kitchen grid on a TV, the remote works throughout, 4 TV screenshots, banner, listing. The owner then opts in under Play Console > Advanced settings > Form factors > Android TV |
-| Dedicated Android TV and Wear OS tracks (switched on by the owner, 2026-11-19): every Go release also goes on tv:<track> (else tv:internal); TV screenshots and the TV opt-in are done in Play | tool/play_upload.py |
+| Dedicated Android TV and Wear OS tracks (switched on by the owner, 2026-11-19). Play's TV track takes only a bundle that requires leanback, so each Go release builds a TV-only bundle (version code 2,000,000 + build) for tv:<track> (else tv:internal); TV screenshots, banner and the TV opt-in are done | go-android.yml, tool/play_upload.py |
 | On a TV offer only Kitchen and Customer display (same app, same `com.vesopa.go` listing; Android TV is a form factor, not a second app) | 1.2.71 |
 | Read the Loughor members' card by NFC (Android phone and Wear OS) | 1.2.70 |
 | Faster workflows: cache tools between runs | done (Gradle, NDK, SwiftPM, Flutter caches) |
@@ -68,3 +68,12 @@ secrets only).
 | --- | --- |
 | Deep links (member.pontardawerfc.com and pontardawerfc.com/app), no app release | websites ready: pontardawerfc.com's assetlinks.json was already right; member.pontardawerfc.com names the app with its 4 fingerprints (loyalty_host.js). In Play Console > Deep links the owner sets the web links to member.pontardawerfc.com path /.* and pontardawerfc.com path /app. iPhone universal links need the next Pontardawe build (venue.json app_links is ready) |
 | App Store "Ready for Distribution": is it published? | answered: that status means it is live on the App Store |
+
+## vesopaepos.com (Vesopa EPOS website)
+
+| Ask (owner, 2026-11-19, "quick tasks", priority) | Status |
+| --- | --- |
+| Google Search Console: product snippets missing "aggregateRating" and "review"; merchant listings missing "hasMerchantReturnPolicy" and "shippingDetails" in offers | in progress |
+| Merchant Center: products "Not approved: Missing shipping weight [shipping_weight]" | in progress |
+| Page indexing: /blog?tag=… pages (47) "Alternate page with proper canonical", www.vesopaepos.com, /trial?period=1: fix the tag URLs and listings so the right pages are indexed | in progress |
+
