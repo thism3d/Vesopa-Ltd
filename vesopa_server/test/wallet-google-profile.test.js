@@ -124,3 +124,20 @@ test('Apple membership and loyalty cards carry NFC only once the reader key is s
   assert.equal(pass(on, 'customer').nfc.message, '999800001');
   assert.equal(pass(on, 'giftcard').nfc, undefined);
 });
+
+test('only the extra Google refuses is dropped; the others stay on the class', async () => {
+  const { klass } = G.buildPass({ kind: 'loyalty', config, office: 'x', brand, subject: { id: 'template' } });
+  const sent = [];
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.includes('oauth2')) return { ok: true, status: 200, text: async () => '{"access_token":"t","expires_in":3600}' };
+    const body = opts.body ? JSON.parse(opts.body) : {};
+    sent.push(body);
+    if (body.discoverableProgram) return { ok: false, status: 400, statusText: 'Bad Request', text: async () => '{"error":{"code":400,"message":"Request contains an invalid argument."}}' };
+    return { ok: true, status: 200, text: async () => opts.body };
+  };
+  const saved = await G.makeClient(config, fetchImpl).upsertClass('loyalty', klass);
+  assert.deepEqual(saved.droppedFields, ['discoverableProgram']);
+  const last = sent.filter((b) => !b.discoverableProgram).at(-1);
+  assert.equal(last.enableSmartTap, true);
+  assert.ok(last.callbackOptions.url);
+});
