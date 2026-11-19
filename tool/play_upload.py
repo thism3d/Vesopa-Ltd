@@ -159,21 +159,8 @@ def release(play, edit, aab: pathlib.Path, track, name, notes, lang):
         play.call("PUT", f"{API}/{play.package}/edits/{edit}/tracks/{track}", {"track": track, "releases": [rel]})
         print("   (the app is still a draft in Play, so the release is a draft: roll it out in Play Console)")
     print(f"   version code {code} on the {track} track")
-    # An Android TV app (play.json lists tvScreenshots) with Play's dedicated
-    # Android TV tracks (owner, 2026-11-19): the same bundle on the TV's own
-    # track too, the same testing track or else TV internal testing. Without
-    # a TV release, Play's TV form factor stays "2 of 3 complete".
-    if TV_APP[0] and not track.startswith(("wear:", "tv:")):
-        have = {t["track"] for t in play.call("GET", f"{API}/{play.package}/edits/{edit}/tracks").get("tracks", [])}
-        tv = f"tv:{track}" if f"tv:{track}" in have else ("tv:internal" if "tv:internal" in have else None)
-        if tv:
-            play.call("PUT", f"{API}/{play.package}/edits/{edit}/tracks/{tv}", {"track": tv, "releases": [dict(rel)]})
-            print(f"   version code {code} on the {tv} track (Android TV)")
-        else:
-            print("   (no Android TV track in Play: the TV gets this release from the phone track)")
 
 
-TV_APP = [False]
 
 
 def listing(play, edit, store: pathlib.Path, p):
@@ -207,6 +194,7 @@ def listing(play, edit, store: pathlib.Path, p):
 
 
 WEAR_OFFSET = 1_000_000  # the watch bundle's versionCode is the build number plus this
+TV_OFFSET = 2_000_000  # and the TV-only bundle's (go-android.yml)
 
 
 def next_build(play, floor: int) -> int:
@@ -217,7 +205,7 @@ def next_build(play, floor: int) -> int:
         seen = [int(b["versionCode"]) for b in play.call("GET", f"{API}/{play.package}/edits/{edit}/bundles").get("bundles", [])]
     finally:
         play.call("DELETE", f"{API}/{play.package}/edits/{edit}")
-    builds = [c - WEAR_OFFSET if c >= WEAR_OFFSET else c for c in seen]
+    builds = [c % WEAR_OFFSET for c in seen]
     return max([floor - 1, *builds]) + 1
 
 
@@ -301,7 +289,6 @@ def main():
         print(f"   version code {code} ({rel['name']}) from {source} onto the {track} track")
         return
     print(f"{p['title']} ({p['package']}) as {who}")
-    TV_APP[0] = bool(p.get("images", {}).get("tvScreenshots"))
 
     failed = False
     if not only_listing:
@@ -309,17 +296,23 @@ def main():
         stem = f"{venue_dir.name}-{v['version']}-{v['build']}"
         name = f"{v['version']} ({v['build']})"
         parts = [(builds / f"{stem}.aab", track, "Phone and tablet", "phone"),
-                 (builds / f"{stem}-wear.aab", f"wear:{track}", "Wear OS", "wear")]
+                 (builds / f"{stem}-wear.aab", f"wear:{track}", "Wear OS", "wear"),
+                 # Vesopa Go's TV-only bundle (go-android.yml), for Play's
+                 # dedicated Android TV track; a venue app has none.
+                 (builds / f"{stem}-tv.aab", f"tv:{track}", "Android TV", "tv")]
         for aab, t, label, part in parts:
             # --only apps: the phone and the watch bundles, without the listing.
             if only and only != part and only != "apps":
+                continue
+            # Only the bundles this app has: Go has no watch, a venue app no TV.
+            if not aab.is_file() and (part == "tv" or (part == "wear" and not v.get("watch_app_id"))):
                 continue
             print(f"{label}:")
             if not aab.is_file():
                 print(f"   ! {aab} is missing: run {venue_dir.name}\\build-android.cmd first")
                 failed = True
                 continue
-            if part == "wear":
+            if part in ("wear", "tv"):
                 # Play gives a new Wear OS form factor internal, open (beta)
                 # and production tracks but no closed one: a closed-testing
                 # phone release puts its watch on Wear OS internal testing,
@@ -328,9 +321,10 @@ def main():
                     look = play.edit()
                     have = {x["track"] for x in play.call("GET", f"{API}/{play.package}/edits/{look}/tracks").get("tracks", [])}
                     play.call("DELETE", f"{API}/{play.package}/edits/{look}")
-                    if t not in have and "wear:internal" in have and track not in ("beta", "production"):
-                        print(f"   (no {t} track in Play: the watch goes on wear:internal, Wear OS internal testing)")
-                        t = "wear:internal"
+                    inner = f"{part}:internal"
+                    if t not in have and inner in have and track not in ("beta", "production"):
+                        print(f"   (no {t} track in Play: this goes on {inner}, {label} internal testing)")
+                        t = inner
                 except PlayError:
                     pass
             try:

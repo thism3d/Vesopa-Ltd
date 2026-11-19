@@ -187,6 +187,20 @@ jobs:
           mkdir -p "$apk"
           cp build/app/outputs/flutter-apk/app-release.apk "$apk/VesopaGo-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}.apk"
           ls -la "$apk"
+          # Android TV's own track (owner, 2026-11-19: dedicated tracks) takes
+          # only a bundle that requires the TV's leanback feature, as the Wear
+          # OS track takes a watch-only one: the same app with it required,
+          # numbered 2,000,000 + the build (tool/play_upload.py TV_OFFSET).
+          m=android/app/src/main/AndroidManifest.xml
+          if grep -q 'android.software.leanback" android:required="false"' "$m"; then
+            cp "$m" "$RUNNER_TEMP/manifest.phone"
+            sed -i 's#android.software.leanback" android:required="false"#android.software.leanback" android:required="true"#' "$m"
+            flutter build appbundle --release \
+              --build-name="${{ steps.num.outputs.version }}" --build-number="$((2000000 + ${{ steps.num.outputs.build }}))"
+            cp build/app/outputs/bundle/release/app-release.aab "$out/$APP-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}-tv.aab"
+            cp "$RUNNER_TEMP/manifest.phone" "$m"
+            ls -la "$out"
+          fi
 
       - uses: actions/upload-artifact@v4
         if: inputs.mode != 'listing' && inputs.mode != 'promote'
@@ -228,7 +242,8 @@ jobs:
           [ -n "$TRACK" ] && set -- "$@" --track "$TRACK"
           ok=0
           if [ "$MODE" = "full" ]; then
-            "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@" --only phone || ok=1
+            # The phone bundle and, where there is one, the TV's, each its own edit.
+            "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@" --only apps || ok=1
           fi
           # The listing on its own, so a refused bundle does not stop it.
           "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$APP" --listing || ok=1
