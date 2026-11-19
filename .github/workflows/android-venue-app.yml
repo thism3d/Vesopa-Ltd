@@ -19,6 +19,11 @@
 #                                 without ANDROID_KEY_PASSWORD the store password is
 #                                 used, as it is the same in a PKCS12 keystore
 #   PONTARDAWE_GOOGLE_SERVICES_JSON   PontardaweRFC\google-services.json, as it is
+#   FIREBASE_SERVICE_ACCOUNT_JSON     for every other venue: the Firebase Admin SDK
+#                                 key; the run registers the venue's package in the
+#                                 "vesopa" project and fetches its google-services.json
+#                                 (vesopa_loyalty/tool/firebase_android_app.py). Without
+#                                 it PLAY_SERVICE_ACCOUNT_JSON is tried.
 #   PLAY_SERVICE_ACCOUNT_JSON     a service account key with release rights in
 #                                 Play Console (the Firebase Admin one works when
 #                                 it has been invited there), as it is
@@ -81,6 +86,7 @@ jobs:
           KA: ${{ secrets.ANDROID_KEY_ALIAS }}
           KP: ${{ secrets.ANDROID_KEY_PASSWORD }}
           GS: ${{ secrets.PONTARDAWE_GOOGLE_SERVICES_JSON }}
+          FB: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON || secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           case "$VENUE" in *[!A-Za-z0-9_-]*|'') echo "::error::Not a venue folder: $VENUE"; exit 1;; esac
           test -f "$VENUE/venue.json" || { echo "::error::$VENUE/venue.json not found"; exit 1; }
@@ -90,7 +96,8 @@ jobs:
             [ -n "$KS" ] || missing="$missing ANDROID_UPLOAD_KEYSTORE_B64"
             [ -n "$KSP" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
             [ -n "$KA" ] || missing="$missing ANDROID_KEY_ALIAS"
-            [ -n "$GS" ] || missing="$missing PONTARDAWE_GOOGLE_SERVICES_JSON"
+            if [ "$VENUE" = PontardaweRFC ]; then [ -n "$GS" ] || missing="$missing PONTARDAWE_GOOGLE_SERVICES_JSON"
+            else [ -n "$FB" ] || missing="$missing FIREBASE_SERVICE_ACCOUNT_JSON"; fi
           fi
           if [ -n "$missing" ]; then
             echo "::error::Not set in the 'App Store Connect API' environment:$missing (see the top of this file)."
@@ -142,6 +149,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Gradle's downloads and build output, kept between runs (owner,
+      # 2026-11-19: "github workflows are taking too much time"). Written on
+      # main, read everywhere.
+      - uses: gradle/actions/setup-gradle@v4
+        if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
       - uses: subosito/flutter-action@v2
         if: inputs.mode != 'listing' && inputs.mode != 'halt'
         with:
@@ -151,8 +166,14 @@ jobs:
 
       # The NDK the app's build.gradle.kts names, so the release can pack the
       # native libraries' debug symbols.
-      - name: Android NDK
+      - uses: actions/cache@v4
         if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        id: ndk
+        with:
+          path: /usr/local/lib/android/sdk/ndk/28.2.13676358
+          key: ndk-28.2.13676358
+      - name: Android NDK
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && steps.ndk.outputs.cache-hit != 'true'
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" > /dev/null
 
       - name: Upload key and Firebase file
@@ -163,6 +184,7 @@ jobs:
           KA: ${{ secrets.ANDROID_KEY_ALIAS }}
           KP: ${{ secrets.ANDROID_KEY_PASSWORD }}
           GS: ${{ secrets.PONTARDAWE_GOOGLE_SERVICES_JSON }}
+          FB: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON || secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           mkdir -p "$RUNNER_TEMP/keys"
           # A PKCS12 keystore (keytool's default since JDK 9) has one password.
@@ -178,7 +200,16 @@ jobs:
             echo "keyAlias=$KA"
             echo "keyPassword=$KP"
           } > vesopa_loyalty/android/key.properties
-          printf '%s' "$GS" > "$VENUE/google-services.json"
+          # Each venue's own Firebase file: Pontardawe's from its secret, any
+          # other venue's registered and fetched now (its package must be in it,
+          # or the Firebase Gradle plugin refuses to build).
+          if [ "$VENUE" = PontardaweRFC ]; then
+            printf '%s' "$GS" > "$VENUE/google-services.json"
+          else
+            printf '%s' "$FB" > "$RUNNER_TEMP/keys/firebase.json"
+            "$RUNNER_TEMP/py/bin/python" vesopa_loyalty/tool/firebase_android_app.py "$VENUE" --key "$RUNNER_TEMP/keys/firebase.json"
+            test -s "$VENUE/google-services.json" || { echo "::error::No google-services.json for $VENUE."; exit 1; }
+          fi
 
       - name: Make the venue's project
         if: inputs.mode != 'listing' && inputs.mode != 'halt'
@@ -188,6 +219,7 @@ jobs:
         if: inputs.mode != 'listing' && inputs.mode != 'halt'
         working-directory: ${{ inputs.venue }}/build/app
         run: |
+          grep -q '^org.gradle.caching=' android/gradle.properties || echo 'org.gradle.caching=true' >> android/gradle.properties
           flutter pub get
           flutter build appbundle --release --dart-define-from-file=venue_defines.json
 

@@ -120,6 +120,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Gradle's downloads and build output, kept between runs (owner,
+      # 2026-11-19: "github workflows are taking too much time"). Written on
+      # main, read everywhere.
+      - uses: gradle/actions/setup-gradle@v4
+        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
       - uses: subosito/flutter-action@v2
         if: inputs.mode != 'listing' && inputs.mode != 'promote'
         with:
@@ -155,6 +163,8 @@ jobs:
           # GitHub's machine has 16 GB: R8 needs more than the office PC's 3 GB
           # once Stripe's sign-up libraries are in (2026-11-17, out of heap).
           sed -i 's/-Xmx3G/-Xmx6G/' android/gradle.properties
+          # Reuse what an earlier run compiled (setup-gradle keeps it).
+          grep -q '^org.gradle.caching=' android/gradle.properties || echo 'org.gradle.caching=true' >> android/gradle.properties
           flutter pub get
           flutter build appbundle --release \
             --build-name="${{ steps.num.outputs.version }}" --build-number="${{ steps.num.outputs.build }}"

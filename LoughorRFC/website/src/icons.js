@@ -5,6 +5,8 @@
 'use strict';
 
 const PATHS = {
+  // Contactless: the members' card held near the reader (NFC).
+  nfc: '<path d="M7 8.5a5 5 0 0 1 0 7"/><path d="M10.5 6a9 9 0 0 1 0 12"/><path d="M14 3.5a13 13 0 0 1 0 17"/>',
   ball: '<ellipse cx="12" cy="12" rx="10" ry="6" transform="rotate(-45 12 12)"/><path d="M8.5 15.5l7-7M10 11l3 3M11.5 9.5l3 3M8.5 12.5l3 3"/>',
   beer: '<path d="M6 8h10v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z"/><path d="M16 10h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2"/><path d="M6 8a3 3 0 0 1 3-4 3 3 0 0 1 5 0 2.5 2.5 0 0 1 2 4"/><path d="M10 12v5M13 12v5"/>',
   plate: '<circle cx="12" cy="13" r="7"/><circle cx="12" cy="13" r="3.5"/><path d="M3 3v6a2 2 0 0 0 2 2M5 3v18M21 3c-1.5 0-3 2-3 5s1.5 4 3 4v9"/>',

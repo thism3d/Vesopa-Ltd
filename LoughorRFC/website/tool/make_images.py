@@ -38,12 +38,11 @@ PANELS = {
 SHARE = {
     "home": ("Loughor RFC", "The Blues of Loughor, playing rugby since 1882"),
     "club": ("The Club", "Loughor rugby since 1882"),
-    "teams": ("Teams & Fixtures", "First XV, juniors and match days"),
+    "teams": ("Fixtures", "The First XV, the Seconds and the juniors"),
     "news": ("Club News", "The latest from Villa Field"),
     "clubhouse": ("The Clubhouse", "Bar, food, live sport and functions"),
-    "menu": ("Menu & Order", "Order to your table or for collection"),
     "membership": ("Membership", "Your members' card at member.loughorrfc.site"),
-    "contact": ("Contact", "Belgrave Road, Loughor SA4 6RF"),
+    "contact": ("Find us", "Villa Field, Belgrave Road, Loughor SA4 6RF"),
 }
 
 
@@ -157,42 +156,60 @@ def panels():
     (SITE / "content" / "images.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
 
+WEB_FONTS = SITE / "public" / "fonts"
+
+
+def web_font(name, size, **axes):
+    """The site's own variable fonts (public/fonts), set to the axes given."""
+    f = ImageFont.truetype(str(WEB_FONTS / name), size)
+    have = [a["name"].decode() if isinstance(a["name"], bytes) else a["name"] for a in f.get_variation_axes()]
+    f.set_variation_by_axes([axes.get({"Optical Size": "opsz", "Weight": "wght"}.get(n, n), 400) for n in have])
+    return f
+
+
 def share():
+    """Share cards in the site's own look: a programme cover on cream paper,
+    navy serif title between gold rules, the crest on the right."""
     c = crest()
+    paper, navy, gold, ink = (246, 240, 225), (11, 26, 68), (201, 162, 39), (60, 69, 102)
     for page, (title, sub) in SHARE.items():
-        img = gradient(1200, 630)
+        img = Image.new("RGB", (1200, 630), paper)
         d = ImageDraw.Draw(img)
-        shadow = Image.new("RGBA", (420, 420), (0, 0, 0, 0))
-        ImageDraw.Draw(shadow).ellipse((40, 60, 380, 400), fill=(0, 0, 0, 120))
-        shadow = shadow.filter(ImageFilter.GaussianBlur(30))
-        img.paste(shadow, (760, 120), shadow)
-        badge = c.resize((380, 380), Image.LANCZOS)
-        img.paste(badge, (780, 125), badge)
-        d.text((80, 150), "EST. 1882  ·  THE BLUES", font=font("PlusJakartaSans-SemiBold.ttf", 26), fill=(214, 226, 255))
-        size = 96 if len(title) <= 16 else 80
-        d.text((76, 196), title.upper(), font=font("Oswald-Bold.ttf", size), fill=(255, 255, 255))
-        y = 196 + size + 40
+        # Double frame, like the cover of a programme.
+        d.rectangle((24, 24, 1175, 605), outline=(205, 189, 148), width=2)
+        d.rectangle((36, 36, 1163, 593), outline=(205, 189, 148), width=1)
+        d.rectangle((0, 0, 1200, 12), fill=navy)
+        d.rectangle((0, 618, 1200, 630), fill=navy)
+        badge = c.copy()
+        badge.thumbnail((400, 400), Image.LANCZOS)
+        img.paste(badge, (1200 - 80 - badge.width, (630 - badge.height) // 2), badge)
+        kick = web_font("source-sans-3-latin-wght-normal.woff2", 24, wght=650)
+        d.text((86, 150), "LEUCARUM  ·  EST. 1882", font=kick, fill=gold)
+        size = 92 if len(title) <= 14 else 74
+        f = web_font("fraunces-latin-opsz-normal.woff2", size, opsz=144, wght=700)
+        d.text((80, 190), title, font=f, fill=navy)
+        y = 190 + size + 34
+        d.line((86, y, 236, y), fill=gold, width=3)
+        y += 26
+        it = web_font("fraunces-latin-opsz-italic.woff2", 36, opsz=36, wght=400)
         words, line, lines = sub.split(), "", []
-        f = font("PlusJakartaSans-SemiBold.ttf", 34)
         for w in words:
             test = (line + " " + w).strip()
-            if d.textlength(test, font=f) > 620:
+            if d.textlength(test, font=it) > 600 and line:
                 lines.append(line)
                 line = w
             else:
                 line = test
         lines.append(line)
         for ln in lines:
-            d.text((80, y), ln, font=f, fill=(232, 238, 255))
+            d.text((86, y), ln, font=it, fill=ink)
             y += 48
-        d.rectangle((80, 540, 200, 546), fill=GOLD)
-        d.text((80, 560), "loughorrfc.site", font=font("Oswald-Medium.ttf", 30), fill=(255, 255, 255))
-        img.save(OUT / f"og-{page}.jpg", quality=86, optimize=True, progressive=True)
+        d.text((86, 540), "loughorrfc.site", font=web_font("source-sans-3-latin-wght-normal.woff2", 26, wght=600), fill=navy)
+        img.save(OUT / f"og-{page}.jpg", quality=88, optimize=True, progressive=True)
 
 
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     icons()
-    panels()
     share()
     print("written to", OUT)

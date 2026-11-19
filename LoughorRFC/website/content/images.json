@@ -1,17 +1,1 @@
-{
-  "banner": {
-    "w": 1500,
-    "h": 500,
-    "alt": "Loughor RFC, the Blues, established 1882"
-  },
-  "clubhouse": {
-    "w": 640,
-    "h": 480,
-    "alt": "The Loughor RFC clubhouse at Villa Field"
-  },
-  "history": {
-    "w": 640,
-    "h": 438,
-    "alt": "Loughor RFC honours: West Wales Cup and West Wales Championship"
-  }
-}
+{}

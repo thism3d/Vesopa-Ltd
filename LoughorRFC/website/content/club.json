@@ -45,7 +45,8 @@
     "android_app": "https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc",
     "android_apk": "/downloads/loughor-rfc.apk",
     "wear_apk": "/downloads/loughor-rfc-wear-os.apk",
-    "x": "https://x.com/LoughorRFC"
+    "x": "https://x.com/LoughorRFC",
+    "apps_live": false
   },
   "ground": "Villa Field, Loughor",
   "league": "WRU Admiral National League 2 West",

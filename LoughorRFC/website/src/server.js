@@ -5,7 +5,7 @@
  *
  * Pages are rendered here from content/ (src/pages.js); the menu and orders
  * come from the club's Vesopa EPOS back office in the visitor's browser
- * (public/js/order.js, MENU_API); the helper answers at POST /api/ask.
+ * (MENU_URL, the club's menu in the back office); the helper answers at POST /api/ask.
  * Behind nginx on the Cloud box: www and http are sent to https://loughorrfc.site
  * by the panel, and this redirects www itself in case they are not.
  */
@@ -15,13 +15,12 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const express = require('express');
-const { club, news, archive } = require('./content');
+const { club, news } = require('./content');
 const pages = require('./pages');
 const { SITE, MEMBERS } = require('./layout');
 const { helperRoute } = require('./helper');
 const wru = require('./wru');
 const venue = require('./venue_api');
-const game = require('./game_rooms');
 const posts = require('./posts');
 const { adminRoutes } = require('./admin');
 
@@ -97,20 +96,21 @@ app.get('/club', html(() => pages.clubPage()));
 app.get('/teams', html(() => pages.teamsPage()));
 app.get('/fixtures', html(() => pages.fixturesPage()));
 app.get('/whats-on', html(() => pages.whatsOnPage()));
-app.get('/play', html(() => pages.playPage()));
-app.get(['/game', '/games', '/play/'], (req, res) => res.redirect(301, '/play'));
 app.get(['/whatson', '/events', '/whats-on/'], (req, res) => res.redirect(301, '/whats-on'));
 app.get('/tickets', html(() => pages.ticketsPage()));
 
-// loughorrfc.site/app: one link for posters, QR codes and posts. An iPhone
-// or iPad goes to the App Store (TestFlight for now), an Android phone to
-// Google Play, and anything else to the page with both.
+// loughorrfc.site/app: one link for posters, QR codes and posts. Until the
+// apps are published (club.json web.apps_live), every phone goes to the
+// members' card on the web; then an iPhone goes to the App Store and an
+// Android phone to Google Play. Anything else: the membership page.
 app.get(['/app', '/app/'], (req, res) => {
   const ua = String(req.headers['user-agent'] || '');
   res.set('Cache-Control', 'no-store').set('Vary', 'User-Agent');
+  const phone = /iPhone|iPad|iPod|Android/.test(ua);
+  if (phone && !club.web.apps_live) return res.redirect(302, `${club.web.members.replace(/\/+$/, '')}/`);
   if (/iPhone|iPad|iPod/.test(ua)) return res.redirect(302, club.web.ios_app);
   if (/Android/.test(ua)) return res.redirect(302, club.web.android_app);
-  return res.redirect(302, '/membership#app');
+  return res.redirect(302, '/membership');
 });
 
 // Buying tickets: a plain form, so it works with no script. The back office
@@ -157,9 +157,9 @@ app.get('/news', (req, res, next) => {
   return html(() => pages.newsPage(n))(req, res);
 });
 app.get('/clubhouse', html(() => pages.clubhousePage()));
-// The menu lives on its own address now; old links and printed QR codes
-// that say loughorrfc.site/menu still land on it.
-const MENU_URL = process.env.MENU_URL || 'https://menu.loughorrfc.site/';
+// The menu and ordering live in the club's back office (menu.vesopa.com);
+// loughorrfc.site/menu goes there.
+const { MENU_URL } = require('./layout');
 app.get(['/menu', '/menu/'], (req, res) => res.redirect(301, MENU_URL));
 app.get('/membership', html(() => pages.membershipPage()));
 app.get('/contact', html(() => pages.contactPage()));
@@ -175,8 +175,7 @@ app.get('/app/terms', html(() => pages.appTermsPage()));
 app.get(['/app/help', '/app/support'], html(() => pages.appHelpPage()));
 app.get(['/app/licences', '/app/licenses'], (req, res) => res.redirect(301, '/app/terms#licences'));
 app.get(['/app-privacy', '/privacy-choices', '/app/privacy/'], (req, res) => res.redirect(301, req.path === '/privacy-choices' ? '/app/privacy-choices' : '/app/privacy'));
-app.get('/archive', (req, res, next) => (archive ? html(() => pages.archivePage())(req, res, next) : res.redirect(302, '/club')));
-app.get(['/archives', '/archive/', '/old-site'], (req, res) => res.redirect(301, '/archive'));
+app.get(['/archive', '/archives', '/old-site', '/play', '/game', '/games'], (req, res) => res.redirect(301, '/club'));
 app.get(['/licenses', '/credits', '/licences/'], (req, res) => res.redirect(301, '/licences'));
 app.get('/news/:slug', (req, res, next) => {
   const post = news.find((p) => p.slug === req.params.slug);
@@ -195,7 +194,7 @@ const OLD = {
   '/contact-us': '/contact',
   '/home': '/',
   '/sample-page': '/',
-  '/order': '/menu', // and on to menu.loughorrfc.site
+  '/order': '/menu', // and on to the club's menu (MENU_URL)
   '/members': '/membership',
   '/history': '/club',
 };
@@ -204,14 +203,13 @@ app.get(['/feed', '/feed/'], (req, res) => res.redirect(301, '/news/feed.xml'));
 
 // --- For machines ------------------------------------------------------------
 
-const PATHS = ['/', '/whats-on', '/play', '/licences', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/membership', '/contact',
+const PATHS = ['/', '/whats-on', '/licences', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/membership', '/contact',
   '/privacy', '/app/privacy', '/app/privacy-choices', '/app/terms', '/app/help', '/cookies', '/ordering-terms', '/accessibility'];
 
 /*
  * Sitemaps (2026-10-15). A sitemap may only list addresses on its own host,
  * so each of the club's three sites has its own and this one indexes them:
  *   loughorrfc.site/sitemap.xml          this site's pages and news
- *   menu.loughorrfc.site/sitemap.xml     the menu (vesopa_server dinein_pages.js)
  *   member.loughorrfc.site/sitemap.xml   the members' app (loyalty_host.js)
  *   loughorrfc.site/sitemap-index.xml    all three
  * How often each page changes and how much it matters, so a crawler spends
@@ -220,11 +218,11 @@ const PATHS = ['/', '/whats-on', '/play', '/licences', '/club', '/teams', '/fixt
 const SITEMAP_RANK = {
   '/': ['daily', '1.0'], '/fixtures': ['daily', '0.9'], '/whats-on': ['daily', '0.9'], '/tickets': ['daily', '0.8'],
   '/news': ['daily', '0.8'], '/membership': ['monthly', '0.9'], '/clubhouse': ['monthly', '0.7'], '/teams': ['weekly', '0.7'],
-  '/club': ['monthly', '0.7'], '/contact': ['monthly', '0.7'], '/play': ['monthly', '0.6'], '/archive': ['yearly', '0.5'],
+  '/club': ['monthly', '0.7'], '/contact': ['monthly', '0.7'], 
   '/licences': ['yearly', '0.2'], '/privacy': ['yearly', '0.2'], '/cookies': ['yearly', '0.2'], '/ordering-terms': ['yearly', '0.2'],
   '/accessibility': ['yearly', '0.2'], '/app/privacy': ['yearly', '0.3'], '/app/privacy-choices': ['yearly', '0.2'], '/app/terms': ['yearly', '0.2'], '/app/help': ['monthly', '0.5'],
 };
-const SITEMAPS = [`${SITE}/sitemap.xml`, 'https://menu.loughorrfc.site/sitemap.xml', `${MEMBERS}/sitemap.xml`];
+const SITEMAPS = [`${SITE}/sitemap.xml`, `${MEMBERS}/sitemap.xml`];
 
 app.get('/sitemap.xml', (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
@@ -301,7 +299,7 @@ app.get('/llms.txt', (req, res) => {
 - [Tickets](${SITE}/tickets): match tickets for home games
 - [News](${SITE}/news)
 - [The Clubhouse](${SITE}/clubhouse): bar, café, live sport, function hire, sponsorship
-- [Menu & Order](https://menu.loughorrfc.site/): live menu; order to your table or for collection, pay at the bar
+- [Menu & Order](https://menu.vesopa.com/loughor-rfc): live menu; order to your table or for collection, pay at the bar
 - [Membership](${SITE}/membership): members' discount, the members' card at ${MEMBERS}/
 - [Contact](${SITE}/contact)
 - [Privacy](${SITE}/privacy)
@@ -319,15 +317,15 @@ app.get('/site.webmanifest', (req, res) => {
     start_url: '/',
     scope: '/',
     display: 'standalone',
-    background_color: '#071a52',
-    theme_color: '#1238A8',
+    background_color: '#f6f0e1',
+    theme_color: '#0b1a44',
     icons: [
       { src: '/img/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/img/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       { src: '/img/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
     shortcuts: [
-      { name: 'Menu & order', url: 'https://menu.loughorrfc.site/' },
+      { name: 'Menu & order', url: 'https://menu.vesopa.com/loughor-rfc' },
       { name: "Members' card", url: `${MEMBERS}/` },
     ],
   }));
@@ -398,8 +396,6 @@ app.post('/dojo_test_webhook', express.raw({ type: '*/*', limit: '256kb' }), asy
     res.status(502).json({ error: 'Could not reach the back office.' });
   }
 });
-// Blues Kicks online (src/game_rooms.js): HTTP here, the socket on the server below.
-app.use('/api/play', game.gameRoutes(express));
 
 app.use((req, res) => {
   res.status(404).type('html').send(pages.notFound());
@@ -411,14 +407,6 @@ app.use((err, req, res, next) => {
   res.status(500).type('text/plain').send('Something went wrong. Please call the club on 01792 894109.');
 });
 
-// Every server this app listens on (the box, and the tests) also takes the
-// game's WebSocket at /api/play/ws.
-const listen = app.listen.bind(app);
-app.listen = (...args) => {
-  const server = listen(...args);
-  game.attach(server);
-  return server;
-};
 
 if (require.main === module) {
   const port = Number(process.env.PORT) || 5090;
