@@ -40,15 +40,37 @@ def call(token, method, url, body=None):
         return None, f"{e.code} {msg[:300]}"
 
 
+def accounts():
+    """The service accounts to try, in order: GOOGLE_SA_JSON, GOOGLE_SA_JSON_2."""
+    for name in ("GOOGLE_SA_JSON", "GOOGLE_SA_JSON_2"):
+        raw = os.environ.get(name, "").strip()
+        if raw:
+            yield json.loads(raw)
+
+
 def main():
-    raw = os.environ.get("GOOGLE_SA_JSON", "").strip()
-    if not raw:
+    left = list(sys.argv[1:])
+    tried = False
+    for sa in accounts():
+        tried = True
+        print(f"  ▶ with the service account {sa.get('client_email', '?').split('@')[0]}@…")
+        left = enable(sa, left)
+        if not left:
+            return
+    if not tried:
         print("  - no service account given: skipped")
         return
-    sa = json.loads(raw)
+    for service in left:
+        print(f"::warning::Switch on {service} in the Google Cloud project "
+              "(APIs & Services > Library), then run Club site again.")
+
+
+def enable(sa, services):
+    """Switch each service on; returns the ones still off."""
     project = sa.get("project_id")
     token = fb.access_token(sa)
-    for service in sys.argv[1:]:
+    left = []
+    for service in services:
         name = f"projects/{project}/services/{service}"
         got, err = call(token, "GET", f"{API}/{name}")
         if got and got.get("state") == "ENABLED":
@@ -66,8 +88,8 @@ def main():
         else:
             why = err or (op or {}).get("error", {}).get("message", "not finished")
             print(f"  ! {service} in {project}: {why}")
-            print(f"::warning::Switch on {service} in Google Cloud project {project} "
-                  "(APIs & Services > Library), then run Club site again.")
+            left.append(service)
+    return left
 
 
 if __name__ == "__main__":
