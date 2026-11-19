@@ -267,6 +267,24 @@ def main():
     play = Play(token, p["package"])
     if option("--halt"):
         sys.exit(halt(play, option("--halt").split(",")))
+    # --status: every track and what is on it, read only (owner, 2026-11-19:
+    # "I did not get the updates": which release is live, a draft, or halted).
+    if "--status" in sys.argv:
+        edit = play.edit()
+        try:
+            tracks = play.call("GET", f"{API}/{play.package}/edits/{edit}/tracks").get("tracks", [])
+        finally:
+            play.call("DELETE", f"{API}/{play.package}/edits/{edit}")
+        print(f"{p['title']} ({p['package']}): what each track holds")
+        for t in sorted(tracks, key=lambda x: x["track"]):
+            rels = t.get("releases", [])
+            if not rels:
+                continue
+            for r in rels:
+                frac = f" {round(100 * float(r['userFraction']))}% of users" if r.get("userFraction") else ""
+                print(f"  {t['track']:<22} {r.get('name', '?'):<16} {r.get('status', '?'):<11}{frac}  codes {', '.join(r.get('versionCodes', []))}")
+        print("  (completed = sent to Google; a new app's first release stays a draft until it is rolled out in Play Console)")
+        return
     if "--next-build" in sys.argv:
         print(next_build(play, int(v["build"])))
         return
