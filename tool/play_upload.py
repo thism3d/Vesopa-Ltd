@@ -159,6 +159,21 @@ def release(play, edit, aab: pathlib.Path, track, name, notes, lang):
         play.call("PUT", f"{API}/{play.package}/edits/{edit}/tracks/{track}", {"track": track, "releases": [rel]})
         print("   (the app is still a draft in Play, so the release is a draft: roll it out in Play Console)")
     print(f"   version code {code} on the {track} track")
+    # An Android TV app (play.json lists tvScreenshots) with Play's dedicated
+    # Android TV tracks (owner, 2026-11-19): the same bundle on the TV's own
+    # track too, the same testing track or else TV internal testing. Without
+    # a TV release, Play's TV form factor stays "2 of 3 complete".
+    if TV_APP[0] and not track.startswith(("wear:", "tv:")):
+        have = {t["track"] for t in play.call("GET", f"{API}/{play.package}/edits/{edit}/tracks").get("tracks", [])}
+        tv = f"tv:{track}" if f"tv:{track}" in have else ("tv:internal" if "tv:internal" in have else None)
+        if tv:
+            play.call("PUT", f"{API}/{play.package}/edits/{edit}/tracks/{tv}", {"track": tv, "releases": [dict(rel)]})
+            print(f"   version code {code} on the {tv} track (Android TV)")
+        else:
+            print("   (no Android TV track in Play: the TV gets this release from the phone track)")
+
+
+TV_APP = [False]
 
 
 
@@ -289,6 +304,7 @@ def main():
         print(f"   version code {code} ({rel['name']}) from {source} onto the {track} track")
         return
     print(f"{p['title']} ({p['package']}) as {who}")
+    TV_APP[0] = bool(p.get("images", {}).get("tvScreenshots"))
 
     failed = False
     if not only_listing:
