@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # loughorrfc.site and member.loughorrfc.site on the Cloud box. Runs ON
-# the box as root, from the folder tool/deploy_loughor_site.py uploaded.
+# the box as root, from the folder tool/deploy_club_site.py uploaded.
 #
 #   bash remote-install.sh            set up what is missing, then ship the site
 #   bash remote-install.sh --check    say what exists and what would be done
@@ -23,7 +23,7 @@
 # WHAT IT NEVER DOES
 #   * print a secret, or overwrite an existing .env (it only adds missing keys)
 #   * restart anything but loughorrfc.site by name (the back office restart
-#     is done afterwards by tool/deploy_memberships.py --backoffice)
+#     is done afterwards by tool/deploy_club_site.py, by name)
 #   * run pm2 as root
 
 set -euo pipefail
@@ -204,7 +204,10 @@ mkdir -p "$APP/data/uploads" "$APP/backups"
 grep -q '^DATA_DIR=' "$APP/.env" || echo "DATA_DIR=$APP/data" >> "$APP/.env"
 grep -q '^SESSION_SECRET=.' "$APP/.env" || setkey "$APP/.env" SESSION_SECRET "$(openssl rand -hex 32)"
 grep -q '^ADMIN_SETUP_CODE=.' "$APP/.env" || setkey "$APP/.env" ADMIN_SETUP_CODE "$(openssl rand -hex 4)-$(openssl rand -hex 4)"
-if [ ! -s "$APP/data/users.json" ]; then
+if [ ! -s "$APP/data/users.json" ] && [ -n "${HIDE_SETUP_CODE:-}" ]; then
+  # GitHub Actions: the logs are public, so the code stays on the box.
+  ok "news admin: make the first login at https://$DOMAIN/admin/setup; the setup code is ADMIN_SETUP_CODE in $APP/.env"
+elif [ ! -s "$APP/data/users.json" ]; then
   ok "news admin: make the first login at https://$DOMAIN/admin/setup with the setup code $(grep '^ADMIN_SETUP_CODE=' "$APP/.env" | cut -d= -f2-)"
 else
   ok "news admin: https://$DOMAIN/admin ($(grep -c '"email"' "$APP/data/users.json") login(s))"

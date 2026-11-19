@@ -1,25 +1,21 @@
 #!/bin/bash
 # info@loughorrfc.site and contact@: forwarded on, with a copy kept in the
 # mailbox when one exists. Run as root on the Cloud box by
-# tool/deploy_loughor_site.py and tool/loughor_mail_fix.py.
+# tool/deploy_club_site.py (GitHub Actions: "Club site").
 #
 #   bash mail-forward.sh [--check] <to-address> [from-address]
 #
-# 2026-10-11: a forwarder only (no mailbox), to the club's old Hotmail address.
-# 2026-10-12: the owner made info@ a real mailbox (Hestia, password set in the
-# panel) and asked for mail to go on to info@vesopasoftware.com. The old
-# router caught every message for info@ first ("no_more", no copy kept), so
-# the new mailbox never received anything. Now:
+# Set up 2026-11-18 (owner: forward info@ to info@vesopasoftware.com), the same
+# way as Pontardawe RFC's (PontardaweRFC/website/scripts/mail-forward.sh):
 #   * a local part that has a Hestia mailbox (accounts file) keeps its copy
 #     ("unseen") and is also forwarded; one without a mailbox is only forwarded;
 #   * the forwarded copy leaves by the SMTP2GO relay through its own router,
-#     loughor_forward_out. Without it a copy for a domain this box also
-#     hosts (vesopasoftware.com, vesopa.com: backup MX here) would be delivered
-#     to the local mailbox on this box instead of the real one at Google/M365;
-#   * a per-domain relay login for loughorrfc.site that SMTP2GO refuses
-#     (535) is removed so Exim falls back to the box-wide login, which
-#     SMTP2GO accepts for From loughorrfc.site since the owner verified the
-#     domain there (2026-10-12).
+#     loughor_forward_out, so a copy for a domain this box also hosts
+#     (vesopasoftware.com: backup MX here) goes to the real mailbox at
+#     Google/M365, not a local one;
+#   * a per-domain relay login for loughorrfc.site that SMTP2GO refuses (535)
+#     is removed so Exim falls back to the box-wide login. SMTP2GO sends From
+#     loughorrfc.site only once the domain is verified there (owner, once).
 #
 # WHY THE FROM LINE IS REWRITTEN. All mail leaves through SMTP2GO, which
 # refuses any From domain not verified there. A forwarded message keeps its
