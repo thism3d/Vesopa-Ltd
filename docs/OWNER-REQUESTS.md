@@ -38,6 +38,7 @@ secrets only).
 | --- | --- |
 | Every release goes to go.vesopa.com/install as well as the stores | done (the `install_page` input of Go - Android, on by default) |
 | Android TV: proper TV app, TV screenshots, TV banner, TV store listing, remote buttons work | 1.2.71: kitchen grid on a TV, the remote works throughout, 4 TV screenshots, banner, listing. The owner then opts in under Play Console > Advanced settings > Form factors > Android TV |
+| Dedicated Android TV and Wear OS tracks (switched on by the owner, 2026-11-19): every Go release also goes on tv:<track> (else tv:internal); TV screenshots and the TV opt-in are done in Play | tool/play_upload.py |
 | On a TV offer only Kitchen and Customer display (same app, same `com.vesopa.go` listing; Android TV is a form factor, not a second app) | 1.2.71 |
 | Read the Loughor members' card by NFC (Android phone and Wear OS) | 1.2.70 |
 | Faster workflows: cache tools between runs | done (Gradle, NDK, SwiftPM, Flutter caches) |
