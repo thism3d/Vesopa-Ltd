@@ -43,6 +43,8 @@
     "android_package": "com.vesopaepos.loughorrfc",
     "ios_app": "https://member.loughorrfc.site/",
     "android_app": "https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc",
+    "ios_test": "https://testflight.apple.com/join/tegkU2kN",
+    "android_test": "https://play.google.com/apps/testing/com.vesopaepos.loughorrfc",
     "android_apk": "/downloads/loughor-rfc.apk",
     "wear_apk": "/downloads/loughor-rfc-wear-os.apk",
     "x": "https://x.com/LoughorRFC",
