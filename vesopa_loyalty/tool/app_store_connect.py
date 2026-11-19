@@ -232,9 +232,24 @@ def load_venue(name):
     return venue_dir, v, store
 
 
-def find_app(c, bundle_id):
+def find_app(c, bundle_id, apple_id=None):
+    """The app record for the bundle id; failing that, the one with the venue's
+    Apple ID (venue.json "app_store_id", from App Store Connect, App
+    Information), if this key can see it."""
     apps = c.get("/v1/apps", **{"filter[bundleId]": bundle_id}).get("data", [])
-    return apps[0] if apps else None
+    if apps:
+        return apps[0]
+    if apple_id:
+        try:
+            app = c.get(f"/v1/apps/{apple_id}").get("data")
+        except AppleError as e:
+            note(f"  (Apple ID {apple_id}: {e.detail()})")
+            return None
+        if app and app["attributes"].get("bundleId") == bundle_id:
+            return app
+        if app:
+            note(f"  Apple ID {apple_id} is {app['attributes'].get('bundleId')}, not {bundle_id}")
+    return None
 
 
 def similar(c, v):
@@ -258,7 +273,7 @@ def cmd_status(venue_name):
     """What App Store Connect has for the app, changing nothing."""
     _, v, _ = load_venue(venue_name)
     c = Client()
-    app = find_app(c, v["app_id"])
+    app = find_app(c, v["app_id"], v.get("app_store_id"))
     if not app:
         note(f"No app record for {v['app_id']}.")
         similar(c, v)
@@ -371,7 +386,7 @@ def cmd_prepare(venue_name):
     # profile made in `signing` then carries the team's pass types.
     ensure_capability(c, phone, "WALLET")
 
-    app = find_app(c, app_id)
+    app = find_app(c, app_id, v.get("app_store_id"))
     out = os.environ.get("GITHUB_OUTPUT")
     if not app:
         msg = (
@@ -1198,7 +1213,7 @@ def cmd_store(venue_name):
     if not store:
         raise SystemExit(f"{venue_dir / 'store' / 'app_store.json'} is missing.")
     c = Client()
-    app = find_app(c, v["app_id"])
+    app = find_app(c, v["app_id"], v.get("app_store_id"))
     if not app:
         raise SystemExit(f"No app record for {v['app_id']}: run `prepare` first.")
     locale = store.get("locale", "en-GB")
@@ -1332,7 +1347,7 @@ def cmd_withdraw(venue_name):
     version and fill again. Nothing is deleted."""
     venue_dir, v, store = load_venue(venue_name)
     c = Client()
-    app = find_app(c, v["app_id"])
+    app = find_app(c, v["app_id"], v.get("app_store_id"))
     if not app:
         raise SystemExit(f"No app record for {v['app_id']}.")
     state, sub = open_review_submission(c, app["id"])
@@ -1358,7 +1373,7 @@ def cmd_submit(venue_name, release=None, build_number=None):
     version, set how it releases, and submit it to Apple."""
     venue_dir, v, store = load_venue(venue_name)
     c = Client()
-    app = find_app(c, v["app_id"])
+    app = find_app(c, v["app_id"], v.get("app_store_id"))
     if not app:
         raise SystemExit(f"No app record for {v['app_id']}: run `prepare`/`store` first.")
 
@@ -1464,7 +1479,7 @@ def wait_for_build(c, app_id, version, number, minutes=45):
 def cmd_testflight(venue_name, number):
     venue_dir, v, store = load_venue(venue_name)
     c = Client()
-    app = find_app(c, v["app_id"])
+    app = find_app(c, v["app_id"], v.get("app_store_id"))
     if not app:
         raise SystemExit(f"No app record for {v['app_id']}.")
     tf = store.get("testflight", {})
