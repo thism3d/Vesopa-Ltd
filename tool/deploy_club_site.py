@@ -133,8 +133,15 @@ def main():
     before = ssh(f"grep -c '{club['web']['members'].split('//', 1)[1]}=' {BACKOFFICE}/.env || true", check=False).strip()
     ssh(f"cd {remote} && HIDE_SETUP_CODE=1 bash remote-install.sh {flag}")
 
-    print(f"▶ mail: info@ and contact@{domain} to {club['email_forwards_to']}", flush=True)
-    ssh(f"cd {remote} && bash mail-forward.sh {flag} '{club['email_forwards_to']}' '{club['email']}'", check=False)
+    # The mail server's own set-up (Exim routers) is changed only when asked
+    # for (owner, 2026-11-19: "Do not alter coding in cloud Vesopa or
+    # mailbox, only create everything being a user"). Loughor's forwarding
+    # was set up once, on 2026-11-19; set MAIL_FORWARD=1 to run it again.
+    if os.environ.get("MAIL_FORWARD") == "1":
+        print(f"▶ mail: info@ and contact@{domain} to {club['email_forwards_to']}", flush=True)
+        ssh(f"cd {remote} && bash mail-forward.sh {flag} '{club['email_forwards_to']}' '{club['email']}'", check=False)
+    else:
+        print("▶ mail: the mail server's set-up is left as it is (MAIL_FORWARD=1 to change it)", flush=True)
 
     slug = club.get("slug", "")
     data = json.loads((club_dir / "backoffice.json").read_text(encoding="utf-8")) if (club_dir / "backoffice.json").is_file() else {}
