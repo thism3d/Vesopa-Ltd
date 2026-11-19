@@ -34,18 +34,71 @@ function readingMinutes(html) {
   return words ? Math.max(1, Math.round(words / 220)) : 0;
 }
 
+// ---- Tags -----------------------------------------------------------------
+//
+// A tag is a page of its own at /blog/tag/<slug> (owner, 2026-11-19: Search
+// Console listed 47 /blog?tag=... addresses as "Alternate page with proper
+// canonical", never indexed, because each named /blog as its canonical). The
+// old ?tag= links answer with a 301 to the tag's page, so Google moves them.
+
+/** A tag's address part: "change timer" -> "change-timer", "v1.3.5.0" stays. */
+function tagSlug(tag) {
+  return String(tag || '').toLowerCase().trim().replace(/[^a-z0-9.]+/g, '-').replace(/^[-.]+|[-.]+$/g, '');
+}
+
+/** Every tag on a live post, by its slug: { 'change-timer': 'change timer', ... }. */
+async function liveTags() {
+  const [rows] = await pool.query(`SELECT tags FROM blog_posts WHERE ${LIVE} AND tags IS NOT NULL AND tags <> ''`);
+  const out = {};
+  for (const r of rows) {
+    for (const t of String(r.tags).split(',').map((x) => x.trim()).filter(Boolean)) {
+      const slug = tagSlug(t);
+      if (slug && !out[slug]) out[slug] = t;
+    }
+  }
+  return out;
+}
+
+/** The SQL that matches one whole tag in the comma list (not "epos" inside "Vesopa EPOS"). */
+const TAG_MATCH = `CONCAT(',', REPLACE(REPLACE(tags, ', ', ','), ' ,', ','), ',') LIKE CONCAT('%,', ?, ',%')`;
+
+router.use((_req, res, next) => {
+  res.locals.tagSlug = tagSlug;
+  next();
+});
+
 // ---- Index ----------------------------------------------------------------
 
-router.get('/blog', async (req, res, next) => {
+router.get('/blog', (req, res, next) => {
+  const tag = String(req.query.tag || '').trim().slice(0, 60);
+  if (!tag) return blogIndex(req, res, next, {});
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const slug = tagSlug(tag);
+  if (!slug) return res.redirect(301, '/blog');
+  return res.redirect(301, `/blog/tag/${encodeURIComponent(slug)}${page > 1 ? `?page=${page}` : ''}`);
+});
+
+router.get('/blog/tag/:slug', async (req, res, next) => {
   try {
-    const kind = ['post', 'update'].includes(req.query.kind) ? req.query.kind : '';
-    const tag = String(req.query.tag || '').trim().slice(0, 60);
+    const slug = tagSlug(req.params.slug);
+    if (slug !== req.params.slug) return res.redirect(301, `/blog/tag/${encodeURIComponent(slug)}`);
+    const tag = (await liveTags())[slug];
+    if (!tag) return next();
+    return blogIndex(req, res, next, { tag, slug });
+  } catch (e) {
+    return next(e);
+  }
+});
+
+async function blogIndex(req, res, next, { tag = '', slug = '' }) {
+  try {
+    const kind = !tag && ['post', 'update'].includes(req.query.kind) ? req.query.kind : '';
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
 
     const where = [LIVE];
     const params = [];
     if (kind) { where.push('kind = ?'); params.push(kind); }
-    if (tag) { where.push('tags LIKE ?'); params.push(`%${tag}%`); }
+    if (tag) { where.push(TAG_MATCH); params.push(tag); }
 
     const [[{ total }]] = await pool.query(
       `SELECT COUNT(*) AS total FROM blog_posts WHERE ${where.join(' AND ')}`,
@@ -79,21 +132,29 @@ router.get('/blog', async (req, res, next) => {
 
     const pages = Math.max(1, Math.ceil(total / PER_PAGE));
 
+    // Each list is its own canonical: a tag's page, "Product updates", page 3.
+    const base = tag ? `/blog/tag/${encodeURIComponent(slug)}` : '/blog';
+    const qs = [kind && `kind=${kind}`, page > 1 && `page=${page}`].filter(Boolean).join('&');
+    res.locals.ogUrl = base + (qs ? `?${qs}` : '');
+
     res.render('blog-index', {
-      title: kind === 'update'
-        ? 'Vesopa EPOS | Product Updates'
-        : 'Vesopa EPOS | News, Guides and Product Updates',
-      description: kind === 'update'
-        ? 'Every Vesopa EPOS release, what changed in it, and why.'
-        : 'Guides for running a busy till, notes on what we are building, and everything new in Vesopa EPOS.',
+      title: tag
+        ? `Vesopa EPOS | #${tag}${page > 1 ? `, page ${page}` : ''}`
+        : (kind === 'update' ? 'Vesopa EPOS | Product Updates' : 'Vesopa EPOS | News, Guides and Product Updates')
+          + (page > 1 ? `, page ${page}` : ''),
+      description: tag
+        ? `Vesopa EPOS articles and product updates about ${tag}: ${total} ${total === 1 ? 'post' : 'posts'}.`
+        : kind === 'update'
+          ? 'Every Vesopa EPOS release, what changed in it, and why.'
+          : 'Guides for running a busy till, notes on what we are building, and everything new in Vesopa EPOS.',
       posts, lead,
-      kind, tag, page, pages, total,
+      kind, tag, slug, base, page, pages, total,
       formatDate, isoDateTime,
     });
   } catch (e) {
     next(e);
   }
-});
+}
 
 // ---- Feed -----------------------------------------------------------------
 //
@@ -197,4 +258,4 @@ router.get('/blog/:slug', async (req, res, next) => {
   }
 });
 
-module.exports = { blogPagesRouter: router };
+module.exports = { tagSlug, liveTags, blogPagesRouter: router };

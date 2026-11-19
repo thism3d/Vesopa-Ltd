@@ -26,7 +26,7 @@
         <a href="/blog" class="<%= !kind && !tag ? 'is-active' : '' %>">Everything</a>
         <a href="/blog?kind=post" class="<%= kind === 'post' ? 'is-active' : '' %>">Articles</a>
         <a href="/blog?kind=update" class="<%= kind === 'update' ? 'is-active' : '' %>">Product updates</a>
-        <% if (tag) { %><a href="/blog" class="is-active">#<%= tag %> ✕</a><% } %>
+        <% if (tag) { %><a href="/blog" class="is-active" aria-label="Show every post">#<%= tag %> ✕</a><% } %>
       </nav>
     </header>
 
@@ -96,9 +96,9 @@
     <nav class="bl-pager">
 <%# Filters carried through, or page 2 of "Product updates" silently becomes
     page 2 of everything. %>
-<% var qs = (kind ? 'kind=' + kind + '&' : '') + (tag ? 'tag=' + encodeURIComponent(tag) + '&' : ''); %>
+<% var qs = kind ? 'kind=' + kind + '&' : ''; %>
 <% for (let i = 1; i <= pages; i++) { %>
-      <a href="/blog?<%= qs %>page=<%= i %>"
+      <a href="<%= base %>?<%= qs %>page=<%= i %>"
          class="<%= i === page ? 'is-active' : '' %>"><%= i %></a>
 <% } %>
     </nav>
