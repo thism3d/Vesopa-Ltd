@@ -60,7 +60,11 @@ permissions:
 
 jobs:
   ios:
-    runs-on: macos-latest
+    # The newest Xcode, as Vesopa Go (owner, 2026-11-19: "Use Xcode updated
+    # version for iOS build like Vesopa Go"): Xcode 27 and the iOS 27 SDK,
+    # which App Store Connect wants from April 2027 (ITMS-90725), are on the
+    # xcode-27 image.
+    runs-on: xcode-27
     timeout-minutes: 120
     environment: App Store Connect API
     env:
@@ -69,6 +73,20 @@ jobs:
       VENUE: ${{ inputs.venue }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Newest Xcode (the newest iOS SDK)
+        run: |
+          ls -d /Applications/Xcode*.app || true
+          best=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|release_candidate|_rc' \
+            | sed -E 's#.*/Xcode_([0-9.]+)\.app#\1#' | sort -V | tail -1)
+          if [ -n "$best" ]; then sudo xcode-select -s "/Applications/Xcode_${best}.app"; fi
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iOS SDK $sdk"
+          case "$sdk" in
+            1*|2[0-6].*) echo "::error::Only the iOS $sdk SDK here. App Store Connect needs the iOS 27 SDK (Xcode 27)."; exit 1 ;;
+          esac
+          echo "### Xcode $(xcodebuild -version | head -1 | awk '{print $2}'), iOS SDK $sdk" >> "$GITHUB_STEP_SUMMARY"
 
       # The Swift packages (Stripe and the rest) kept between runs, so they
       # are not fetched afresh on every build.
@@ -115,6 +133,21 @@ jobs:
         run: |
           "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py status "$VENUE"
           "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py prepare "$VENUE"
+
+      # The iOS app's own Firebase settings (app id, API key, Google sign-in
+      # client), from the app the owner registered in Firebase under the
+      # venue's bundle id: <venue>/GoogleService-Info.plist for
+      # make_venue_app.py, which fills what venue.json leaves empty.
+      - name: Firebase settings for the iPhone app
+        if: inputs.mode == 'full'
+        env:
+          FB: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON || secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          [ -n "$FB" ] || { echo "No Firebase key: venue.json's ids only"; exit 0; }
+          umask 077; printf '%s' "$FB" > "$RUNNER_TEMP/fb.json"
+          python3 -c "import cryptography" 2>/dev/null || python3 -m pip install -q --break-system-packages cryptography 2>/dev/null || python3 -m pip install -q cryptography
+          python3 vesopa_loyalty/tool/firebase_ios_app.py "$VENUE" --key "$RUNNER_TEMP/fb.json" || echo "::warning::Could not read the iPhone app's Firebase settings; venue.json's are used"
+          rm -f "$RUNNER_TEMP/fb.json"
 
       - name: Make the venue's project
         if: inputs.mode == 'full'

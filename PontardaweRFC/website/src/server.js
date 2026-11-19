@@ -363,7 +363,12 @@ const ANDROID_APPS = String(process.env.APP_ANDROID_LINKS
     target: { namespace: 'android_app', package_name: pkg.trim(), sha256_cert_fingerprints: prints.split(',').map((x) => x.trim()) },
   }));
 app.get(['/.well-known/apple-app-site-association', '/apple-app-site-association'], (req, res) => {
-  res.type('application/json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify({ webcredentials: { apps: IOS_APPS } }));
+  // The app opens /app only (owner, 2026-11-19: "the members' site and
+  // /app"): news, fixtures and the app's own legal pages stay in the browser.
+  res.type('application/json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify({
+    webcredentials: { apps: IOS_APPS },
+    applinks: { details: [{ appIDs: IOS_APPS, components: [{ '/': '/app', comment: "The club's app" }, { '/': '/app/', comment: "The club's app" }] }] },
+  }));
 });
 app.get('/.well-known/assetlinks.json', (req, res) => {
   res.type('application/json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify(ANDROID_APPS));

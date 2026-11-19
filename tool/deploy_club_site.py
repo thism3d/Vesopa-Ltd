@@ -75,14 +75,23 @@ def ssh(script, *, data=None, check=True, env=""):
     return out
 
 
-def bundle(site):
-    """The site and its scripts as a .tar.gz, LF line endings for bash."""
+def bundle(site, club_extra=None):
+    """The site and its scripts as a .tar.gz, LF line endings for bash.
+    club_extra: keys laid over content/club.json in the upload (the app's
+    signing fingerprints read from Play), never written back to git."""
     buf = io.BytesIO()
     skip = {"node_modules", ".env", "data", "logs", "test", "tool"}
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         for part in ["src", "public", "content", "package.json", "package-lock.json"]:
             tar.add(site / part, arcname=f"site/{part}",
-                    filter=lambda t: None if set(pathlib.PurePosixPath(t.name).parts) & skip else t)
+                    filter=lambda t: None if (set(pathlib.PurePosixPath(t.name).parts) & skip
+                                              or (club_extra and t.name == "site/content/club.json")) else t)
+        if club_extra:
+            body = json.dumps({**json.loads((site / "content" / "club.json").read_text(encoding="utf-8")), **club_extra},
+                              indent=2, ensure_ascii=False).encode()
+            info = tarfile.TarInfo("site/content/club.json")
+            info.size, info.mode = len(body), 0o644
+            tar.addfile(info, io.BytesIO(body))
         for name in ["remote-install.sh", "mail-forward.sh"]:
             body = (site / "scripts" / name).read_bytes().replace(b"\r\n", b"\n")
             info = tarfile.TarInfo(name)
@@ -106,6 +115,30 @@ def bundle(site):
     return buf.getvalue()
 
 
+def venue_json(club_dir):
+    p = club_dir / "venue.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+
+
+def play_prints(package):
+    """ "package=AA:BB:..,.." for the app's Play signing key, or "" (no app,
+    no Play key, or no build in Play yet)."""
+    key = (os.environ.get("PLAY_SERVICE_ACCOUNT_JSON") or os.environ.get("GOOGLE_WALLET_SA_JSON") or "").strip()
+    if not package or not key.startswith("{"):
+        return ""
+    os.environ["PLAY_SERVICE_ACCOUNT_JSON"] = key
+    sys.path.insert(0, str(ROOT / "tool"))
+    try:
+        from play_signing import signing_prints
+        prints = signing_prints(package)
+    except BaseException as e:  # noqa: BLE001 -- a link file is not worth stopping the deploy
+        print(f"  ! {package}'s signing key from Play: {e}", flush=True)
+        return ""
+    if prints:
+        print(f"▶ {package} is signed by Play with {', '.join(prints)}", flush=True)
+    return f"{package}={','.join(prints)}" if prints else ""
+
+
 def main():
     if len(sys.argv) < 3 or sys.argv[2] not in ("check", "site"):
         raise SystemExit(__doc__)
@@ -124,9 +157,17 @@ def main():
             raise SystemExit(f"! {msg}")
         print(f"  ! {msg}")
 
+    # The app's own signing key, from Google Play, for the links it opens
+    # (owner, 2026-11-19: deep links): the site's assetlinks.json and the
+    # members' site's (LOYALTY_ANDROID_APPS). Play re-signs the app with a key
+    # of its own, so only Play can say which fingerprint that is.
+    package = venue_json(club_dir).get("app_id", "")
+    android_links = play_prints(package)
+    extra = {"app_links": {"android": android_links}} if android_links else None
+
     remote = f"/root/{club_dir.name.lower()}-deploy/{time.strftime('%Y%m%d_%H%M%S')}"
     print(f"▶ upload to {remote}", flush=True)
-    ssh(f"mkdir -p {remote} && tar -xzf - -C {remote}", data=bundle(site))
+    ssh(f"mkdir -p {remote} && tar -xzf - -C {remote}", data=bundle(site, extra))
 
     flag = "--check" if check else ""
     print("▶ install (DNS, domains, certificates, member host, Auth address, site, pm2)", flush=True)
@@ -160,6 +201,9 @@ def main():
         app_id = data.get("app_id") or club["web"].get("android_package", "")
         members = club["web"]["members"].rstrip("/")
         site_url = club["web"]["site"].rstrip("/")
+        # The members' site opens the app too (loyalty_host.js assetlinks).
+        pkg, _, prints = android_links.partition("=")
+        android_env = "\n".join(f'addset LOYALTY_ANDROID_APPS "{pkg}={p}"' for p in prints.split(",") if p)
         env_script = f"""
 set -e
 E={BACKOFFICE}/.env
@@ -171,6 +215,12 @@ addto() {{ # addto KEY VALUE: append to a comma list that is already set
     else sed -i "s|^$1=\\(.*\\)$|$1=\\1,$2|" "$E"; echo "  ▶ $1 gains $2"; changed=1; fi
   else echo "  - $1 not set on this server: skipped"; fi
 }}
+addset() {{ # addset KEY VALUE: as addto, and starts the list when it is not set
+  if grep -q "^$1=" "$E"; then addto "$1" "$2"
+  elif [ "{flag}" = "--check" ]; then echo "  ! would set $1=$2"
+  else printf '%s=%s\\n' "$1" "$2" >> "$E"; echo "  ▶ $1 set to $2"; changed=1; fi
+}}
+{android_env}
 addto APNS_TOPICS "{slug}={app_id}"
 addto LOYALTY_IOS_APPS "G238FR2ZC9.{app_id}"
 addto GOOGLE_WALLET_ORIGINS "{members}"
