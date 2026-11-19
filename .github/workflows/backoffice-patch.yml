@@ -130,7 +130,7 @@ jobs:
             [ -f "$local_path" ] || { echo "::error::$local_path is not in the repository"; exit 1; }
             new=$(git rev-parse "HEAD:$local_path")
             last=$(git log -1 --format=%H -- "$local_path")
-            before=$(git rev-parse "$last^:$local_path" 2>/dev/null || echo none)
+            before=$(git rev-parse --verify --quiet "$last^:$local_path" || echo none)
             exists=$(ssh -n "$SERVER" "test -e '$REMOTE_APP/$f' && echo yes || echo no")
             if [ "$exists" = no ] && [ "$before" = none ]; then
               # A file new in git that the server does not have yet.
@@ -145,7 +145,7 @@ jobs:
               echo "$f: the version before ${last:0:8}, will be replaced"
               echo "$f" >> "$RUNNER_TEMP/to-copy"
             else
-              known=$(git log --format=%H -- "$local_path" | while read c; do [ "$(git rev-parse "$c:$local_path" 2>/dev/null)" = "$remote" ] && { echo "${c:0:8}"; break; }; done)
+              known=$(git log --format=%H -- "$local_path" | while read c; do [ "$(git rev-parse "$c:$local_path" 2>/dev/null)" = "$remote" ] && { echo "${c:0:8}"; break; }; done || true)
               echo "::error::$f on the server is not the version this change was made from (it matches ${known:-no version in git, so it was edited on the server}). Nothing was changed; deploy it with deploy.sh from the build PC instead."
               exit 1
             fi
