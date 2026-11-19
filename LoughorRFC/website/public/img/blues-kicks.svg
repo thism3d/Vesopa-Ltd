@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Blues Kicks">
+  <defs>
+    <linearGradient id="pk-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4b7bff"/><stop offset=".55" stop-color="#1238a8"/><stop offset="1" stop-color="#071a52"/></linearGradient>
+    <linearGradient id="pk-trail" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#f5c518" stop-opacity="0"/><stop offset="1" stop-color="#f5c518"/></linearGradient>
+    <radialGradient id="pk-glow" cx=".72" cy=".28" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#pk-bg)"/>
+  <rect width="128" height="128" rx="28" fill="url(#pk-glow)"/>
+  <path d="M10 112 H118" stroke="#2e8b3e" stroke-width="10" stroke-linecap="round" opacity=".9"/>
+  <g stroke="#fff" stroke-linecap="round" fill="none">
+    <path d="M44 110 V22 M84 110 V22" stroke-width="7"/>
+    <path d="M44 70 H84" stroke-width="7"/>
+  </g>
+  <path d="M44 110 V96 M84 110 V96" stroke="#f5c518" stroke-width="10" stroke-linecap="round"/>
+  <path d="M18 104 Q 40 70 64 46" stroke="url(#pk-trail)" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <g transform="translate(66 44) rotate(-35)">
+    <ellipse rx="10" ry="15" fill="#fff" stroke="#0b2a7a" stroke-width="2.5"/>
+    <path d="M0 -10 V10 M-4 -5 H4 M-4 0 H4 M-4 5 H4" stroke="#2f62e0" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>

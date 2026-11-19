@@ -25,9 +25,13 @@ test('the page carries the look only for a venue that has one', () => {
 });
 
 test("the club's own icons are files that exist; other venues have none", () => {
-  const art = artFor('pontardawe-rfc');
-  for (const p of Object.values(art)) {
-    assert.ok(fs.existsSync(path.join(__dirname, '..', 'public', p)), p);
+  for (const slug of ['pontardawe-rfc', 'loughor-rfc']) {
+    const art = artFor(slug);
+    assert.ok(art, slug);
+    for (const p of Object.values(art)) {
+      // The address carries a ?v= cache-buster; the file is the path before it.
+      assert.ok(fs.existsSync(path.join(__dirname, '..', 'public', p.split('?')[0])), p);
+    }
   }
   assert.equal(artFor('thevesopakitchen'), null);
 });

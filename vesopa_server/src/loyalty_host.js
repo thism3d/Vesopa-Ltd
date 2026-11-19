@@ -141,7 +141,7 @@ function venueHostGate(req, res, next, slug) {
  */
 function iosApps() {
   return String(process.env.LOYALTY_IOS_APPS
-    || 'G238FR2ZC9.com.vesopaepos.pontardawerfc,G238FR2ZC9.com.vesopaepos.thevesopakitchen')
+    || 'G238FR2ZC9.com.vesopaepos.pontardawerfc,G238FR2ZC9.com.vesopaepos.thevesopakitchen,G238FR2ZC9.com.vesopaepos.loughorrfc')
     .split(',').map((s) => s.trim()).filter(Boolean);
 }
 

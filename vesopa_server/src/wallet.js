@@ -146,7 +146,7 @@ function walletCore({ pool, secret }) {
     }
     if (!brand.hex_background) brand.hex_background = look.club;
     if (!brand.hex_foreground) brand.hex_foreground = '#FFFFFF';
-    if (!brand.hex_label) brand.hex_label = '#F4C7C7';
+    if (!brand.hex_label) brand.hex_label = look.label || '#F4C7C7';
     if (!brand.homepage_url && look.website) brand.homepage_url = look.website;
     if (!brand.support_phone && look.phone) brand.support_phone = look.phone;
     // The club's crest, strip and icon, always (the owner, 2026-10-15: the

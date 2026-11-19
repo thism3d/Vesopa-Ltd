@@ -1,0 +1,34 @@
+{
+  "slug": "loughor-rfc",
+  "name": "Loughor RFC",
+  "short_name": "Loughor",
+  "tagline": "Members' Club · Est. 1882",
+  "app_id": "com.vesopaepos.loughorrfc",
+  "watch_app_id": "com.vesopaepos.loughorrfc.watchkitapp",
+  "version": "1.0.0",
+  "build": 1,
+  "colours": {
+    "background": "#1238A8",
+    "deep": "#071A52",
+    "glow": "#2F62E0",
+    "text": "#FFFFFF",
+    "gold": "#F5C518"
+  },
+  "nfc": true,
+  "vesopa_client_id": "",
+  "apple_team": "G238FR2ZC9",
+  "google_ios_client_id": "",
+  "google_server_client_id": "561180189171-na3jtfi2d08052cah8er327k58rvbg5u.apps.googleusercontent.com",
+  "android_sha256": [],
+  "firebase_android_app": "",
+  "firebase_ios_app_id": "",
+  "firebase_project_id": "vesopa",
+  "firebase_sender_id": "561180189171",
+  "firebase_tester_groups": "",
+  "passkey_api": "https://member.loughorrfc.site",
+  "passkey_domains": [
+    "vesopa.com",
+    "loughorrfc.site"
+  ],
+  "firebase_auth_domain": "member.loughorrfc.site"
+}

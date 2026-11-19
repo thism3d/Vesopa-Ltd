@@ -1,0 +1,78 @@
+# A rugby club's website on the Cloud box: loughorrfc.site, pontardawerfc.com.
+# All of it is tool/deploy_club_site.py; read its top for exactly what it does.
+#
+# Actions > "Club site" > Run workflow:
+#   club   LoughorRFC or PontardaweRFC
+#   mode   check  what a deploy would change; changes nothing
+#          site   the site, member.<domain>, info@ and contact@ forwarding,
+#                 the club's back-office venue with its starter data, review
+#                 member and Wallet card, Google Wallet pass classes, Vesopa
+#                 accounts and the club's Vesopa mailbox
+#
+# Secret (environment "App Store Connect API"): LOUGHOR_ACCOUNT_PASSWORD, the
+# password for info@loughorrfc.site and loughorrfc@vesopa.com.
+#
+# Runs on main only (the "App Store Connect API" environment, which holds the
+# server login). This repository and its logs are public: the run prints
+# names and statuses, never a key or the news admin's setup code.
+
+name: Club site
+
+on:
+  workflow_dispatch:
+    inputs:
+      club:
+        type: choice
+        options: [LoughorRFC, PontardaweRFC]
+        default: LoughorRFC
+      mode:
+        type: choice
+        options: [check, site]
+        default: check
+
+permissions:
+  contents: read
+
+concurrency:
+  group: club-site-${{ inputs.club }}
+  cancel-in-progress: false
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: App Store Connect API
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test the site
+        working-directory: ${{ inputs.club }}/website
+        run: npm ci --no-audit --no-fund && npm test
+
+      - name: SSH
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+        run: |
+          [ -n "$VESOPA_SSH_PASSWORD" ] || { echo "::error::VESOPA_SSH_PASSWORD is not set"; exit 1; }
+          mkdir -p ~/.ssh "$RUNNER_TEMP/ssh"
+          printf 'Host *\n  StrictHostKeyChecking accept-new\n  ConnectTimeout 20\n  ServerAliveInterval 30\n  ControlMaster auto\n  ControlPath %s/cm-%%r@%%h\n  ControlPersist 30m\n' "$RUNNER_TEMP/ssh" > ~/.ssh/config
+          printf '#!/bin/sh\nprintf "%%s\\n" "$VESOPA_SSH_PASSWORD"\n' > "$RUNNER_TEMP/ssh/askpass"; chmod 700 "$RUNNER_TEMP/ssh/askpass"
+
+      - name: Deploy ${{ inputs.club }} (${{ inputs.mode }})
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+          SSH_ASKPASS: ${{ runner.temp }}/ssh/askpass
+          SSH_ASKPASS_REQUIRE: force
+          DISPLAY: ':0'
+          # The club's back-office and Vesopa account password (owner, 2026-11-19).
+          # Goes to the box on stdin, never on a command line, never printed.
+          CLUB_ACCOUNT_PASSWORD: ${{ inputs.club == 'LoughorRFC' && secrets.LOUGHOR_ACCOUNT_PASSWORD || '' }}
+        run: python3 tool/deploy_club_site.py "${{ inputs.club }}" "${{ inputs.mode }}"
+
+      - name: Close SSH
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ssh"

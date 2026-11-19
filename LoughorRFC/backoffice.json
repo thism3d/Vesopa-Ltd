@@ -1,0 +1,672 @@
+{
+  "_about": "Loughor RFC's starter data for the back office (tool/club_venue.js). Added once, only where the venue has none of its own; the club changes everything afterwards in the back office. Prices are a typical Welsh club bar's, to be set by the club.",
+  "tax_rates": [
+    {
+      "name": "VAT 20%",
+      "percentage": 20,
+      "sort_order": 1
+    },
+    {
+      "name": "Zero rated",
+      "percentage": 0,
+      "sort_order": 2
+    }
+  ],
+  "departments": [
+    "Bar",
+    "Soft drinks",
+    "Food",
+    "Hot drinks",
+    "Snacks",
+    "Tickets",
+    "Membership"
+  ],
+  "groups": [
+    "Draught",
+    "Bottles & cans",
+    "Wine",
+    "Spirits",
+    "Soft drinks",
+    "Match day food",
+    "Rolls & toasties",
+    "Sunday",
+    "Kids",
+    "Hot drinks",
+    "Snacks",
+    "Match tickets",
+    "Membership"
+  ],
+  "products": [
+    {
+      "pluid": 1001,
+      "product_name": "Pint of Lager",
+      "department_name": "Bar",
+      "group_name": "Draught",
+      "price": 4.2,
+      "tax_percentage": 20,
+      "button_color": "#1238A8",
+      "emoji": "🍺"
+    },
+    {
+      "pluid": 1002,
+      "product_name": "Half of Lager",
+      "department_name": "Bar",
+      "group_name": "Draught",
+      "price": 2.3,
+      "tax_percentage": 20,
+      "button_color": "#1238A8",
+      "emoji": "🍺"
+    },
+    {
+      "pluid": 1003,
+      "product_name": "Pint of Bitter",
+      "department_name": "Bar",
+      "group_name": "Draught",
+      "price": 3.9,
+      "tax_percentage": 20,
+      "button_color": "#1238A8",
+      "emoji": "🍺"
+    },
+    {
+      "pluid": 1004,
+      "product_name": "Half of Bitter",
+      "department_name": "Bar",
+      "group_name": "Draught",
+      "price": 2.1,
+      "tax_percentage": 20,
+      "button_color": "#1238A8",
+      "emoji": "🍺"
+    },
+    {
+      "pluid": 1005,
+      "product_name": "Pint of Cider",
+      "department_name": "Bar",
+      "group_name": "Draught",
+      "price": 4.3,
+      "tax_percentage": 20,
+      "button_color": "#1238A8",
+      "emoji": "🍏"
+    },
+    {
+      "pluid": 1006,
+      "product_name": "Half of Cider",
+      "department_name": "Bar",
+      "group_name": "Draught",
+      "price": 2.35,
+      "tax_percentage": 20,
+      "button_color": "#1238A8",
+      "emoji": "🍏"
+    },
+    {
+      "pluid": 1007,
+      "product_name": "Pint of Guinness",
+      "department_name": "Bar",
+      "group_name": "Draught",
+      "price": 4.7,
+      "tax_percentage": 20,
+      "button_color": "#1238A8",
+      "emoji": "🍺"
+    },
+    {
+      "pluid": 1008,
+      "product_name": "Half of Guinness",
+      "department_name": "Bar",
+      "group_name": "Draught",
+      "price": 2.55,
+      "tax_percentage": 20,
+      "button_color": "#1238A8",
+      "emoji": "🍺"
+    },
+    {
+      "pluid": 1009,
+      "product_name": "Pint of Shandy",
+      "department_name": "Bar",
+      "group_name": "Draught",
+      "price": 3.6,
+      "tax_percentage": 20,
+      "button_color": "#1238A8",
+      "emoji": "🍺"
+    },
+    {
+      "pluid": 1020,
+      "product_name": "Bottle of Lager",
+      "department_name": "Bar",
+      "group_name": "Bottles & cans",
+      "price": 3.8,
+      "tax_percentage": 20,
+      "button_color": "#2F62E0",
+      "emoji": "🍺"
+    },
+    {
+      "pluid": 1021,
+      "product_name": "Bottle of Cider",
+      "department_name": "Bar",
+      "group_name": "Bottles & cans",
+      "price": 4.0,
+      "tax_percentage": 20,
+      "button_color": "#2F62E0",
+      "emoji": "🍏"
+    },
+    {
+      "pluid": 1022,
+      "product_name": "Alcohol-free Lager",
+      "department_name": "Bar",
+      "group_name": "Bottles & cans",
+      "price": 3.2,
+      "tax_percentage": 20,
+      "button_color": "#2F62E0",
+      "emoji": "🍺"
+    },
+    {
+      "pluid": 1030,
+      "product_name": "Glass of House Red",
+      "department_name": "Bar",
+      "group_name": "Wine",
+      "price": 4.5,
+      "tax_percentage": 20,
+      "button_color": "#7A1F5C",
+      "emoji": "🍷"
+    },
+    {
+      "pluid": 1031,
+      "product_name": "Glass of House White",
+      "department_name": "Bar",
+      "group_name": "Wine",
+      "price": 4.5,
+      "tax_percentage": 20,
+      "button_color": "#7A1F5C",
+      "emoji": "🍷"
+    },
+    {
+      "pluid": 1032,
+      "product_name": "Glass of Rosé",
+      "department_name": "Bar",
+      "group_name": "Wine",
+      "price": 4.5,
+      "tax_percentage": 20,
+      "button_color": "#7A1F5C",
+      "emoji": "🍷"
+    },
+    {
+      "pluid": 1033,
+      "product_name": "Bottle of House Wine",
+      "department_name": "Bar",
+      "group_name": "Wine",
+      "price": 15.0,
+      "tax_percentage": 20,
+      "button_color": "#7A1F5C",
+      "emoji": "🍷"
+    },
+    {
+      "pluid": 1034,
+      "product_name": "Prosecco (20cl)",
+      "department_name": "Bar",
+      "group_name": "Wine",
+      "price": 6.5,
+      "tax_percentage": 20,
+      "button_color": "#7A1F5C",
+      "emoji": "🥂"
+    },
+    {
+      "pluid": 1040,
+      "product_name": "Single Spirit",
+      "department_name": "Bar",
+      "group_name": "Spirits",
+      "price": 3.2,
+      "tax_percentage": 20,
+      "button_color": "#5B3A1A",
+      "emoji": "🥃"
+    },
+    {
+      "pluid": 1041,
+      "product_name": "Double Spirit",
+      "department_name": "Bar",
+      "group_name": "Spirits",
+      "price": 5.4,
+      "tax_percentage": 20,
+      "button_color": "#5B3A1A",
+      "emoji": "🥃"
+    },
+    {
+      "pluid": 1042,
+      "product_name": "Penderyn Welsh Whisky",
+      "department_name": "Bar",
+      "group_name": "Spirits",
+      "price": 4.2,
+      "tax_percentage": 20,
+      "button_color": "#5B3A1A",
+      "emoji": "🥃"
+    },
+    {
+      "pluid": 1043,
+      "product_name": "Spirit & Mixer",
+      "department_name": "Bar",
+      "group_name": "Spirits",
+      "price": 4.3,
+      "tax_percentage": 20,
+      "button_color": "#5B3A1A",
+      "emoji": "🥃"
+    },
+    {
+      "pluid": 1100,
+      "product_name": "Coke (pint)",
+      "department_name": "Soft drinks",
+      "group_name": "Soft drinks",
+      "price": 2.6,
+      "tax_percentage": 20,
+      "button_color": "#0E8F6E",
+      "emoji": "🥤"
+    },
+    {
+      "pluid": 1101,
+      "product_name": "Diet Coke (pint)",
+      "department_name": "Soft drinks",
+      "group_name": "Soft drinks",
+      "price": 2.6,
+      "tax_percentage": 20,
+      "button_color": "#0E8F6E",
+      "emoji": "🥤"
+    },
+    {
+      "pluid": 1102,
+      "product_name": "Lemonade (pint)",
+      "department_name": "Soft drinks",
+      "group_name": "Soft drinks",
+      "price": 2.4,
+      "tax_percentage": 20,
+      "button_color": "#0E8F6E",
+      "emoji": "🥤"
+    },
+    {
+      "pluid": 1103,
+      "product_name": "J2O",
+      "department_name": "Soft drinks",
+      "group_name": "Soft drinks",
+      "price": 2.6,
+      "tax_percentage": 20,
+      "button_color": "#0E8F6E",
+      "emoji": "🧃"
+    },
+    {
+      "pluid": 1104,
+      "product_name": "Fruit Shoot",
+      "department_name": "Soft drinks",
+      "group_name": "Soft drinks",
+      "price": 1.5,
+      "tax_percentage": 20,
+      "button_color": "#0E8F6E",
+      "emoji": "🧃"
+    },
+    {
+      "pluid": 1105,
+      "product_name": "Orange Juice",
+      "department_name": "Soft drinks",
+      "group_name": "Soft drinks",
+      "price": 2.2,
+      "tax_percentage": 20,
+      "button_color": "#0E8F6E",
+      "emoji": "🧃"
+    },
+    {
+      "pluid": 1106,
+      "product_name": "Bottle of Water",
+      "department_name": "Soft drinks",
+      "group_name": "Soft drinks",
+      "price": 1.5,
+      "tax_percentage": 20,
+      "button_color": "#0E8F6E",
+      "emoji": "💧"
+    },
+    {
+      "pluid": 1200,
+      "product_name": "Cheeseburger & Chips",
+      "department_name": "Food",
+      "group_name": "Match day food",
+      "price": 8.5,
+      "tax_percentage": 20,
+      "button_color": "#C8641A",
+      "emoji": "🍔"
+    },
+    {
+      "pluid": 1201,
+      "product_name": "Chicken Goujons & Chips",
+      "department_name": "Food",
+      "group_name": "Match day food",
+      "price": 7.5,
+      "tax_percentage": 20,
+      "button_color": "#C8641A",
+      "emoji": "🍗"
+    },
+    {
+      "pluid": 1202,
+      "product_name": "Sausage, Egg & Chips",
+      "department_name": "Food",
+      "group_name": "Match day food",
+      "price": 7.95,
+      "tax_percentage": 20,
+      "button_color": "#C8641A",
+      "emoji": "🌭"
+    },
+    {
+      "pluid": 1203,
+      "product_name": "Chips",
+      "department_name": "Food",
+      "group_name": "Match day food",
+      "price": 3.0,
+      "tax_percentage": 20,
+      "button_color": "#C8641A",
+      "emoji": "🍟"
+    },
+    {
+      "pluid": 1204,
+      "product_name": "Cheesy Chips",
+      "department_name": "Food",
+      "group_name": "Match day food",
+      "price": 3.8,
+      "tax_percentage": 20,
+      "button_color": "#C8641A",
+      "emoji": "🍟"
+    },
+    {
+      "pluid": 1205,
+      "product_name": "Curry Chips",
+      "department_name": "Food",
+      "group_name": "Match day food",
+      "price": 3.9,
+      "tax_percentage": 20,
+      "button_color": "#C8641A",
+      "emoji": "🍛"
+    },
+    {
+      "pluid": 1220,
+      "product_name": "Bacon Roll",
+      "department_name": "Food",
+      "group_name": "Rolls & toasties",
+      "price": 3.5,
+      "tax_percentage": 20,
+      "button_color": "#C8641A",
+      "emoji": "🥓"
+    },
+    {
+      "pluid": 1221,
+      "product_name": "Sausage Roll (hot)",
+      "department_name": "Food",
+      "group_name": "Rolls & toasties",
+      "price": 2.8,
+      "tax_percentage": 20,
+      "button_color": "#C8641A",
+      "emoji": "🥐"
+    },
+    {
+      "pluid": 1222,
+      "product_name": "Cheese & Ham Toastie",
+      "department_name": "Food",
+      "group_name": "Rolls & toasties",
+      "price": 4.5,
+      "tax_percentage": 20,
+      "button_color": "#C8641A",
+      "emoji": "🥪"
+    },
+    {
+      "pluid": 1223,
+      "product_name": "Cheese & Onion Toastie",
+      "department_name": "Food",
+      "group_name": "Rolls & toasties",
+      "price": 4.2,
+      "tax_percentage": 20,
+      "button_color": "#C8641A",
+      "emoji": "🥪"
+    },
+    {
+      "pluid": 1240,
+      "product_name": "Sunday Carvery",
+      "department_name": "Food",
+      "group_name": "Sunday",
+      "price": 11.95,
+      "tax_percentage": 20,
+      "button_color": "#8E4A12",
+      "emoji": "🍖"
+    },
+    {
+      "pluid": 1241,
+      "product_name": "Kids' Carvery",
+      "department_name": "Food",
+      "group_name": "Sunday",
+      "price": 6.5,
+      "tax_percentage": 20,
+      "button_color": "#8E4A12",
+      "emoji": "🍖"
+    },
+    {
+      "pluid": 1250,
+      "product_name": "Kids' Nuggets & Chips",
+      "department_name": "Food",
+      "group_name": "Kids",
+      "price": 5.5,
+      "tax_percentage": 20,
+      "button_color": "#F5A623",
+      "emoji": "🍗"
+    },
+    {
+      "pluid": 1251,
+      "product_name": "Kids' Sausage & Chips",
+      "department_name": "Food",
+      "group_name": "Kids",
+      "price": 5.5,
+      "tax_percentage": 20,
+      "button_color": "#F5A623",
+      "emoji": "🌭"
+    },
+    {
+      "pluid": 1300,
+      "product_name": "Tea",
+      "department_name": "Hot drinks",
+      "group_name": "Hot drinks",
+      "price": 1.8,
+      "tax_percentage": 20,
+      "button_color": "#6B4226",
+      "emoji": "🍵"
+    },
+    {
+      "pluid": 1301,
+      "product_name": "Coffee",
+      "department_name": "Hot drinks",
+      "group_name": "Hot drinks",
+      "price": 2.2,
+      "tax_percentage": 20,
+      "button_color": "#6B4226",
+      "emoji": "☕"
+    },
+    {
+      "pluid": 1302,
+      "product_name": "Latte",
+      "department_name": "Hot drinks",
+      "group_name": "Hot drinks",
+      "price": 2.8,
+      "tax_percentage": 20,
+      "button_color": "#6B4226",
+      "emoji": "☕"
+    },
+    {
+      "pluid": 1303,
+      "product_name": "Hot Chocolate",
+      "department_name": "Hot drinks",
+      "group_name": "Hot drinks",
+      "price": 2.6,
+      "tax_percentage": 20,
+      "button_color": "#6B4226",
+      "emoji": "🍫"
+    },
+    {
+      "pluid": 1400,
+      "product_name": "Crisps",
+      "department_name": "Snacks",
+      "group_name": "Snacks",
+      "price": 1.2,
+      "tax_percentage": 20,
+      "button_color": "#9AA0A6",
+      "emoji": "🥔"
+    },
+    {
+      "pluid": 1401,
+      "product_name": "Peanuts",
+      "department_name": "Snacks",
+      "group_name": "Snacks",
+      "price": 1.3,
+      "tax_percentage": 20,
+      "button_color": "#9AA0A6",
+      "emoji": "🥜"
+    },
+    {
+      "pluid": 1402,
+      "product_name": "Pork Scratchings",
+      "department_name": "Snacks",
+      "group_name": "Snacks",
+      "price": 1.5,
+      "tax_percentage": 20,
+      "button_color": "#9AA0A6",
+      "emoji": "🥓"
+    },
+    {
+      "pluid": 1403,
+      "product_name": "Chocolate Bar",
+      "department_name": "Snacks",
+      "group_name": "Snacks",
+      "price": 1.3,
+      "tax_percentage": 20,
+      "button_color": "#9AA0A6",
+      "emoji": "🍫"
+    },
+    {
+      "pluid": 1500,
+      "product_name": "Match Entry: Adult",
+      "department_name": "Tickets",
+      "group_name": "Match tickets",
+      "price": 5.0,
+      "tax_percentage": 20,
+      "button_color": "#F5C518",
+      "emoji": "🎟"
+    },
+    {
+      "pluid": 1501,
+      "product_name": "Match Entry: Concession",
+      "department_name": "Tickets",
+      "group_name": "Match tickets",
+      "price": 3.0,
+      "tax_percentage": 20,
+      "button_color": "#F5C518",
+      "emoji": "🎟"
+    },
+    {
+      "pluid": 1600,
+      "product_name": "Annual Membership",
+      "department_name": "Membership",
+      "group_name": "Membership",
+      "price": 30.0,
+      "tax_percentage": 20,
+      "button_color": "#F5C518",
+      "emoji": "⭐"
+    },
+    {
+      "pluid": 1601,
+      "product_name": "Family Membership",
+      "department_name": "Membership",
+      "group_name": "Membership",
+      "price": 50.0,
+      "tax_percentage": 20,
+      "button_color": "#F5C518",
+      "emoji": "⭐"
+    },
+    {
+      "pluid": 1602,
+      "product_name": "Junior Membership",
+      "department_name": "Membership",
+      "group_name": "Membership",
+      "price": 15.0,
+      "tax_percentage": 20,
+      "button_color": "#F5C518",
+      "emoji": "⭐"
+    }
+  ],
+  "menu": [
+    {
+      "name": "Match day food",
+      "blurb": "Hot food from the clubhouse kitchen.",
+      "groups": [
+        "Match day food"
+      ]
+    },
+    {
+      "name": "Rolls & toasties",
+      "blurb": "",
+      "groups": [
+        "Rolls & toasties"
+      ]
+    },
+    {
+      "name": "Sunday",
+      "blurb": "Sunday carvery, from noon.",
+      "groups": [
+        "Sunday"
+      ]
+    },
+    {
+      "name": "Kids",
+      "blurb": "",
+      "groups": [
+        "Kids"
+      ]
+    },
+    {
+      "name": "Hot drinks",
+      "blurb": "",
+      "groups": [
+        "Hot drinks"
+      ]
+    },
+    {
+      "name": "Soft drinks",
+      "blurb": "",
+      "groups": [
+        "Soft drinks"
+      ]
+    },
+    {
+      "name": "Snacks",
+      "blurb": "",
+      "groups": [
+        "Snacks"
+      ]
+    },
+    {
+      "name": "Tickets",
+      "blurb": "Home match entry at Villa Field.",
+      "groups": [
+        "Match tickets"
+      ]
+    }
+  ],
+  "go_seats": 5,
+  "review_member": {
+    "email": "test@test.com",
+    "password": "123456",
+    "name": "App Review"
+  },
+  "wallet": {
+    "program_name": "Loughor RFC Members",
+    "issuer_name": "Loughor RFC",
+    "logo_url": "https://backoffice.vesopaepos.com/assets/venues/loughor-rfc/wallet-logo.png",
+    "hero_url": "https://backoffice.vesopaepos.com/assets/venues/loughor-rfc/wallet-hero.png",
+    "hex_background": "#1238A8",
+    "homepage_url": "https://loughorrfc.site",
+    "support_phone": "01792 894109",
+    "terms": "Members' card for Loughor RFC (1882) Limited. Show it at the bar for members' prices. See loughorrfc.site/app/terms."
+  },
+  "accounts": {
+    "vesopa": [
+      "info@loughorrfc.site",
+      "loughorrfc@vesopa.com"
+    ],
+    "mailbox": "loughorrfc@vesopa.com"
+  }
+}
