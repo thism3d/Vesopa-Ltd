@@ -1551,6 +1551,33 @@ def cmd_testflight(venue_name, number):
     except AppleError as e:
         external = []
         todo(f"TestFlight external groups: {e.detail()}")
+    # A public link anyone can join from the club's websites (owner,
+    # 2026-11-19: "add testflight link ... to the main website and the
+    # members' site"): an external group with its link switched on, made
+    # once. The link opens TestFlight once Beta App Review has passed a build.
+    if v.get("testflight_public", True):
+        try:
+            open_group = next((g for g in external if g["attributes"].get("publicLinkEnabled")), None)
+            if open_group is None and external:
+                g = external[0]
+                c.patch(f"/v1/betaGroups/{g['id']}", {"data": {"type": "betaGroups", "id": g["id"], "attributes": {
+                    "publicLinkEnabled": True, "publicLinkLimitEnabled": False}}})
+                open_group = c.get(f"/v1/betaGroups/{g['id']}")["data"]
+            if open_group is None:
+                made = c.post("/v1/betaGroups", {"data": {
+                    "type": "betaGroups",
+                    "attributes": {"name": "Members (public link)", "publicLinkEnabled": True, "publicLinkLimitEnabled": False},
+                    "relationships": {"app": {"data": {"type": "apps", "id": app["id"]}}},
+                }})
+                open_group = made["data"]
+                external.append(open_group)
+                note(f"  external TestFlight group \"Members (public link)\" made")
+            link = open_group["attributes"].get("publicLink")
+            if link:
+                note(f"  TestFlight public link: {link}")
+                print(f"TESTFLIGHT_PUBLIC_LINK={link}")
+        except AppleError as e:
+            todo(f"TestFlight public link: {e.detail()}")
     for g in external:
         try:
             c.post(f"/v1/betaGroups/{g['id']}/relationships/builds",
