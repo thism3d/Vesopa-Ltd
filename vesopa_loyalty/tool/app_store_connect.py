@@ -313,7 +313,17 @@ def cmd_status(venue_name):
             note("  builds: none uploaded yet")
         for b in found[:10]:
             ba = b["attributes"]
-            note(f"  build {ba.get('version')}: {ba.get('processingState')}, uploaded {ba.get('uploadedDate')}, expired {ba.get('expired')}")
+            # Whether outside testers can have it: Apple's Beta App Review.
+            review = ""
+            try:
+                sub = c.get(f"/v1/builds/{b['id']}/betaAppReviewSubmission").get("data")
+                review = f", beta review {sub['attributes'].get('betaReviewState')}" if sub else ", beta review not sent"
+                detail = c.get(f"/v1/builds/{b['id']}/buildBetaDetail").get("data")
+                if detail:
+                    review += f", external {detail['attributes'].get('externalBuildState')}"
+            except AppleError:
+                pass
+            note(f"  build {ba.get('version')}: {ba.get('processingState')}, uploaded {ba.get('uploadedDate')}, expired {ba.get('expired')}{review}")
 
     def groups():
         for g in c.all(f"/v1/apps/{app['id']}/betaGroups"):

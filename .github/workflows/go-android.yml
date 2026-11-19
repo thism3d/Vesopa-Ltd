@@ -25,7 +25,7 @@ on:
       mode:
         description: full = build and upload with the listing; listing = only the words and pictures; build = bundle only
         type: choice
-        options: [full, listing, build, promote]
+        options: [full, listing, build, promote, status]
         default: full
       track:
         description: Play track (empty = play.json's, internal)
@@ -71,6 +71,11 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/py"
           "$RUNNER_TEMP/py/bin/pip" install --quiet cryptography
 
+      - name: What each Play track holds (no build)
+        if: inputs.mode == 'status'
+        run: |
+          "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$APP" --status
+
       - name: Promote a build already in Play (no build)
         if: inputs.mode == 'promote'
         env:
@@ -82,7 +87,7 @@ jobs:
 
       - name: Next build number Play has not seen
         id: num
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         env:
           BUILD_INPUT: ${{ inputs.build }}
         run: |
@@ -126,7 +131,7 @@ jobs:
           echo "### Vesopa Go $version ($n)" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-java@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         with:
           distribution: temurin
           java-version: '17'
@@ -135,19 +140,19 @@ jobs:
       # 2026-11-19: "github workflows are taking too much time"). Written on
       # main, read everywhere.
       - uses: gradle/actions/setup-gradle@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - uses: subosito/flutter-action@v2
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         with:
           channel: stable
           flutter-version: 3.47.8
           cache: true
 
       - name: Upload key
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         env:
           KS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
           KSP: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -168,7 +173,7 @@ jobs:
           } > "$APP/android/key.properties"
 
       - name: Bundle
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         working-directory: vesopa_go
         run: |
           # GitHub's machine has 16 GB: R8 needs more than the office PC's 3 GB
@@ -208,14 +213,14 @@ jobs:
           fi
 
       - uses: actions/upload-artifact@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         with:
           name: vesopa-go-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}
           path: ${{ runner.temp }}/android-builds/*.aab
           retention-days: 30
 
       - uses: actions/upload-artifact@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         with:
           name: vesopa-go-apk
           path: ${{ runner.temp }}/android-apk/*.apk
@@ -224,7 +229,7 @@ jobs:
       # The same APK on go.vesopa.com/install, the website installer
       # (vesopa_go/tool/publish_install.py, over SSH as go-site.yml does it).
       - name: go.vesopa.com/install
-        if: inputs.install_page && inputs.part != 'tv' && inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.install_page && inputs.part != 'tv' && inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         env:
           VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
         run: |
@@ -237,7 +242,7 @@ jobs:
           rm -rf "$RUNNER_TEMP/ssh"
 
       - name: Upload to Google Play
-        if: inputs.mode != 'build' && inputs.mode != 'promote'
+        if: inputs.mode != 'build' && inputs.mode != 'promote' && inputs.mode != 'status'
         env:
           TRACK: ${{ inputs.track }}
         run: |
@@ -263,7 +268,7 @@ jobs:
       # itself on Android (vesopa_go/tool/assetlinks.py), for the upload key and
       # Play's app-signing key.
       - name: App links (assetlinks.json)
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         continue-on-error: true
         env:
           VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
