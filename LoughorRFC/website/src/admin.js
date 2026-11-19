@@ -184,7 +184,7 @@ function adminRoutes() {
       content.refresh();
       const id = b.id && posts.get(b.id) ? b.id : null;
       const post = posts.view(posts.build(fromForm(b, 'publish'), { id, author: req.admin.name }));
-      return send(res, pages.articlePage(post, { preview: true }).replace('<main id="main">', '<main id="main"><p style="position:sticky;top:0;z-index:60;margin:0;padding:10px 16px;text-align:center;font:700 15px Montserrat,sans-serif;background:#f5c518;color:#3a2a00">Preview: not saved yet. Close this tab to go back to the editor.</p>'));
+      return send(res, pages.articlePage(post, { preview: true }).replace('<main id="main">', '<main id="main"><p style="position:sticky;top:0;z-index:60;margin:0;padding:10px 16px;text-align:center;font:600 15px Source Sans 3,sans-serif;background:#f5c518;color:#0b1a44">Preview: not saved yet. Close this tab to go back to the editor.</p>'));
     } catch (e) {
       return send(res, `<!doctype html><meta name="viewport" content="width=device-width"><p style="font:16px system-ui;padding:24px">${String(e.message).replace(/</g, '&lt;')}</p>`, 400);
     }

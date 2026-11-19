@@ -103,7 +103,7 @@ restart) and writes posts from genuine sources only, set up at **/admin/auto**:
 Every sentence is fixed text filled with the source's own figures or words,
 and each post credits its source; no player names, quotes or descriptions
 of play, and no AI. Match posts get a picture drawn by `src/match_card.js`
-(club crest, Oswald from `src/fonts/`, never another club's badge). Each item
+(club crest, Fraunces and Source Sans 3 from `src/fonts/`, never another club's badge). Each item
 has a key kept in `data/autonews.json`, so nothing is written twice and a post
 deleted in the admin is never written again; a match the club has posted
 about itself is left to the club's post. `AUTONEWS_OFF=1` stops it. No social

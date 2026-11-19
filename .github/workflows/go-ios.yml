@@ -82,6 +82,16 @@ jobs:
           esac
           echo "### Xcode $(xcodebuild -version | head -1 | awk '{print $2}'), iOS SDK $sdk" >> "$GITHUB_STEP_SUMMARY"
 
+      # The Swift packages (Stripe and the rest) kept between runs, so they
+      # are not fetched afresh on every build.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/org.swift.swiftpm
+          key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved', '**/pubspec.lock') }}
+          restore-keys: spm-${{ runner.os }}-
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable

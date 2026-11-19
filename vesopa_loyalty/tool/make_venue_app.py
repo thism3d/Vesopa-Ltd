@@ -427,6 +427,16 @@ def main():
             shutil.rmtree(app / own.relative_to(overlay), ignore_errors=True)
     shutil.copytree(overlay, app, dirs_exist_ok=True)
 
+    # The members' card by NFC on Android phones and Wear OS watches
+    # (CardHceService.kt), for venues that have it: "nfc": true in venue.json.
+    if v.get("nfc"):
+        for module in ("app", "wear"):
+            res = app / "android" / module / "src" / "main" / "res" / "values" / "nfc_card.xml"
+            if res.exists():
+                res.write_text(res.read_text(encoding="utf-8").replace(
+                    '<bool name="nfc_card">false</bool>', '<bool name="nfc_card">true</bool>'), encoding="utf-8")
+        print("NFC card: on (Android phone and Wear OS)")
+
     android(app, venue_dir, v)
     ios(app, v, venue_dir)
     dart(app, v)

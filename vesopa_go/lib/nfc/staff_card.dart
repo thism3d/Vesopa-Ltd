@@ -2,11 +2,19 @@
 ///
 /// This is the NFC that needs nobody's permission: an ISO 14443 tag's id
 /// (MIFARE, NTAG, DESFire -- the cards and fobs venues already hand out).
-/// It is NOT how cards are paid with: bank cards are read only by Dojo's Tap
-/// to Pay SDK (payments/), which is certified to do it.
+/// It is NOT how cards are paid with: bank cards are read only by Vesopa Tap
+/// to Pay (payments/), which is certified to do it.
+///
+/// A members' card on a phone or watch (a club's own app, vesopa_loyalty
+/// CardHceService.kt: Android phones and Wear OS watches) has no fixed id to
+/// read: it answers a SELECT of the Vesopa card id with the code its QR
+/// shows. So, on Android, a tag that speaks ISO-DEP is asked first, and its
+/// code is what comes back; anything that does not answer is read by its id
+/// as before (owner, 2026-11-18: "hold near reader" for members).
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -36,9 +44,11 @@ class StaffCardReader {
         pollingOptions: {NfcPollingOption.iso14443},
         alertMessageIos: 'Hold your staff card near the top of the iPhone',
         onDiscovered: (tag) async {
-          final id = _idOf(tag);
-          if (!done.isCompleted) done.complete(id == null ? null : hex(id));
-          await NfcManager.instance.stopSession(alertMessageIos: id == null ? null : 'Card read');
+          final member = await _memberCode(tag);
+          final id = member == null ? _idOf(tag) : null;
+          final value = member ?? (id == null ? null : hex(id));
+          if (!done.isCompleted) done.complete(value);
+          await NfcManager.instance.stopSession(alertMessageIos: value == null ? null : 'Card read');
         },
       );
     } catch (_) {
@@ -61,6 +71,36 @@ class StaffCardReader {
     try {
       await NfcManager.instance.stopSession();
     } catch (_) {}
+  }
+
+  /// The Vesopa members' card id: F0 + "VESOPA" + 01 (a proprietary id).
+  static final Uint8List memberAid = Uint8List.fromList([0xF0, 0x56, 0x45, 0x53, 0x4F, 0x50, 0x41, 0x01]);
+
+  /// ISO 7816-4 SELECT by name of [memberAid].
+  static Uint8List get selectMember =>
+      Uint8List.fromList([0x00, 0xA4, 0x04, 0x00, memberAid.length, ...memberAid, 0x00]);
+
+  /// The code in a card's answer (UTF-8, then 90 00), or null.
+  static String? memberCodeFrom(Uint8List answer) {
+    if (answer.length < 3 || answer[answer.length - 2] != 0x90 || answer[answer.length - 1] != 0x00) return null;
+    try {
+      final code = utf8.decode(answer.sublist(0, answer.length - 2)).trim();
+      return code.isEmpty ? null : code;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<String?> _memberCode(NfcTag tag) async {
+    if (!Platform.isAndroid) return null;
+    try {
+      final iso = IsoDepAndroid.from(tag);
+      if (iso == null) return null;
+      return memberCodeFrom(await iso.transceive(selectMember));
+    } catch (_) {
+      // A plain card or fob: no ISO-DEP, or it does not know the id.
+      return null;
+    }
   }
 
   static Uint8List? _idOf(NfcTag tag) {

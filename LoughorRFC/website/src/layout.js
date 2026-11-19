@@ -1,6 +1,12 @@
 /**
- * The page around every page: head (titles, share cards, structured data),
- * the header and its menu, the footer and the club helper's chat panel.
+ * The frame of every page of loughorrfc.site: the head (titles, share cards,
+ * structured data), the masthead and its menu, the footer and the club
+ * helper.
+ *
+ * The look is the club's own (owner, 2026-11-19: "a total brand new
+ * website", "Heritage programme"): a match-day programme on cream paper,
+ * deep navy and gold rules, serif headlines (Fraunces) over plain text
+ * (Source Sans 3), and the crest of Leucarum, as the club supplied it.
  */
 'use strict';
 
@@ -9,26 +15,21 @@ const { icon } = require('./icons');
 
 const SITE = (process.env.SITE_URL || club.web.site).replace(/\/+$/, '');
 const MEMBERS = (process.env.MEMBERS_URL || club.web.members).replace(/\/+$/, '');
-// The club's own menu and ordering, on its own address (the owner,
-// 2026-10-15: "I want directly menu.loughorrfc.site"), in the club's
-// look from the back office (vesopa_server src/dinein.js menuLook).
-const MENU_URL = process.env.MENU_URL || 'https://menu.loughorrfc.site/';
+// The menu and ordering: the club's own page in its back office.
+const MENU_URL = process.env.MENU_URL || `https://menu.vesopa.com/${club.slug || 'loughor-rfc'}`;
 const ASSET_VERSION = process.env.ASSET_VERSION || String(Date.now()).slice(-8);
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const NAV = [
-  ['/', 'Home'],
-  ['/whats-on', "What's On"],
-  ['/play', 'Play'],
   ['/club', 'The Club'],
-  ['/teams', 'Teams'],
   ['/fixtures', 'Fixtures'],
+  ['/teams', 'Teams'],
   ['/news', 'News'],
+  ['/whats-on', "What's On"],
   ['/clubhouse', 'Clubhouse'],
-  [MENU_URL, 'Menu'],
   ['/membership', 'Membership'],
-  ['/contact', 'Contact'],
+  ['/contact', 'Visit'],
 ];
 
 /** The club as structured data: a sports club that is also a place with a bar. */
@@ -39,7 +40,7 @@ function clubLd() {
     '@type': ['SportsClub', 'LocalBusiness'],
     '@id': `${SITE}/#club`,
     name: club.name,
-    alternateName: [club.full_name, club.welsh_name],
+    alternateName: [club.full_name, club.welsh_name, club.nickname].filter(Boolean),
     url: `${SITE}/`,
     logo: `${SITE}/img/crest-512.png`,
     image: `${SITE}/img/og-home.jpg`,
@@ -61,13 +62,12 @@ function clubLd() {
     sameAs: [club.web.facebook, club.web.x, club.web.wikipedia].filter(Boolean),
     memberOf: { '@type': 'SportsOrganization', name: 'Welsh Rugby Union', url: 'https://www.wru.wales/' },
     hasMenu: MENU_URL,
-    servesCuisine: 'Pub food',
     legalName: club.company.name,
     identifier: { '@type': 'PropertyValue', propertyID: 'Companies House', value: club.company.number },
   };
 }
 
-function head({ title, description, path, og = 'home', ld = [], noindex = false, icon: tabIcon = null, image: shareImage = null, type = 'website', extraHead = '' }) {
+function head({ title, description, path, og = 'home', ld = [], noindex = false, image: shareImage = null, type = 'website', extraHead = '' }) {
   const full = path === '/' ? `${club.name} | ${club.tagline}` : `${title} | ${club.name}`;
   const url = `${SITE}${path}`;
   // A news post with its own photo shares that (its 1200x630 cut, src/uploads.js).
@@ -90,8 +90,8 @@ function head({ title, description, path, og = 'home', ld = [], noindex = false,
 <meta name="description" content="${esc(description)}">
 <link rel="canonical" href="${esc(url)}">
 ${noindex ? '<meta name="robots" content="noindex">' : '<meta name="robots" content="index, follow, max-image-preview:large">'}
-<meta name="theme-color" content="#1238A8">
-<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0B1A44">
+<meta name="color-scheme" content="light">
 <meta property="og:type" content="${esc(type)}">
 <meta property="og:site_name" content="${esc(club.name)}">
 <meta property="og:locale" content="en_GB">
@@ -106,77 +106,57 @@ ${noindex ? '<meta name="robots" content="noindex">' : '<meta name="robots" cont
 <meta name="twitter:title" content="${esc(full)}">
 <meta name="twitter:description" content="${esc(description)}">
 <meta name="twitter:image" content="${esc(image)}">
-${tabIcon ? `<link rel="icon" type="image/svg+xml" href="${tabIcon}.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="${tabIcon}-32.png">
-<link rel="apple-touch-icon" href="${tabIcon}-192.png">` : ''}<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png?v=2">
-<link rel="icon" type="image/png" sizes="16x16" href="/img/favicon-16.png?v=2">
-<link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png?v=2">
-<link rel="icon" href="/favicon.ico?v=2" sizes="any">
-<link rel="apple-touch-icon" href="/img/apple-touch-icon.png?v=2">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png?v=3">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png?v=3">
+<link rel="icon" href="/favicon.ico?v=3" sizes="any">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png?v=3">
 <link rel="manifest" href="/site.webmanifest">
-<link rel="preload" href="/fonts/oswald-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/montserrat-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/source-sans-3-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/css/site.css?v=${ASSET_VERSION}">
-<link rel="stylesheet" href="/css/motion.css?v=${ASSET_VERSION}">
 <link rel="alternate" type="application/rss+xml" title="${esc(club.name)} news" href="/news/feed.xml">
 ${extraHead}
 <script>
-/* Nothing is hidden while scripts load: content already on screen is shown
-   as it is, and only what is further down rises in as it is scrolled to
-   (site.js). Links to other pages are fetched ahead, so they open at once.
-   The kick-off opening (2026-10-15, the owner) plays over a page that is
-   already drawn, once per visit, never for reduced motion or a crawler, and
-   lifts itself after 5.7s whatever happens (motion.js; this timer if not). */
-document.documentElement.classList.add('js');
-(function(){try{var d=document.documentElement,u=navigator.userAgent||'';
-if(!navigator.webdriver&&!/bot|crawl|spider|slurp|lighthouse|preview|headless/i.test(u)&&!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)&&!sessionStorage.getItem('prfc-kick')){
-sessionStorage.setItem('prfc-kick','1');d.classList.add('kick-on');setTimeout(function(){d.classList.remove('kick-on')},6500);}}catch(e){}})();
-/* Which phone, so each visitor is shown the one app store their phone uses. */
-(function(){var u=navigator.userAgent||'',d=document.documentElement;
-if(/iPhone|iPad|iPod/.test(u)||(/Macintosh/.test(u)&&navigator.maxTouchPoints>1))d.classList.add('os-ios');
-else if(/Macintosh/.test(u))d.classList.add('os-mac');
-else if(/Android/.test(u))d.classList.add('os-android');})();
+/* The opening ("Croeso", site.css .curtain): once a visit, never for reduced
+   motion or a crawler. site.js lifts it after 3.4s whatever happens. */
+(function(){var d=document.documentElement;d.classList.add('js');try{var u=navigator.userAgent||'';
+if(!navigator.webdriver&&!/bot|crawl|spider|slurp|lighthouse|preview|headless/i.test(u)&&!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)&&!sessionStorage.getItem('lrfc-croeso')){
+sessionStorage.setItem('lrfc-croeso','1');d.classList.add('curtain-on');}}catch(e){}})();
 </script>
-<script type="speculationrules">{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/api/*","/tickets/buy*","/tickets/order*"]}}]},"eagerness":"moderate"}]}</script>
 <script type="application/ld+json">${JSON.stringify(graph).replace(/</g, '\\u003c')}</script>
 </head>`;
 }
 
-const IOS_APP = club.web.ios_app;
-const ANDROID_APP = club.web.android_app;
-
-/**
- * The official store badges (Apple's and Google's own artwork, unaltered
- * apart from Google's transparent margin). Every device is shown both, so it
- * is plain the app is on iPhone and Android; the visitor's own store comes
- * first (the head script decides, before anything is drawn), and a computer
- * also gets a QR code for /app.
- */
-function appBadges({ qr = false, cls = '' } = {}) {
-  return `<div class="store-badges${cls ? ` ${cls}` : ''}">
-  <p class="store-avail">On iPhone and Android</p>
-  <a class="store-badge badge-ios" href="${esc(IOS_APP)}" rel="noopener" data-store="ios"><img src="/img/badges/app-store.svg" alt="Download on the App Store" width="120" height="40"></a>
-  <a class="store-badge badge-android" href="${esc(ANDROID_APP)}" rel="noopener" data-store="android"><img src="/img/badges/google-play.png" alt="Get it on Google Play" width="135" height="40"></a>
-  ${qr ? `<figure class="store-qr"><img src="/img/badges/app-qr.svg" alt="QR code: scan with your phone camera to get the app" width="96" height="96" loading="lazy"><figcaption>Scan with your phone</figcaption></figure>` : ''}
+/** The members' app: on its way to the stores, and on the web today. */
+function appSoon({ cls = '' } = {}) {
+  return `<div class="app-soon${cls ? ` ${cls}` : ''}">
+  <p class="app-soon-tag">Coming soon</p>
+  <p>The Loughor RFC app for iPhone, Apple Watch, Android and Wear OS is on its way to the App Store and Google Play.</p>
+  <p>Until then your card is on the web: <a href="${MEMBERS}/">member.loughorrfc.site</a>.</p>
 </div>`;
 }
 
 function header(path) {
   const link = ([href, label]) => {
-    const on = href === '/' ? path === '/' : path === href || path.startsWith(`${href}/`);
+    const on = path === href || path.startsWith(`${href}/`);
     return `<a href="${href}"${on ? ' aria-current="page"' : ''}>${label}</a>`;
   };
   return `
 <a class="skip" href="#main">Skip to content</a>
-<header class="site-head" data-head><span class="progress-bar" data-progress-bar aria-hidden="true"></span>
-  <div class="wrap head-row">
-    <a class="brand" href="/" aria-label="${esc(club.name)} home">
-      <picture><source srcset="/img/crest-128.webp" type="image/webp"><img src="/img/icon-192.png" alt="" width="44" height="44"></picture>
-      <span class="brand-text"><b>Loughor RFC</b><small>Est. ${club.founded}</small></span>
+<header class="masthead-bar" data-head>
+  <div class="strip">
+    <div class="wrap strip-in">
+      <span>Leucarum</span><span class="dot" aria-hidden="true">·</span><span>Est. ${club.founded}</span><span class="dot" aria-hidden="true">·</span><span class="strip-hide">Villa Field, ${esc(club.address.town)}</span>
+      <a class="strip-members" href="${MEMBERS}/">Members' card ${icon('arrow', { size: 14 })}</a>
+    </div>
+  </div>
+  <div class="wrap bar">
+    <a class="mark" href="/" aria-label="${esc(club.name)}, home">
+      <img src="/img/crest-128.webp" alt="" width="52" height="52">
+      <span class="mark-words"><b>Loughor</b><i>Rugby Football Club</i></span>
     </a>
-    <nav class="nav" id="nav" aria-label="Main">${NAV.map(link).join('')}</nav>
-    <a class="btn btn-sm btn-glow head-cta" href="${MEMBERS}/" aria-label="Members' card"><span class="head-cta-ic" aria-hidden="true"><svg viewBox="0 0 32 24" width="22" height="17"><rect class="hc-card" x="1.5" y="1.5" width="29" height="21" rx="4"/><rect class="hc-chip" x="5.5" y="7" width="6" height="5" rx="1.2"/><path class="hc-line" d="M5.5 16.5h12M21 16.5h5.5"/><circle class="hc-dot" cx="25" cy="7.5" r="2.4"/></svg></span><span class="head-cta-text">Members</span></a>
-    <button class="burger" type="button" aria-controls="nav" aria-expanded="false" aria-label="Open the menu" data-burger>${icon('menu')}</button>
+    <nav class="nav" id="nav" aria-label="Main">${NAV.map(link).join('')}<a class="nav-menu" href="${esc(MENU_URL)}">Food &amp; drink</a></nav>
+    <button class="menu-btn" type="button" aria-controls="nav" aria-expanded="false" data-menu-btn><span class="menu-lines" aria-hidden="true"><i></i><i></i></span><span class="menu-word">Menu</span></button>
   </div>
 </header>`;
 }
@@ -184,112 +164,87 @@ function header(path) {
 function footer() {
   const a = club.address;
   return `
-<footer class="site-foot">
-  <div class="foot-hoops" aria-hidden="true"></div>
-  <div class="wrap foot-grid">
-    <div class="foot-club">
-      <a class="brand brand-foot" href="/"><picture><source srcset="/img/crest-128.webp" type="image/webp"><img src="/img/icon-192.png" alt="" width="56" height="56" loading="lazy"></picture><span class="brand-text"><b>Loughor RFC</b><small>${esc(club.welsh_name)}</small></span></a>
-      <p>${esc(club.tagline)}.</p>
-      <p class="foot-social"><a href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 20 })}<span>Facebook</span></a><a href="${club.web.x}" rel="noopener" target="_blank">${icon('x', { size: 20 })}<span>@LoughorRFC</span></a></p>
+<footer class="colophon">
+  <svg class="col-river" viewBox="0 0 1440 60" preserveAspectRatio="none" aria-hidden="true"><path d="M0 30 C 180 6 360 54 540 30 S 900 6 1080 30 S 1300 54 1440 30 V60 H0Z"/></svg>
+  <div class="wrap col-grid">
+    <div class="col-club">
+      <img class="col-crest" src="/img/crest-256.webp" alt="" width="120" height="120" loading="lazy">
+      <p class="col-name">${esc(club.full_name)}</p>
+      <p class="col-welsh">${esc(club.welsh_name)}</p>
+      <p class="col-social"><a href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 18 })} Facebook</a><a href="${club.web.x}" rel="noopener" target="_blank">${icon('x', { size: 16 })} @LoughorRFC</a></p>
     </div>
     <div>
-      <h2>Visit</h2>
-      <p>${esc(a.name)}<br>${esc(a.street)}, ${esc(a.town)}<br>${esc(a.county)} ${esc(a.postcode)}</p>
-      <p><a href="tel:${club.phone_e164}">${icon('phone', { size: 18 })} ${esc(club.phone)}</a></p>
-      ${club.email ? `<p><a href="mailto:${esc(club.email)}">${icon('mail', { size: 18 })} ${esc(club.email)}</a></p>` : ''}
+      <h2>Find us</h2>
+      <p>${esc(a.street)}<br>${esc(a.town)}, ${esc(a.county)}<br>${esc(a.postcode)}</p>
+      <p><a href="tel:${club.phone_e164}">${esc(club.phone)}</a>${club.email ? `<br><a href="mailto:${esc(club.email)}">${esc(club.email)}</a>` : ''}</p>
     </div>
     <div>
-      <h2>Club</h2>
-      <ul class="foot-links">
-        <li><a href="/whats-on">What's on</a></li><li><a href="/play">Blues Kicks (game)</a></li><li><a href="/club">History</a></li><li><a href="/teams">Teams</a></li><li><a href="/fixtures">Fixtures &amp; results</a></li><li><a href="/tickets">Match tickets</a></li>
-        <li><a href="/news">News</a></li><li><a href="/clubhouse">Clubhouse & functions</a></li>
-        <li><a href="${MENU_URL}">Menu & order</a></li><li><a href="${MEMBERS}/">Members' app</a></li>
+      <h2>The club</h2>
+      <ul>
+        <li><a href="/club">History &amp; honours</a></li><li><a href="/teams">Teams</a></li><li><a href="/fixtures">Fixtures &amp; results</a></li>
+        <li><a href="/tickets">Match tickets</a></li><li><a href="/news">News</a></li><li><a href="/whats-on">What's on</a></li>
+        <li><a href="/clubhouse">Clubhouse &amp; hire</a></li><li><a href="${esc(MENU_URL)}">Food &amp; drink</a></li><li><a href="/membership">Membership</a></li>
       </ul>
     </div>
     <div>
       <h2>Small print</h2>
-      <ul class="foot-links">
-        <li><a href="/privacy">Privacy policy</a></li><li><a href="/app/privacy">App privacy</a></li><li><a href="/app/help">App help</a></li><li><a href="/cookies">Cookies</a></li>
-        <li><a href="/ordering-terms">Ordering terms</a></li><li><a href="/accessibility">Accessibility</a></li>
-        <li><a href="/licences">Licences</a></li><li><a href="/sitemap.xml">Sitemap</a></li>
+      <ul>
+        <li><a href="/privacy">Privacy</a></li><li><a href="/cookies">Cookies</a></li><li><a href="/ordering-terms">Ordering terms</a></li>
+        <li><a href="/accessibility">Accessibility</a></li><li><a href="/licences">Licences</a></li>
+        <li><a href="/app/help">App help</a></li><li><a href="/app/privacy">App privacy</a></li><li><a href="/sitemap.xml">Sitemap</a></li>
       </ul>
     </div>
   </div>
-  <div class="wrap foot-app">
-    <div><h2>Get the club app</h2><p>Your members' card, club news and offers on your phone.</p></div>
-    ${appBadges({ qr: true })}
-  </div>
-  <div class="wrap foot-base">
-    <p>© ${new Date().getFullYear()} ${esc(club.company.name)}. Registered in England and Wales, company ${esc(club.company.number)}. Registered office: ${esc(club.company.registered_office)}.</p>
-    <p>Menu, ordering and members' app by <a href="https://vesopaepos.com" rel="noopener">Vesopa EPOS</a>.</p>
+  <div class="wrap col-base">
+    <p>© ${new Date().getFullYear()} ${esc(club.company.name)} · Company ${esc(club.company.number)} · ${esc(club.company.registered_office)}</p>
+    <p>Ordering, tickets and members' card by <a href="https://vesopaepos.com" rel="noopener">Vesopa EPOS</a></p>
   </div>
 </footer>
-<div class="helper" data-helper>
-  <button class="helper-fab" type="button" data-helper-open aria-expanded="false" aria-controls="helper-panel">${icon('sparkle', { size: 22 })}<span>Ask the club</span></button>
-  <section class="helper-panel" id="helper-panel" role="dialog" aria-modal="false" aria-labelledby="helper-title" hidden>
-    <header class="helper-head">
-      <picture><source srcset="/img/crest-128.webp" type="image/webp"><img src="/img/icon-192.png" alt="" width="36" height="36"></picture>
-      <div><h2 id="helper-title">Club helper</h2><p>Answers from the club's own information</p></div>
-      <button type="button" class="helper-x" data-helper-close aria-label="Close the helper">${icon('close', { size: 20 })}</button>
+<aside class="ask" data-helper>
+  <button class="ask-tab" type="button" data-helper-open aria-expanded="false" aria-controls="helper-panel">${icon('sparkle', { size: 18 })}<span>Ask the club</span></button>
+  <section class="ask-panel" id="helper-panel" role="dialog" aria-modal="false" aria-labelledby="helper-title" hidden>
+    <header class="ask-head">
+      <h2 id="helper-title">Ask the club</h2>
+      <button type="button" class="ask-x" data-helper-close aria-label="Close">${icon('close', { size: 18 })}</button>
     </header>
-    <div class="helper-log" data-helper-log aria-live="polite">
-      <div class="msg bot"><p>Hello! Ask me about the club, the clubhouse, food and ordering, membership or how to find us.</p></div>
+    <div class="ask-log" data-helper-log aria-live="polite">
+      <div class="msg bot"><p>Croeso! Ask about matches, the clubhouse, food, membership or how to find Villa Field.</p></div>
     </div>
-    <div class="helper-chips" data-helper-chips>
-      <button type="button">How do I order food?</button><button type="button">How do I join?</button><button type="button">Where are you?</button>
+    <div class="ask-chips" data-helper-chips>
+      <button type="button">When is the next match?</button><button type="button">How do I join?</button><button type="button">Where is Villa Field?</button>
     </div>
-    <form class="helper-form" data-helper-form>
+    <form class="ask-form" data-helper-form>
       <label class="sr" for="helper-q">Your question</label>
-      <input id="helper-q" name="q" autocomplete="off" maxlength="500" placeholder="Ask a question…" required>
-      <button type="submit" aria-label="Send">${icon('send', { size: 20 })}</button>
+      <input id="helper-q" name="q" autocomplete="off" maxlength="500" placeholder="Type a question" required>
+      <button type="submit" aria-label="Send">${icon('send', { size: 18 })}</button>
     </form>
-    <p class="helper-note">Please don't type personal details. Answers can be wrong; for anything important call ${esc(club.phone)}. <a href="/privacy#helper">How this works</a></p>
+    <p class="ask-note">Answers come from the club's own information and can be wrong; for anything important call ${esc(club.phone)}. <a href="/privacy#helper">How this works</a></p>
   </section>
-</div>
-<script src="/js/site.js?v=${ASSET_VERSION}" defer></script>
-<script src="/js/motion.js?v=${ASSET_VERSION}" defer></script>`;
+</aside>
+<script src="/js/site.js?v=${ASSET_VERSION}" defer></script>`;
 }
 
-/**
- * The kick-off opening (motion.css): floodlights, the pitch, a conversion
- * between the posts, then the crest and the club's name. Drawn only when the
- * head script sets html.kick-on; the page itself is already underneath.
- */
-const KICK_CONFETTI = '<i style="--i:0;--a:-180deg;--r:150px;--c:#f5c518"></i><i style="--i:1;--a:-164deg;--r:197px;--c:#ffffff"></i><i style="--i:2;--a:-148deg;--r:244px;--c:#4b7bff"></i><i style="--i:3;--a:-131deg;--r:151px;--c:#f5c518"></i><i style="--i:4;--a:-115deg;--r:198px;--c:#2f62e0"></i><i style="--i:5;--a:-99deg;--r:245px;--c:#f5c518"></i><i style="--i:6;--a:-82deg;--r:152px;--c:#ffffff"></i><i style="--i:7;--a:-66deg;--r:199px;--c:#4b7bff"></i><i style="--i:8;--a:-50deg;--r:246px;--c:#f5c518"></i><i style="--i:9;--a:-33deg;--r:153px;--c:#2f62e0"></i><i style="--i:10;--a:-17deg;--r:200px;--c:#f5c518"></i><i style="--i:11;--a:0deg;--r:247px;--c:#ffffff"></i><i style="--i:12;--a:16deg;--r:154px;--c:#4b7bff"></i><i style="--i:13;--a:32deg;--r:201px;--c:#f5c518"></i><i style="--i:14;--a:49deg;--r:248px;--c:#2f62e0"></i><i style="--i:15;--a:65deg;--r:155px;--c:#f5c518"></i><i style="--i:16;--a:81deg;--r:202px;--c:#ffffff"></i><i style="--i:17;--a:98deg;--r:249px;--c:#4b7bff"></i><i style="--i:18;--a:114deg;--r:156px;--c:#f5c518"></i><i style="--i:19;--a:130deg;--r:203px;--c:#2f62e0"></i><i style="--i:20;--a:147deg;--r:250px;--c:#f5c518"></i><i style="--i:21;--a:163deg;--r:157px;--c:#ffffff"></i>';
-const KICK_LETTERS = '<span style="--i:0">P</span><span style="--i:1">O</span><span style="--i:2">N</span><span style="--i:3">T</span><span style="--i:4">A</span><span style="--i:5">R</span><span style="--i:6">D</span><span style="--i:7">A</span><span style="--i:8">W</span><span style="--i:9">E</span><span style="--i:10">&nbsp;</span><span style="--i:11">R</span><span style="--i:12">F</span><span style="--i:13">C</span>';
-function kickOff() {
-  return `<div class="kick" data-kick aria-hidden="true">
-  <span class="kick-light l1"></span><span class="kick-light l2"></span>
-  <svg class="kick-pitch" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMax slice">
-    <defs><linearGradient id="kick-turf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d4d1f" stop-opacity="0"/><stop offset="1" stop-color="#1d4d1f" stop-opacity=".55"/></linearGradient></defs>
-    <path class="turf" d="M380 120 L620 120 L1120 600 L-120 600 Z"/>
-    <path d="M380 120 L-120 600"/><path d="M620 120 L1120 600"/>
-    <path d="M330 168 L670 168"/><path d="M230 264 L770 264"/><path d="M60 428 L940 428"/>
-  </svg>
-  <div class="kick-stage">
-    <svg class="kick-svg" viewBox="0 0 400 400">
-      <defs><linearGradient id="kick-trail" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#f5c518" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient></defs>
-      <g class="kick-posts"><path class="pad" d="M150 300 V270 M250 300 V270"/><path d="M150 300 V40"/><path d="M250 300 V40"/><path d="M150 190 H250"/></g>
-      <path class="kick-trail" d="M200 352 Q 180 220 200 96"/>
-      <path class="kick-tee" d="M188 372 L212 372 L206 358 L194 358 Z"/>
-      <g class="kick-ball"><ellipse cx="200" cy="340" rx="16" ry="25"/><path d="M200 322 V358 M194 330 H206 M194 340 H206 M194 350 H206"/></g>
-    </svg>
+const CROW = '<path d="M2 12c4-1 7-4 9-8 1 3 3 5 6 6 2-2 5-3 8-3-2 2-3 4-3 6l7 2-8 1c-3 2-6 2-9 1L6 19c0-2 1-4 2-5-2 0-4-1-6-2z"/>';
+
+/** The opening: a programme cover that greets and lifts (site.css .curtain). */
+function curtain() {
+  return `<div class="curtain" data-curtain aria-hidden="true">
+  <div class="curtain-in">
+    <img class="curtain-crest" src="/img/crest-256.webp" alt="" width="240" height="240">
+    <p class="curtain-hello">Croeso!</p>
+    <p class="curtain-name">Welcome to Loughor RFC</p>
   </div>
-  <span class="kick-flash"></span>
-  <span class="kick-confetti">${KICK_CONFETTI}</span>
-  <p class="kick-cheer">Converted!</p>
-  <div class="kick-crest-wrap"><span class="kick-ring"></span><span class="kick-ring r2"></span><div class="kick-crest"><img src="/img/crest-256.webp" alt="" width="256" height="256"></div></div>
-  <p class="kick-word">${KICK_LETTERS}<small>Est. ${club.founded} · Clwb Rygbi Loughor</small></p>
-  <p class="kick-load"><span class="kick-bar"></span><span data-kick-pct>Loading 0%</span></p>
-  <button class="kick-skip" type="button" data-kick-skip tabindex="-1">Skip ›</button>
+  <svg class="crow crow-1" viewBox="0 0 34 22">${CROW}</svg><svg class="crow crow-2" viewBox="0 0 34 22">${CROW}</svg><svg class="crow crow-3" viewBox="0 0 34 22">${CROW}</svg>
+  <svg class="curtain-river" viewBox="0 0 1440 110" preserveAspectRatio="none"><path d="M0 50 C 240 10 480 90 720 50 S 1200 10 1440 50 V110 H0Z"/><path d="M0 70 C 300 40 600 100 900 70 S 1300 40 1440 70 V110 H0Z"/></svg>
+  <button class="curtain-skip" type="button" data-curtain-skip tabindex="-1">Skip</button>
 </div>`;
 }
 
 /** A whole page. */
 function page(opts, body) {
   return `${head(opts)}
-<body class="page-${esc(opts.og || 'page')}">
-${kickOff()}
+<body class="p-${esc(opts.og || 'page')}">
+${curtain()}
 ${header(opts.path)}
 <main id="main">
 ${body}
@@ -300,20 +255,19 @@ ${opts.scripts || ''}
 </html>`;
 }
 
-/** The banner at the top of an inner page. */
-function pageHero({ kicker, title, lead, art = '' }) {
-  return `<section class="page-hero">
-  <div class="hero-bg" aria-hidden="true"><span class="hoop"></span><span class="hoop"></span><span class="hoop"></span></div>
-  <div class="wrap page-hero-in">
-    <div>
-      <p class="kicker reveal">${esc(kicker)}</p>
-      <h1 class="reveal">${esc(title)}</h1>
-      ${lead ? `<p class="lead reveal">${lead}</p>` : ''}
-    </div>
-    ${art}
+/**
+ * The title block of an inner page, set like a programme's section opener:
+ * a small-caps kicker between gold rules, the title in the serif, a lead.
+ */
+function masthead({ kicker, title, lead = '', no = '' }) {
+  return `<section class="opener">
+  <div class="wrap opener-in">
+    <p class="opener-kicker" data-reveal><span>${esc(kicker)}</span></p>
+    <h1 data-reveal>${esc(title)}</h1>
+    ${lead ? `<p class="opener-lead" data-reveal>${lead}</p>` : ''}
+    ${no ? `<p class="opener-no" aria-hidden="true">${esc(no)}</p>` : ''}
   </div>
 </section>`;
 }
 
-module.exports = {
-  appBadges, IOS_APP, ANDROID_APP, page, pageHero, esc, icon, SITE, MEMBERS, MENU_URL, NAV, clubLd, ASSET_VERSION };
+module.exports = { page, masthead, appSoon, esc, icon, SITE, MEMBERS, MENU_URL, NAV, clubLd, ASSET_VERSION };

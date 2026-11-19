@@ -65,23 +65,23 @@ for (const p of PAGES) {
   });
 }
 
-test('the menu is on menu.loughorrfc.site, and /menu goes there', async () => {
+test('the menu is the club\'s own page in the back office, and /menu goes there', async () => {
   const r = await fetch(`${base}/menu`, { redirect: 'manual' });
   assert.equal(r.status, 301);
-  assert.equal(r.headers.get('location'), 'https://menu.loughorrfc.site/');
+  assert.equal(r.headers.get('location'), 'https://menu.vesopa.com/loughor-rfc');
   const home = await (await fetch(`${base}/`)).text();
-  assert.match(home, /href="https:\/\/menu\.loughorrfc\.site\/"/);
-  assert.ok(!/href="\/menu"/.test(home), 'no link to the old /menu page');
+  assert.match(home, /href="https:\/\/menu\.vesopa\.com\/loughor-rfc"/);
+  assert.ok(!/href="\/menu"/.test(home), 'no link to /menu itself');
 });
 
 test('sitemap, robots, llms.txt, feed, manifest', async () => {
   const sm = await (await fetch(`${base}/sitemap.xml`)).text();
   assert.ok(!/loughorrfc\.site\/menu</.test(sm));
-  // Only this host's pages; the other two sites are in the index.
+  // Only this host's pages; the members' site is in the index.
   assert.ok(!/member\.loughorrfc\.site/.test(sm));
   assert.match(sm, /<loc>https:\/\/loughorrfc\.site\/fixtures<\/loc><lastmod>[\d-]+<\/lastmod><changefreq>daily<\/changefreq><priority>0\.9<\/priority>/);
   const idx = await (await fetch(`${base}/sitemap-index.xml`)).text();
-  for (const host of ['loughorrfc.site', 'menu.loughorrfc.site', 'member.loughorrfc.site']) {
+  for (const host of ['loughorrfc.site', 'member.loughorrfc.site']) {
     assert.ok(idx.includes(`<loc>https://${host}/sitemap.xml</loc>`), host);
   }
   const robots = await (await fetch(`${base}/robots.txt`)).text();
@@ -132,15 +132,15 @@ test('fixtures: the WRU season from the club side, next match, table and tickets
     [true, 'Penlan RFC', null], [false, 'Baglan RFC', null], [true, 'Banwen RFC', 'L'], [true, 'Brynamman RFC', 'D']]);
   assert.strictEqual(raw[3].kickoff, null);
   const html = await (await fetch(`${base}/fixtures`)).text();
-  assert.match(html, /Loughor <span class="vs">v<\/span> Penlan RFC/);
-  assert.match(html, /data-countdown="2099-10-17T14:30:00"/);
-  assert.match(html, /<b>L<\/b> 41–69/);
+  assert.match(html, /Loughor <i>v<\/i> Penlan/);
+  assert.match(html, /class="res res-l"[^>]*>L<\/span><b class="score">41–69<\/b>/);
   assert.match(html, /<tr class="us">/);
   assert.match(html, /href="\/tickets#m-1"/);
   assert.ok(!/href="\/tickets#m-2"/.test(html), 'no tickets for an away game');
   assert.match(html, /"@type":"SportsEvent"/);
   const home = await (await fetch(`${base}/`)).text();
-  assert.match(home, /class="next-match"/);
+  assert.match(home, /class="stub stub-big"/, 'the next match as a ticket stub on the cover');
+  assert.match(home, /Kick-off 2:30pm/);
   const tickets = await (await fetch(`${base}/tickets`)).text();
   assert.match(tickets, /id="m-1"/);
   assert.ok(!/id="m-2"/.test(tickets), 'only home matches on the tickets page');
@@ -159,18 +159,20 @@ test('the club email is the new address on every page', async () => {
   assert.ok(!/hotmail/.test(html));
 });
 
-test('the kick-off opening never hides the page; menu drawn in the page', async () => {
+test('the opening greets once a visit and never hides the page', async () => {
   const home = await (await fetch(`${base}/`)).text();
   // Shown only when the head script turns it on: once a visit, never for a
-  // crawler or reduced motion, and lifted by a timer even with no motion.js.
-  assert.match(home, /<div class="kick" data-kick aria-hidden="true">/);
-  assert.match(home, /sessionStorage\.getItem\('prfc-kick'\)/);
-  assert.match(home, /setTimeout\(function\(\)\{d\.classList\.remove\('kick-on'\)\},6500\)/);
-  const css = await (await fetch(`${base}/css/motion.css`)).text();
-  assert.match(css, /^\.kick \{ display: none; \}$/m);
-  assert.match(css, /--T: 5\.2s;/);
-  assert.match(home, /data-kick-skip/);
-  assert.match(home, /type="speculationrules"/);
+  // crawler or reduced motion, and lifted by site.js after 3.4s regardless.
+  assert.match(home, /<div class="curtain" data-curtain aria-hidden="true">/);
+  assert.match(home, /Croeso!/);
+  assert.match(home, /sessionStorage\.getItem\('lrfc-croeso'\)/);
+  assert.match(home, /prefers-reduced-motion: reduce/);
+  const css = await (await fetch(`${base}/css/site.css`)).text();
+  assert.match(css, /^\.curtain \{ display: none; \}$/m, 'nothing is covered without the head script');
+  const js = await (await fetch(`${base}/js/site.js`)).text();
+  assert.match(js, /setTimeout\(lift, 3400\)/);
+  assert.match(home, /data-curtain-skip/);
+  assert.ok(!/data-kick|Blues Kicks|href="\/play"/.test(home), 'nothing of the old site');
 });
 
 test('tickets: events on sale with a form, buying goes to card payment, the order shows the tickets', async () => {
@@ -209,44 +211,39 @@ test('tickets: events on sale with a form, buying goes to card payment, the orde
   venue.set('events', null);
 });
 
-test('the club app: store badges on every page, and /app sends each phone to its own store', async () => {
-  for (const p of ['/', '/news', '/contact']) {
+test('the club app: not in the stores yet, so no store badges; /app opens the card on the web', async () => {
+  for (const p of ['/', '/membership', '/app/help']) {
     const html = await (await fetch(`${base}${p}`)).text();
-    assert.match(html, /Download on the App Store/);
+    assert.ok(!/Download on the App Store|Get it on Google Play|play\.google\.com\/store/.test(html), `${p}: no store links before publication`);
     assert.match(html, /href="https:\/\/member\.loughorrfc\.site\/"/);
-    assert.match(html, /href="https:\/\/play\.google\.com\/store\/apps\/details\?id=com\.vesopaepos\.loughorrfc"/);
   }
+  assert.match(await (await fetch(`${base}/membership`)).text(), /Coming soon/);
   const go = (ua) => fetch(`${base}/app`, { redirect: 'manual', headers: { 'User-Agent': ua } }).then((r) => r.headers.get('location'));
   assert.strictEqual(await go('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'), 'https://member.loughorrfc.site/');
-  assert.strictEqual(await go('Mozilla/5.0 (Linux; Android 15; Pixel 9)'), 'https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc');
-  assert.strictEqual(await go('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), '/membership#app');
+  assert.strictEqual(await go('Mozilla/5.0 (Linux; Android 15; Pixel 9)'), 'https://member.loughorrfc.site/');
+  assert.strictEqual(await go('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), '/membership');
 });
 
 test("the club's updates: What's On and a page for each", async () => {
   for (const u of updates) assert.ok(u.slug && u.title, `${u.slug} has a title`);
   const html = await (await fetch(`${base}/whats-on`)).text();
-  assert.match(html, /<h1 class="reveal">What&#39;s On<\/h1>/);
+  assert.match(html, /<h1 data-reveal>What&#39;s On<\/h1>/);
+  assert.match(html, /class="stub stub-big"/);
   if (!updates.length) assert.match(html, /Nothing announced just yet/);
-  const home = await (await fetch(`${base}/`)).text();
-  assert.match(home, /href="\/whats-on"/);
-  assert.match(home, /class="hero-match/);
-  assert.match(home, /data-hero-canvas/);
   const map = await (await fetch(`${base}/sitemap.xml`)).text();
   assert.match(map, /\/whats-on<\/loc>/);
   assert.strictEqual((await fetch(`${base}/events`, { redirect: 'manual' })).status, 301);
 });
 
-test('find us: an opt-in satellite map, directions for each device, what the club offers', async () => {
-  const r = await fetch(`${base}/`);
-  assert.match(r.headers.get('content-security-policy'), /frame-src https:\/\/www\.google\.com/);
-  const home = await r.text();
-  assert.match(home, /data-sat-map/);
-  assert.match(home, /data-src="https:\/\/www\.google\.com\/maps\/embed\?origin=mfe&amp;pb=[^"]*!5e1/, 'satellite, and only when asked');
-  assert.ok(!/<iframe/.test(home), 'nothing from Google until the visitor presses the button');
-  assert.match(home, /class="btn btn-glow dir-apple" href="https:\/\/maps\.apple\.com\/\?daddr=51\.6627,-4\.0655/);
-  assert.match(home, /class="btn btn-glow dir-google" href="https:\/\/www\.google\.com\/maps\/dir\/\?api=1&amp;destination=51\.6627,-4\.0655/);
-  assert.match(home, /class="offers"/);
-  assert.match(home, /Members&#39; bar/);
+test('find us: a drawn plan of the ground, directions for each phone, nothing from Google until asked', async () => {
+  const home = await (await fetch(`${base}/`)).text();
+  assert.match(home, /class="plan"/);
+  assert.ok(!/<iframe/.test(home), 'no map service loads by itself');
+  assert.match(home, /class="btn btn-navy dir-apple" href="https:\/\/maps\.apple\.com\/\?daddr=51\.6627,-4\.0655/);
+  assert.match(home, /class="btn btn-navy dir-google" href="https:\/\/www\.google\.com\/maps\/dir\/\?api=1&amp;destination=51\.6627,-4\.0655/);
+  const contact = await (await fetch(`${base}/contact`)).text();
+  assert.match(contact, /Villa Field/);
+  assert.match(contact, /01792 894109/);
   const cookies = await (await fetch(`${base}/cookies`)).text();
-  assert.match(cookies, /Show satellite view/);
+  assert.ok(!/satellite/i.test(cookies));
 });

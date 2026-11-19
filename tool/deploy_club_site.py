@@ -133,8 +133,15 @@ def main():
     before = ssh(f"grep -c '{club['web']['members'].split('//', 1)[1]}=' {BACKOFFICE}/.env || true", check=False).strip()
     ssh(f"cd {remote} && HIDE_SETUP_CODE=1 bash remote-install.sh {flag}")
 
-    print(f"▶ mail: info@ and contact@{domain} to {club['email_forwards_to']}", flush=True)
-    ssh(f"cd {remote} && bash mail-forward.sh {flag} '{club['email_forwards_to']}' '{club['email']}'", check=False)
+    # The mail server's own set-up (Exim routers) is changed only when asked
+    # for (owner, 2026-11-19: "Do not alter coding in cloud Vesopa or
+    # mailbox, only create everything being a user"). Loughor's forwarding
+    # was set up once, on 2026-11-19; set MAIL_FORWARD=1 to run it again.
+    if os.environ.get("MAIL_FORWARD") == "1":
+        print(f"▶ mail: info@ and contact@{domain} to {club['email_forwards_to']}", flush=True)
+        ssh(f"cd {remote} && bash mail-forward.sh {flag} '{club['email_forwards_to']}' '{club['email']}'", check=False)
+    else:
+        print("▶ mail: the mail server's set-up is left as it is (MAIL_FORWARD=1 to change it)", flush=True)
 
     slug = club.get("slug", "")
     data = json.loads((club_dir / "backoffice.json").read_text(encoding="utf-8")) if (club_dir / "backoffice.json").is_file() else {}
@@ -178,6 +185,35 @@ echo "changed=$changed"
 """
         out = ssh(env_script) if slug and app_id else ""
 
+        # Google Wallet on the back office, the first time (owner, 2026-11-19:
+        # "We now have the access of Google Wallet Pass api"): the issuer and
+        # the service account that signs the passes, as Back office - patch's
+        # google-wallet setting does, when the server has none yet. The key
+        # file sits beside the app, mode 600; nothing is printed.
+        issuer = os.environ.get("GOOGLE_WALLET_ISSUER_ID", "").strip()
+        sa_json = os.environ.get("GOOGLE_WALLET_SA_JSON", "").strip()
+        has = ssh(f"grep -c '^GOOGLE_WALLET_ISSUER_ID=.' {BACKOFFICE}/.env || true", check=False).strip()
+        if has not in ("", "0"):
+            print("  ✓ Google Wallet is set up on the back office")
+        elif not (issuer and sa_json):
+            print("  ! Google Wallet is not set up on the back office, and the workflow has no "
+                  "GOOGLE_WALLET_ISSUER_ID / PLAY_SERVICE_ACCOUNT_JSON secrets to set it up with")
+        elif check:
+            print("  ! would set up Google Wallet on the back office (issuer and service account from the secrets)")
+        else:
+            sa = f"/home/{USER}/web/backoffice.vesopaepos.com/private/google-wallet-sa.json"
+            ssh(f"umask 077 && cat > {sa} && chown {USER}:{USER} {sa}", data=sa_json.encode())
+            origins = ",".join(dict.fromkeys([
+                "https://backoffice.vesopaepos.com", "https://loyalty.vesopa.com", "https://member.pontardawerfc.com",
+                members, site_url]))
+            ssh(f"""E={BACKOFFICE}/.env; cp -p $E $E.bak-$(date +%s)
+setkey() {{ if grep -q "^$1=" $E; then sed -i "s|^$1=.*|$1=$2|" $E; else printf '%s=%s\\n' "$1" "$2" >> $E; fi; echo "  ▶ .env: $1 set"; }}
+setkey GOOGLE_WALLET_ISSUER_ID "$(cat)"
+setkey GOOGLE_WALLET_SA_FILE "{sa}"
+setkey GOOGLE_WALLET_ORIGINS "{origins}"
+""", data=issuer.encode())
+            out += "\nchanged=1"
+
         if check:
             print("check only: nothing changed.")
             return
@@ -199,16 +235,18 @@ echo "changed=$changed"
                 + f" && node scripts/grant-venue-apps.js '{email}'", check=False)
         box = accounts.get("mailbox")
         if box and password:
-            local, domain = box.split("@", 1)
+            local, box_domain = box.split("@", 1)
             print(f"▶ mailbox {box}", flush=True)
             ssh(f"""export PATH=$PATH:/usr/local/hestia/bin
-owner=$(v-search-domain-owner {domain} mail 2>/dev/null || true)
-mx=$(dig +short MX {domain} | sort -n | awk '{{print $2}}' | head -1)
+owner=$(v-search-domain-owner {box_domain} mail 2>/dev/null || true)
+mx=$(dig +short MX {box_domain} | sort -n | awk '{{print $2}}' | head -1)
 mxip=$(dig +short "$mx" | tail -1); here=$(curl -fsS https://api.ipify.org 2>/dev/null || true)
-if [ -z "$owner" ]; then echo "  ! {domain} is not a mail domain on this box: make {box} where {domain}'s mail is hosted ($mx)"
-elif [ -n "$mxip" ] && [ "$mxip" != "$here" ]; then echo "  ! {domain}'s mail is delivered to $mx, not this box: make {box} there (a mailbox here would never receive)"
-elif v-list-mail-account "$owner" {domain} {local} >/dev/null 2>&1; then v-change-mail-account-password "$owner" {domain} {local} "$(cat {pw})" && echo "  ✓ {box}: password set"
-else v-add-mail-account "$owner" {domain} {local} "$(cat {pw})" && echo "  ✓ {box} created"; fi
+if [ -z "$owner" ]; then echo "  ! {box_domain} is not a mail domain on this box: make {box} where {box_domain}'s mail is hosted ($mx)"
+elif v-list-mail-account "$owner" {box_domain} {local} >/dev/null 2>&1; then v-change-mail-account-password "$owner" {box_domain} {local} "$(cat {pw})" && echo "  ✓ {box}: password set"
+else v-add-mail-account "$owner" {box_domain} {local} "$(cat {pw})" && echo "  ✓ {box} created on this box (panel user $owner)"; fi
+# The mailbox is on Vesopa Cloud (owner, 2026-11-19: "Vesopa mailbox is also
+# hosted in cloud Vesopa com"); say where the domain's public MX points.
+if [ -n "$mxip" ] && [ "$mxip" != "$here" ]; then echo "  ! note: {box_domain}'s MX is $mx, so mail from outside reaches this mailbox only once the MX points at Vesopa Cloud"; fi
 """, check=False)
     finally:
         ssh(f"rm -f {pw}", check=False)

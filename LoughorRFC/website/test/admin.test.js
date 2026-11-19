@@ -136,7 +136,7 @@ test('a published post is on the home page, /news, its own page, the feed and th
   assert.match(post.html, /<strong>Forty points<\/strong>/);
   assert.match(post.summary, /^What a game\. Forty points/);
   const page = await (await fetch(`${base}/news/big-win-at-villa-field`)).text();
-  assert.match(page, /<h1 class="reveal">Big win at Villa Field<\/h1>/);
+  assert.match(page, /<h1 data-reveal>Big win at Villa Field<\/h1>/);
   assert.match(page, new RegExp(`og:image" content="https://loughorrfc.site/img/${photo.name}-og.jpg"`));
   assert.match(page, /og:image:alt" content="The team celebrate"/);
   assert.match(page, /"datePublished":"2026-10-20T17:30:00\+01:00"/);
@@ -209,7 +209,7 @@ test('/news comes in pages of 12', async () => {
   const pages = Math.ceil(require('../src/content').news.length / 12);
   const total = require('../src/content').news.length;
   const one = await (await fetch(`${base}/news`)).text();
-  assert.strictEqual((one.match(/class="card news-card/g) || []).length, Math.min(12, total));
+  assert.strictEqual((one.match(/<article class="story/g) || []).length, Math.min(12, total));
   if (pages > 1) {
     assert.match(one, /<link rel="next" href="https:\/\/loughorrfc.site\/news\?page=2">/);
     assert.strictEqual((await fetch(`${base}/news?page=2`)).status, 200);
@@ -252,7 +252,7 @@ test('every news card has a picture: a photo in the story, or a card drawn for t
   content.refresh();
   await newsCard.settled();
   const home = await (await fetch(`${base}/news`)).text();
-  const card = (slug) => (home.match(new RegExp(`<article class="card news-card[^"]*">\\s*<a href="/news/${slug}"[\\s\\S]*?</article>`)) || [''])[0];
+  const card = (slug) => (home.match(new RegExp(`<article class="story[^"]*" data-reveal>\\s*<a href="/news/${slug}"[\\s\\S]*?</article>`)) || [''])[0];
   assert.match(card('only-a-photo-in-the-text'), new RegExp(`/img/${inStory.name}-480\\.webp`), 'the story\'s photo is the card');
   const drawn = card('no-photo-anywhere').match(/\/img\/(c\/[0-9a-f]{12})-480\.webp/);
   assert.ok(drawn, 'a drawn card, not the crest');

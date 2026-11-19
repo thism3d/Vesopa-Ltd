@@ -191,24 +191,48 @@ async function main() {
         if (n > 0) { ok(`catalogue: ${n} products (the club's own; nothing added)`); return; }
         todo(`catalogue: ${data.products.length} products in ${data.departments.length} departments`);
         if (CHECK) return;
-        for (const [i, t] of (data.tax_rates || []).entries()) {
-          await db.execute('INSERT INTO bo_tax_rates (office_id, name, percentage, sort_order) VALUES (?, ?, ?, ?)',
-            [office.id, t.name, t.percentage, t.sort_order ?? i + 1]);
+        // Only the columns this database has (the live schema can be older
+        // than the repository's), and nothing added twice: a run that stopped
+        // half way is finished, not repeated.
+        const cols = async (table) => {
+          const [rows] = await db.query(
+            'SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?', [table]);
+          return new Set(rows.map((r) => r.c));
+        };
+        const insert = async (table, row) => {
+          const have = await cols(table);
+          if (!have.size) { console.log(`  ! no ${table} table: skipped`); return false; }
+          const keys = Object.keys(row).filter((k) => have.has(k));
+          await db.execute(`INSERT INTO ${table} (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`,
+            keys.map((k) => row[k]));
+          return true;
+        };
+        const named = async (table, name) => {
+          const [[r]] = await db.query(`SELECT 1 AS x FROM ${table} WHERE office_id = ? AND name = ? LIMIT 1`, [office.id, name]);
+          return Boolean(r);
+        };
+        const lists = [['bo_tax_rates', data.tax_rates || [], (t, i) => ({ office_id: office.id, name: t.name, percentage: t.percentage, sort_order: t.sort_order ?? i + 1 })],
+          ['bo_product_departments', data.departments || [], (d, i) => ({ office_id: office.id, name: d, sort_order: i + 1 })],
+          ['bo_product_groups', data.groups || [], (g, i) => ({ office_id: office.id, name: g, sort_order: i + 1 })]];
+        for (const [table, items, row] of lists) {
+          if (!(await cols(table)).size) { console.log(`  ! no ${table} table: skipped`); continue; }
+          for (const [i, item] of items.entries()) {
+            const r = row(item, i);
+            if (!(await named(table, r.name))) await insert(table, r);
+          }
         }
-        for (const [i, d] of (data.departments || []).entries()) {
-          await db.execute('INSERT INTO bo_product_departments (office_id, name, sort_order) VALUES (?, ?, ?)', [office.id, d, i + 1]);
-        }
-        for (const [i, g] of (data.groups || []).entries()) {
-          await db.execute('INSERT INTO bo_product_groups (office_id, name, sort_order) VALUES (?, ?, ?)', [office.id, g, i + 1]);
-        }
+        let added = 0;
         for (const [i, p] of data.products.entries()) {
-          await db.execute(
-            `INSERT INTO bo_products (email, pluid, product_name, department_name, group_name, price, tax_percentage,
-               stock_quantity, button_position, button_color, print_to_receipt, emoji)
-             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 1, ?)`,
-            [EMAIL, p.pluid, p.product_name, p.department_name, p.group_name, p.price, p.tax_percentage ?? 20,
-              i + 1, p.button_color || null, p.emoji || null]);
+          const [[had]] = await db.query('SELECT 1 AS x FROM bo_products WHERE email = ? AND pluid = ? LIMIT 1', [EMAIL, p.pluid]);
+          if (had) continue;
+          await insert('bo_products', {
+            email: EMAIL, pluid: p.pluid, product_name: p.product_name, department_name: p.department_name,
+            group_name: p.group_name, price: p.price, tax_percentage: p.tax_percentage ?? 20, stock_quantity: null,
+            button_position: i + 1, button_color: p.button_color || null, print_to_receipt: 1, emoji: p.emoji || null,
+          });
+          added += 1;
         }
+        console.log(`  ✓ ${added} products added`);
         ok('catalogue added');
       });
     }
