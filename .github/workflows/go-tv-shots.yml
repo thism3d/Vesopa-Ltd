@@ -1,0 +1,75 @@
+# Vesopa Go's Android TV screenshots for Google Play, drawn by the app itself:
+# vesopa_go/store_shots/tv_shots_test.dart renders the TV screens (connect a
+# screen, the kitchen board, the customer display) at 1920x1080 with Roboto,
+# into vesopa_go/store/screenshots/android-tv, which play.json lists as
+# tvScreenshots. Go - Android's listing step uploads them.
+#
+# Actions > "Go - TV screenshots" > Run workflow. With `branch`, the pictures
+# are committed there (never main) to be looked at and merged; without it they
+# are only kept as the run's artifact.
+
+name: Go - TV screenshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Commit the pictures to this branch (not main); empty = artifact only
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+
+      - name: Roboto, as a TV draws it
+        run: sudo apt-get install -y -q fonts-roboto-unhinted
+
+      - name: Draw the TV screens
+        working-directory: vesopa_go
+        env:
+          TV_SHOTS_FONTS: /usr/share/fonts/truetype/roboto
+        run: |
+          flutter pub get
+          flutter test --update-goldens store_shots/tv_shots_test.dart
+          mkdir -p store/screenshots/android-tv
+          rm -f store/screenshots/android-tv/*.png
+          cp store_shots/out/*.png store/screenshots/android-tv/
+          python3 - <<'EOF'
+          import struct, pathlib
+          for f in sorted(pathlib.Path("store/screenshots/android-tv").glob("*.png")):
+              w, h = struct.unpack(">II", f.read_bytes()[16:24])
+              print(f"{f.name}: {w}x{h}")
+              assert (w, h) == (1920, 1080), f"{f.name} is {w}x{h}, Play wants 16:9 1920x1080"
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-tv-screenshots
+          path: vesopa_go/store/screenshots/android-tv/*.png
+
+      - name: Commit to ${{ inputs.branch }}
+        if: inputs.branch != '' && inputs.branch != 'main'
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add vesopa_go/store/screenshots/android-tv
+          if git diff --cached --quiet; then echo "No change to the pictures"; exit 0; fi
+          git commit -m "Go: Android TV screenshots for Google Play (Go - TV screenshots)"
+          git push origin "HEAD:$BRANCH"

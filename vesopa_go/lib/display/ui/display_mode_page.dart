@@ -1528,3 +1528,17 @@ class _Centre extends StatelessWidget {
     );
   }
 }
+
+/// The customer's view of a bill, and of a display waiting for its till, as
+/// [DisplayModePage] draws them, without a till or the back office: for the
+/// Play store's Android TV pictures (store_shots/tv_shots_test.dart).
+@visibleForTesting
+Widget displayPreview({Basket? basket, String venue = '', String code = '4827'}) => Theme(
+      data: Tp.theme(Brightness.dark),
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0B0E0A),
+        body: basket == null
+            ? _PairCode(code: code, venue: venue, linked: true)
+            : _Bill(basket: basket, control: null, adverts: const [], venue: venue),
+      ),
+    );
