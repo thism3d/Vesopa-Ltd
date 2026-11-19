@@ -398,15 +398,16 @@ class Art:
         v26 = res / "mipmap-anydpi-v26"
         v26.mkdir(parents=True, exist_ok=True)
         if self.opaque or self.square is not None:
-            # A square crest, or one with its own square picture: the launcher's shape is filled with the crest's
-            # own edge colour, the whole crest inside the safe circle.
-            values = res / "values"
-            values.mkdir(parents=True, exist_ok=True)
-            (values / "ic_launcher_background.xml").write_text(
-                '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
-                f'    <color name="ic_launcher_background">#{self.edge[0]:02X}{self.edge[1]:02X}{self.edge[2]:02X}</color>\n'
-                "</resources>\n", encoding="utf-8")
-            background = "@color/ic_launcher_background"
+            # A square crest, or one with its own square picture: the
+            # launcher's shape is filled with the crest's own edge colour, as
+            # a plain picture in the mipmap folders, which the Wear OS app
+            # copies too (android/wear build.gradle.kts phoneIcons; a colour
+            # in values/ would not reach it).
+            for name, scale in DENSITIES.items():
+                big = round(108 * scale)
+                save_png(Image.new("RGB", (big, big), self.edge), res / f"mipmap-{name}" / "ic_launcher_bg.png")
+            (res / "values" / "ic_launcher_background.xml").unlink(missing_ok=True)
+            background = "@mipmap/ic_launcher_bg"
         else:
             background = "@android:color/transparent"
         adaptive = (

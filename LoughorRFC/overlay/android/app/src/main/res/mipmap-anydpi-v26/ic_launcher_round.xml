@@ -2,7 +2,7 @@
 <!-- Written by vesopa_loyalty/tool/make_venue_art.py. The crest on
      its ground: transparent, or a square crest's own edge colour. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background"/>
+    <background android:drawable="@mipmap/ic_launcher_bg"/>
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
     <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>
 </adaptive-icon>
