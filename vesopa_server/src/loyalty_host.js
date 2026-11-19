@@ -145,21 +145,62 @@ function iosApps() {
     .split(',').map((s) => s.trim()).filter(Boolean);
 }
 
+/*
+ * THE CLUB'S APP OPENS ITS MEMBERS' SITE (owner, 2026-11-19: deep links, "the
+ * members' site and /app"). Each venue host names its own club's app only:
+ * the bundle from APNS_TOPICS (slug=bundle, which is also the Android
+ * package), so a link to member.loughorrfc.site never opens Pontardawe's app.
+ * Android's fingerprints: LOYALTY_ANDROID_APPS, plus the ones already known
+ * for a club whose app is not to be rebuilt (Pontardawe RFC, owner,
+ * 2026-11-19: "Pontardawe RFC app do not update for now").
+ *   APPLE_TEAM_ID  default G238FR2ZC9
+ */
+const KNOWN_PRINTS = {
+  'com.vesopaepos.pontardawerfc': [
+    'A3:03:9D:73:74:E8:1B:10:4D:85:9F:7B:A4:4A:AD:7D:74:31:C3:BB:C6:E4:CE:51:43:FF:47:B3:59:10:C3:82',
+    '5C:EC:AE:76:20:51:1B:62:94:4C:90:B4:97:C5:C5:58:04:8B:93:3B:77:9F:1A:44:DF:DF:50:E4:35:74:6B:70',
+    '62:1C:0C:07:ED:FA:54:CC:22:DD:B8:44:55:A6:E6:74:99:F5:6C:31:A0:4B:E4:FE:AA:9D:F6:4A:9C:65:46:39',
+    '6B:3B:C0:9A:7D:D4:1F:62:D1:9F:C0:F9:2B:7E:52:8B:A0:92:05:42:6F:21:21:49:0F:0A:60:B8:F9:54:43:74',
+  ],
+};
+
+/** The venue's own app (its bundle id, which is its Android package too). */
+function venueBundle(slug) {
+  for (const pair of String(process.env.APNS_TOPICS || '').split(',')) {
+    const [venue, bundle] = pair.split('=').map((x) => (x || '').trim());
+    if (venue && bundle && venue === slug) return bundle;
+  }
+  return null;
+}
+
 function androidApps() {
-  return String(process.env.LOYALTY_ANDROID_APPS || '').split(',').map((s) => s.trim()).filter(Boolean)
-    .map((pair) => pair.split('='))
-    .filter(([pkg, print]) => pkg && print)
-    .map(([pkg, print]) => ({
-      relation: ['delegate_permission/common.get_login_creds', 'delegate_permission/common.handle_all_urls'],
-      target: { namespace: 'android_app', package_name: pkg.trim(), sha256_cert_fingerprints: [print.trim()] },
-    }));
+  const prints = new Map(Object.entries(KNOWN_PRINTS).map(([pkg, list]) => [pkg, new Set(list)]));
+  for (const pair of String(process.env.LOYALTY_ANDROID_APPS || '').split(',')) {
+    const [pkg, print] = pair.split('=').map((x) => (x || '').trim());
+    if (!pkg || !/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/i.test(print || '')) continue;
+    if (!prints.has(pkg)) prints.set(pkg, new Set());
+    prints.get(pkg).add(print.toUpperCase());
+  }
+  return [...prints].map(([pkg, set]) => ({
+    relation: ['delegate_permission/common.get_login_creds', 'delegate_permission/common.handle_all_urls'],
+    target: { namespace: 'android_app', package_name: pkg, sha256_cert_fingerprints: [...set] },
+  }));
 }
 
 function wellKnown(req, res) {
   const path = req.url.split('?')[0];
   if (path === '/.well-known/apple-app-site-association') {
-    res.type('application/json').set('Cache-Control', 'public, max-age=3600')
-      .send(JSON.stringify({ webcredentials: { apps: iosApps() } }));
+    const body = { webcredentials: { apps: iosApps() } };
+    const bundle = venueBundle(VENUE_HOSTS.get(hostOf(req)));
+    if (bundle) {
+      body.applinks = {
+        details: [{
+          appIDs: [`${process.env.APPLE_TEAM_ID || 'G238FR2ZC9'}.${bundle}`],
+          components: [{ '/': '/*', comment: "The members' site opens the club's app" }],
+        }],
+      };
+    }
+    res.type('application/json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify(body));
     return true;
   }
   if (path === '/.well-known/assetlinks.json') {

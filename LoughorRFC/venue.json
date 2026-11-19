@@ -32,5 +32,9 @@
     "vesopa.com",
     "loughorrfc.site"
   ],
-  "firebase_auth_domain": "member.loughorrfc.site"
+  "firebase_auth_domain": "member.loughorrfc.site",
+  "app_links": [
+    "member.loughorrfc.site",
+    "loughorrfc.site/app"
+  ]
 }

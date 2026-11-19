@@ -351,15 +351,23 @@ ${news.map((n) => `<item><title>${esc(n.title)}</title><link>${SITE}/news/${n.sl
  *   APP_ANDROID_LINKS  package=SHA256,SHA256;...  (upload key and Play's key)
  */
 const IOS_APPS = String(process.env.APP_IOS_IDS || 'G238FR2ZC9.com.vesopaepos.loughorrfc').split(',').map((s) => s.trim()).filter(Boolean);
+// Loughor's own fingerprints: Play's app signing key, which the Club site
+// deploy reads from Google Play into content/club.json (app_links.android).
+// Never another club's: a wrong print would let no app open these links.
 const ANDROID_APPS = String(process.env.APP_ANDROID_LINKS
-  || 'com.vesopaepos.loughorrfc=A3:03:9D:73:74:E8:1B:10:4D:85:9F:7B:A4:4A:AD:7D:74:31:C3:BB:C6:E4:CE:51:43:FF:47:B3:59:10:C3:82,5C:EC:AE:76:20:51:1B:62:94:4C:90:B4:97:C5:C5:58:04:8B:93:3B:77:9F:1A:44:DF:DF:50:E4:35:74:6B:70,62:1C:0C:07:ED:FA:54:CC:22:DD:B8:44:55:A6:E6:74:99:F5:6C:31:A0:4B:E4:FE:AA:9D:F6:4A:9C:65:46:39,6B:3B:C0:9A:7D:D4:1F:62:D1:9F:C0:F9:2B:7E:52:8B:A0:92:05:42:6F:21:21:49:0F:0A:60:B8:F9:54:43:74')
+  || (club.app_links && club.app_links.android) || '')
   .split(';').map((s) => s.split('=')).filter(([pkg, prints]) => pkg && prints)
   .map(([pkg, prints]) => ({
     relation: ['delegate_permission/common.get_login_creds', 'delegate_permission/common.handle_all_urls'],
     target: { namespace: 'android_app', package_name: pkg.trim(), sha256_cert_fingerprints: prints.split(',').map((x) => x.trim()) },
   }));
 app.get(['/.well-known/apple-app-site-association', '/apple-app-site-association'], (req, res) => {
-  res.type('application/json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify({ webcredentials: { apps: IOS_APPS } }));
+  // The app opens /app only (owner, 2026-11-19: "the members' site and
+  // /app"): news, fixtures and the app's own legal pages stay in the browser.
+  res.type('application/json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify({
+    webcredentials: { apps: IOS_APPS },
+    applinks: { details: [{ appIDs: IOS_APPS, components: [{ '/': '/app', comment: "The club's app" }, { '/': '/app/', comment: "The club's app" }] }] },
+  }));
 });
 app.get('/.well-known/assetlinks.json', (req, res) => {
   res.type('application/json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify(ANDROID_APPS));

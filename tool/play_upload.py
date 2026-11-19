@@ -303,6 +303,20 @@ def main():
                 print(f"   ! {aab} is missing: run {venue_dir.name}\\build-android.cmd first")
                 failed = True
                 continue
+            if part == "wear":
+                # Play gives a new Wear OS form factor internal, open (beta)
+                # and production tracks but no closed one: a closed-testing
+                # phone release puts its watch on Wear OS internal testing,
+                # which is private too (Loughor RFC, 2026-11-19).
+                try:
+                    look = play.edit()
+                    have = {x["track"] for x in play.call("GET", f"{API}/{play.package}/edits/{look}/tracks").get("tracks", [])}
+                    play.call("DELETE", f"{API}/{play.package}/edits/{look}")
+                    if t not in have and "wear:internal" in have and track not in ("beta", "production"):
+                        print(f"   (no {t} track in Play: the watch goes on wear:internal, Wear OS internal testing)")
+                        t = "wear:internal"
+                except PlayError:
+                    pass
             try:
                 edit = play.edit()
                 release(play, edit, aab, t, name, p["release_notes"], p["language"])
