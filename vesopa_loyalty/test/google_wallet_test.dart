@@ -1,4 +1,4 @@
-// Add to Google Wallet on Android, as Add to Apple Wallet on an iPhone.
+// Add to Google Wallet on Android, iPhone and iPad (Google Wallet is on iOS too).
 
 import 'dart:convert';
 
@@ -25,8 +25,16 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('nothing on an iPhone, which has Apple Wallet instead', (tester) async {
+  testWidgets('on an iPhone or iPad too, beside Apple Wallet (owner, 2026-11-19)', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: GoogleWalletButton(onPressed: () {}))));
+    expect(find.byType(Image), findsOneWidget);
+    expect(GoogleWallet.available, isTrue);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('nothing on the desktop', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: GoogleWalletButton(onPressed: () {}))));
     expect(find.byType(Image), findsNothing);
     debugDefaultTargetPlatformOverride = null;

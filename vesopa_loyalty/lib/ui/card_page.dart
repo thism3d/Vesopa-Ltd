@@ -484,7 +484,7 @@ class _Back extends StatelessWidget {
 }
 
 /// Add to Apple Wallet under the card on an iPhone that has Wallet, and Add
-/// to Google Wallet on Android.
+/// to Google Wallet on Android, iPhone and iPad (where the club issues it).
 ///
 /// Nothing at all anywhere else: no gap, no disabled button. The pass carries
 /// the same code as the card above, and once added it is on the lock screen
@@ -500,9 +500,12 @@ class _AddToWallet extends ConsumerStatefulWidget {
 }
 
 class _AddToWalletState extends ConsumerState<_AddToWallet> {
-  // Android: Google's button, when the club's server can issue the card.
+  // Google's button, when the club's server can issue the card: Android,
+  // iPhone and iPad.
   late final bool _google = GoogleWallet.available && (ref.read(brandProvider).value?.googleWallet ?? false);
-  late final Future<bool> _available = GoogleWallet.available ? Future.value(_google) : AppleWallet.available();
+  // Apple Wallet: iPhone only (asked of PassKit).
+  late final bool _ios = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+  late final Future<bool> _available = _ios ? AppleWallet.available() : Future.value(false);
   var _busy = false;
 
   /// The card is in Apple Wallet already: "Wallet added", and no button to
@@ -515,14 +518,14 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
   @override
   void initState() {
     super.initState();
-    if (!_google) {
+    if (_ios) {
       AppleWallet.contains(_key).then((there) {
         if (mounted && there) setState(() => _inWallet = true);
       });
     }
   }
 
-  /// Android: the server signs the card at Google, Google Wallet saves it.
+  /// The server signs the card at Google, Google Wallet saves it.
   Future<void> _addGoogle() async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -564,82 +567,87 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
     }
   }
 
+  Widget _googleButton() => Stack(
+        alignment: Alignment.center,
+        children: [
+          GoogleWalletButton(onPressed: _busy ? null : _addGoogle),
+          if (_busy)
+            const IgnorePointer(
+              child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator.adaptive(strokeWidth: 2.5)),
+            ),
+        ],
+      );
+
+  Widget _boxed(Widget child) => Padding(
+        padding: const EdgeInsets.only(top: 18),
+        child: Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: widget.maxWidth), child: child)),
+      );
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<bool>(
       future: _available,
       builder: (context, snap) {
-        // An iPad (or an iPhone where Wallet is switched off) cannot take a
-        // pass: say so where the button would be, rather than nothing (owner,
-        // 2026-10-25: "if cannot be added show warning properly").
-        if (snap.data == false && defaultTargetPlatform == TargetPlatform.iOS && !kIsWeb) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        final apple = snap.data == true;
+        final theme = Theme.of(context);
+        final parts = <Widget>[];
+        if (apple && _inWallet) {
+          final on = theme.colorScheme.onSurface;
+          parts.add(Semantics(
+            label: 'Wallet added. Your card is in Apple Wallet.',
+            excludeSemantics: true,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle_rounded, size: 20, color: on.withValues(alpha: 0.85)),
+                const SizedBox(width: 8),
+                Text(
+                  'Wallet added',
+                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: on.withValues(alpha: 0.85)),
+                ),
+              ],
+            ),
+          ));
+        } else if (apple) {
+          parts.add(Stack(
+            alignment: Alignment.center,
+            children: [
+              AppleWalletButton(onPressed: _add, radius: 16),
+              if (_busy && !_google)
+                const IgnorePointer(
+                  child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator.adaptive(strokeWidth: 2.5)),
+                ),
+            ],
+          ));
+        }
+        if (_google) {
+          if (parts.isNotEmpty) parts.add(const SizedBox(height: 12));
+          parts.add(_googleButton());
+        }
+        // An iPad (or an iPhone where Wallet is switched off) cannot take an
+        // Apple pass and the club offers no Google one: say so where the
+        // button would be, rather than nothing (owner, 2026-10-25).
+        if (parts.isEmpty && _ios) {
           final iPad = MediaQuery.sizeOf(context).shortestSide >= 600;
-          final theme = Theme.of(context);
-          return Padding(
-            padding: const EdgeInsets.only(top: 18),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: widget.maxWidth),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.info_outline, size: 20, color: theme.colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      iPad
-                          ? 'Apple Wallet is not available on iPad. Open this app on your iPhone to add your card.'
-                          : 'Apple Wallet is not available on this iPhone, so your card cannot be added to it.',
-                      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                  ),
-                ],
+          return _boxed(Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.info_outline, size: 20, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  iPad
+                      ? 'Apple Wallet is not available on iPad. Open this app on your iPhone to add your card.'
+                      : 'Apple Wallet is not available on this iPhone, so your card cannot be added to it.',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
               ),
-            ),
-          );
+            ],
+          ));
         }
-        if (snap.data != true) return const SizedBox.shrink();
-        if (_inWallet) {
-          final on = Theme.of(context).colorScheme.onSurface;
-          return Padding(
-            padding: const EdgeInsets.only(top: 18),
-            child: Semantics(
-              label: 'Wallet added. Your card is in Apple Wallet.',
-              excludeSemantics: true,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.check_circle_rounded, size: 20, color: on.withValues(alpha: 0.85)),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Wallet added',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: on.withValues(alpha: 0.85)),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-        return Padding(
-          padding: const EdgeInsets.only(top: 18),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: widget.maxWidth),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  if (_google)
-                    GoogleWalletButton(onPressed: _busy ? null : _addGoogle)
-                  else
-                    AppleWalletButton(onPressed: _add, radius: 16),
-                  if (_busy)
-                    const IgnorePointer(
-                      child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator.adaptive(strokeWidth: 2.5)),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        );
+        if (parts.isEmpty) return const SizedBox.shrink();
+        return _boxed(Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: parts));
       },
     );
   }
