@@ -32,7 +32,7 @@ PANELS = {
     # photos on file yet: these are drawn club panels until it sends some.
     "banner": (1500, 500, "THE BLUES  ·  EST. 1882", "LOUGHOR RFC", "Loughor RFC, the Blues, established 1882"),
     "clubhouse": (640, 480, "VILLA FIELD  ·  BELGRAVE ROAD", "THE CLUBHOUSE", "The Loughor RFC clubhouse at Villa Field"),
-    "history": (640, 438, "HONOURS", "WEST WALES CUP 1952-53 CHAMPIONS 1953-54", "Loughor RFC honours: West Wales Cup and West Wales Championship"),
+    "history": (640, 438, "HONOURS", "WEST WALES CUP 1952-53\nWEST WALES CHAMPIONS 1953-54", "Loughor RFC honours: West Wales Cup and West Wales Championship"),
 }
 
 SHARE = {
@@ -130,16 +130,18 @@ def panels():
         size = int(h * 0.16)
         while True:  # the biggest type that fits in three lines
             f = font("Oswald-Bold.ttf", size)
-            words, lines, line = title.split(), [], ""
-            for word in words:
-                test = (line + " " + word).strip()
-                if d.textlength(test, font=f) > room and line:
-                    lines.append(line)
-                    line = word
-                else:
-                    line = test
-            lines.append(line)
-            if size <= 20 or (len(lines) <= 3 and all(d.textlength(x, font=f) <= room for x in lines)):
+            lines = []
+            for part in title.split("\n"):  # a new line in the title always breaks
+                line = ""
+                for word in part.split():
+                    test = (line + " " + word).strip()
+                    if d.textlength(test, font=f) > room and line:
+                        lines.append(line)
+                        line = word
+                    else:
+                        line = test
+                lines.append(line)
+            if size <= 20 or (len(lines) <= 4 and all(d.textlength(x, font=f) <= room for x in lines)):
                 break
             size -= 2
         k = font("PlusJakartaSans-SemiBold.ttf", max(16, int(h * 0.05)))

@@ -90,6 +90,17 @@ class Art:
         # wallpaper show through it. The inside made solid; the soft edge kept.
         r, g, b, a = crest.split()
         self.crest = Image.merge("RGBA", (r, g, b, a.point(lambda v: 255 if v >= 200 else v)))
+        # A crest that is a full square picture with its own background
+        # (Loughor RFC's, 2026-11-19) rather than a shape on nothing. It is
+        # used exactly as supplied; wherever an icon needs a ground, the ground
+        # is the colour of the crest's own edge, so the two meet without a
+        # line, and the crest fills the icon (no white border round it).
+        a = self.crest.split()[3]
+        self.opaque = a.getextrema()[0] == 255
+        rgb = self.crest.convert("RGB")
+        edge = [rgb.getpixel((x, y)) for x in range(0, rgb.width, 8) for y in (1, rgb.height - 2)]
+        edge += [rgb.getpixel((x, y)) for y in range(0, rgb.height, 8) for x in (1, rgb.width - 2)]
+        self.edge = tuple(sum(c[i] for c in edge) // len(edge) for i in range(3))
         self.overlay = venue_dir / "overlay"
         self.store = venue_dir / "store"
         # How far the crest's farthest corner is from its middle, as a
@@ -144,6 +155,8 @@ class Art:
         No gradient and no shadow: a shadow on a transparent icon is a grey
         smudge round the crest on a light wallpaper.
         """
+        if self.opaque and ground:
+            ground, crest_height = self.edge, max(crest_height, size * 0.94)
         canvas = Image.new("RGBA", (size, size), (ground + (255,)) if ground else (0, 0, 0, 0))
         crest = self.crest_h(crest_height)
         canvas.alpha_composite(crest, ((size - crest.width) // 2, (size - crest.height) // 2))
@@ -364,12 +377,24 @@ class Art:
 
         v26 = res / "mipmap-anydpi-v26"
         v26.mkdir(parents=True, exist_ok=True)
+        if self.opaque:
+            # A square crest: the launcher's shape is filled with the crest's
+            # own edge colour, the whole crest inside the safe circle.
+            values = res / "values"
+            values.mkdir(parents=True, exist_ok=True)
+            (values / "ic_launcher_background.xml").write_text(
+                '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+                f'    <color name="ic_launcher_background">#{self.edge[0]:02X}{self.edge[1]:02X}{self.edge[2]:02X}</color>\n'
+                "</resources>\n", encoding="utf-8")
+            background = "@color/ic_launcher_background"
+        else:
+            background = "@android:color/transparent"
         adaptive = (
             '<?xml version="1.0" encoding="utf-8"?>\n'
             "<!-- Written by vesopa_loyalty/tool/make_venue_art.py. The crest on\n"
-            "     nothing: the background layer is transparent. -->\n"
+            "     its ground: transparent, or a square crest's own edge colour. -->\n"
             '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
-            '    <background android:drawable="@android:color/transparent"/>\n'
+            f'    <background android:drawable="{background}"/>\n'
             '    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>\n'
             '    <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>\n'
             "</adaptive-icon>\n"
@@ -469,7 +494,7 @@ class Art:
         self.store.mkdir(parents=True, exist_ok=True)
         save_png(master, self.store / "app-store-icon-1024.png")
         # Play takes a 32-bit PNG: the crest on nothing.
-        save_png(self.icon(512, 512 * 0.88), self.store / "play-icon-512.png")
+        save_png(self.icon(512, 512 * 0.88, self.edge if self.opaque else None), self.store / "play-icon-512.png")
 
         w, h = 1024, 500
         crest_h = h * 0.74
