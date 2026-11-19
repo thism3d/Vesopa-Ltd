@@ -147,6 +147,9 @@ function walletCore({ pool, secret }) {
     if (!brand.hex_background) brand.hex_background = look.club;
     if (!brand.hex_foreground) brand.hex_foreground = '#FFFFFF';
     if (!brand.hex_label) brand.hex_label = look.label || '#F4C7C7';
+    // The club's own Google Wallet profile: class ids, modules, links, place,
+    // callbacks, Smart Tap (venue_looks.js `google`; wallet_google buildPass).
+    if (look.google) brand.google = look.google;
     if (!brand.homepage_url && look.website) brand.homepage_url = look.website;
     if (!brand.support_phone && look.phone) brand.support_phone = look.phone;
     // The club's crest, strip and icon, always (the owner, 2026-10-15: the
@@ -1577,9 +1580,36 @@ function walletRoutes({ pool, broadcast, secret, core }) {
  * unauthenticated — the whole point is that a customer with a camera and no
  * account can reach them.
  */
-function walletPublicRoutes({ pool, secret, core }) {
+function walletPublicRoutes({ pool, secret, core, fetchImpl = fetch }) {
   const router = express.Router();
   const { mint, readBrand, officeForHandle } = core || walletCore({ pool, secret });
+
+  /*
+   * Google's call when a member saves or deletes a pass (the class's
+   * callbackOptions.url; owner, 2026-11-19: the callback on vesopaepos.com,
+   * here at https://backoffice.vesopaepos.com/wallet/google/callback).
+   * Believed only once Google's signatures check out for this issuer; logged
+   * by event, and answered quickly, as Google retries what is not answered.
+   */
+  let googleRoots = null;
+  let googleRootsAt = 0;
+  async function rootKeys() {
+    if (googleRoots && Date.now() - googleRootsAt < 3600e3) return googleRoots;
+    const r = await fetchImpl(G.CALLBACK_KEYS_URL, { signal: AbortSignal.timeout(10000) });
+    googleRoots = ((await r.json()) || {}).keys || [];
+    googleRootsAt = Date.now();
+    return googleRoots;
+  }
+  router.post('/wallet/google/callback', express.text({ type: '*/*', limit: '64kb' }), async (req, res) => {
+    try {
+      const { issuerId } = G.readConfig(process.env);
+      const message = G.verifyCallback(req.body, { issuerId, rootKeys: await rootKeys() });
+      console.log(`[wallet] Google ${message.eventType === 'del' ? 'deleted' : 'saved'} ${message.objectId} (${message.classId}) nonce ${message.nonce || '-'}`);
+      res.status(200).json({ ok: true });
+    } catch (e) {
+      res.status(e.status && e.status < 500 ? e.status : 400).json({ error: e.message });
+    }
+  });
 
   /**
    * The QR target: verify the signed token, build the pass, redirect to Google.
