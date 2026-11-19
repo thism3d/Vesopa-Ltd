@@ -235,9 +235,11 @@ owner=$(v-search-domain-owner {box_domain} mail 2>/dev/null || true)
 mx=$(dig +short MX {box_domain} | sort -n | awk '{{print $2}}' | head -1)
 mxip=$(dig +short "$mx" | tail -1); here=$(curl -fsS https://api.ipify.org 2>/dev/null || true)
 if [ -z "$owner" ]; then echo "  ! {box_domain} is not a mail domain on this box: make {box} where {box_domain}'s mail is hosted ($mx)"
-elif [ -n "$mxip" ] && [ "$mxip" != "$here" ]; then echo "  ! {box_domain}'s mail is delivered to $mx, not this box: make {box} there (a mailbox here would never receive)"
 elif v-list-mail-account "$owner" {box_domain} {local} >/dev/null 2>&1; then v-change-mail-account-password "$owner" {box_domain} {local} "$(cat {pw})" && echo "  ✓ {box}: password set"
-else v-add-mail-account "$owner" {box_domain} {local} "$(cat {pw})" && echo "  ✓ {box} created"; fi
+else v-add-mail-account "$owner" {box_domain} {local} "$(cat {pw})" && echo "  ✓ {box} created on this box (panel user $owner)"; fi
+# The mailbox is on Vesopa Cloud (owner, 2026-11-19: "Vesopa mailbox is also
+# hosted in cloud Vesopa com"); say where the domain's public MX points.
+if [ -n "$mxip" ] && [ "$mxip" != "$here" ]; then echo "  ! note: {box_domain}'s MX is $mx, so mail from outside reaches this mailbox only once the MX points at Vesopa Cloud"; fi
 """, check=False)
     finally:
         ssh(f"rm -f {pw}", check=False)
