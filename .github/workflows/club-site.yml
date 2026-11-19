@@ -5,7 +5,12 @@
 #   club   LoughorRFC or PontardaweRFC
 #   mode   check  what a deploy would change; changes nothing
 #          site   the site, member.<domain>, info@ and contact@ forwarding,
-#                 the club's back-office venue (only adds)
+#                 the club's back-office venue with its starter data, review
+#                 member and Wallet card, Google Wallet pass classes, Vesopa
+#                 accounts and the club's Vesopa mailbox
+#
+# Secret (environment "App Store Connect API"): LOUGHOR_ACCOUNT_PASSWORD, the
+# password for info@loughorrfc.site and loughorrfc@vesopa.com.
 #
 # Runs on main only (the "App Store Connect API" environment, which holds the
 # server login). This repository and its logs are public: the run prints
@@ -63,6 +68,9 @@ jobs:
           SSH_ASKPASS: ${{ runner.temp }}/ssh/askpass
           SSH_ASKPASS_REQUIRE: force
           DISPLAY: ':0'
+          # The club's back-office and Vesopa account password (owner, 2026-11-19).
+          # Goes to the box on stdin, never on a command line, never printed.
+          CLUB_ACCOUNT_PASSWORD: ${{ inputs.club == 'LoughorRFC' && secrets.LOUGHOR_ACCOUNT_PASSWORD || '' }}
         run: python3 tool/deploy_club_site.py "${{ inputs.club }}" "${{ inputs.mode }}"
 
       - name: Close SSH

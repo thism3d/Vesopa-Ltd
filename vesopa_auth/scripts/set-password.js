@@ -77,6 +77,11 @@ const ALLOWED = [
   'm.hammond@metricgroup.co.uk',
   'staff@metricgroup.co.uk',
   'info@vesopa.com',
+  // Loughor RFC's venue login and its Vesopa mailbox: the owner set one
+  // password for both (2026-11-19), delivered by the Club site workflow
+  // from the LOUGHOR_ACCOUNT_PASSWORD secret (tool/deploy_club_site.py).
+  'info@loughorrfc.site',
+  'loughorrfc@vesopa.com',
 ];
 
 async function main() {

@@ -17,8 +17,8 @@
     "contact_last_name": "Support",
     "contact_email": "info@vesopasoftware.com",
     "notes": "Loughor RFC's members' app. Sign-in is for club members only: use the reviewer account in Sign-In Information (email and password). Once signed in: Card shows the member's QR code for the till and Add to Apple Wallet; Activity lists points earned and spent; the bell at the top right opens club news; Venue has the notifications switch; Account has the member's details, sign-out and account deletion. Notifications are sent by the club from its back office, so none may arrive during review. The app sells no digital goods.",
-    "demo_user": "",
-    "demo_password": ""
+    "demo_user": "test@test.com",
+    "demo_password": "123456"
   },
   "testflight": {
     "internal_group": "Vesopa team",

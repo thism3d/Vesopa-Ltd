@@ -65,6 +65,33 @@ const LOOKS = {
     // Drawn by vesopa_loyalty/tool/make_venue_art.py into public/.
     art: '/assets/venues/pontardawe-rfc/',
   },
+  'loughor-rfc': {
+    // Loughor RFC, the Blues (owner, 2026-11-18/19): royal blue and gold from
+    // the club's own crest (LoughorRFC/brand), set like Pontardawe's.
+    club: '#1238A8', deep: '#071A52', glow: '#2F62E0', font: 'montserrat',
+    // The Wallet card's labels: the crest's gold.
+    label: '#F5C518',
+    legal: {
+      name: 'Loughor RFC (1882) Limited',
+      number: '13489973',
+      office: 'Villa Field, Belgrave Road, Loughor, Swansea, SA4 6RF',
+      terms: 'https://loughorrfc.site/ordering-terms',
+      privacy: 'https://loughorrfc.site/privacy',
+      refunds: 'https://loughorrfc.site/ordering-terms#refunds',
+      contact: 'https://loughorrfc.site/contact',
+    },
+    menu: {
+      page: '#060B1F', card: '#0D1533', ink: '#EEF2FF', inkSoft: '#C3CCEA',
+      photo: '/assets/venues/loughor-rfc/wallet-hero.png',
+      logo: '/assets/venues/loughor-rfc/crest.png',
+    },
+    name: 'Loughor RFC',
+    website: 'https://loughorrfc.site', phone: '01792 894109', email: 'info@loughorrfc.site',
+    ios_app: 'https://member.loughorrfc.site/',
+    android_app: 'https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc',
+    web: 'node',
+    art: '/assets/venues/loughor-rfc/',
+  },
 };
 
 const HEX = /^#[0-9a-fA-F]{6}$/;

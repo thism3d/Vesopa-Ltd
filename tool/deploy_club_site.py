@@ -15,9 +15,23 @@ SSH_ASKPASS, as go-server.yml does) or the owner's PC. Plain ssh and tar.
      printed, the admin setup code kept on the box), npm ci, pm2 by name
   3. scripts/mail-forward.sh: info@ and contact@ forwarded to club.json
      email_forwards_to
-  4. tool/club_venue.js: the club's venue in the back office (only adds)
-  5. when step 2 gave the back office a new member host, restarts the back
-     office by name so it reads it (never `pm2 restart all`)
+  4. tool/club_venue.js with <club>/backoffice.json: the club's venue in the
+     back office (only adds): its login with the owner's password, every
+     module, Go seats, the members' app, a starter bar and kitchen, the online
+     menu, tickets, the app stores' review member and the Wallet card
+  5. the club's Wallet artwork and icons into the back office, and its app in
+     the back office .env lists (APNS_TOPICS, LOYALTY_IOS_APPS,
+     GOOGLE_WALLET_ORIGINS) where those are set
+  6. the back office restarted by name when its .env changed (never
+     `pm2 restart all`), then the club's Google Wallet pass classes made at
+     Google
+  7. Vesopa accounts (backoffice.json accounts.vesopa) with the owner's
+     password and every venue application, and the Vesopa mailbox
+     (accounts.mailbox) on this box when its domain's mail is here
+
+The password comes from CLUB_ACCOUNT_PASSWORD (the workflow's secret for the
+club). It goes to the box on stdin into a mode-600 file that is deleted at the
+end; it is never on a command line or printed.
 
 The site refuses to deploy without the club's own crest artwork in
 public/img (made by website/tool/make_images.py from <club>/brand/crest.png).
@@ -37,6 +51,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 HOST = os.environ.get("VESOPA_SSH_HOST", "root@34.63.118.67")
 USER = "vesopasoftware"
 BACKOFFICE = f"/home/{USER}/web/backoffice.vesopaepos.com/private/nodeapp"
+AUTH = f"/home/{USER}/web/auth.vesopa.com/private/nodeapp"
+AUTH_SCRIPTS = ["create-person.js", "set-password.js", "grant-venue-apps.js"]
 PM2 = f"su - {USER} -c 'PM2_HOME=/home/{USER}/.pm2 pm2 {{}}'"
 NEEDED = ["img/crest-512.png", "img/icon-192.png", "img/icon-512.png", "img/og-home.jpg", "favicon.ico"]
 
@@ -76,6 +92,17 @@ def bundle(site):
         info = tarfile.TarInfo("club_venue.js")
         info.size = len(venue)
         tar.addfile(info, io.BytesIO(venue))
+        data = site.parent / "backoffice.json"
+        if data.is_file():
+            tar.add(data, arcname="backoffice.json")
+        for name in AUTH_SCRIPTS:
+            tar.add(ROOT / "vesopa_auth" / "scripts" / name, arcname=f"auth/{name}")
+        slug = json.loads((site / "content" / "club.json").read_text(encoding="utf-8")).get("slug", "")
+        server = ROOT / "vesopa_server"
+        for src, dest in [(server / "assets" / "wallet" / "looks" / slug, "looks"),
+                          (server / "public" / "assets" / "venues" / slug, "venue-assets")]:
+            if slug and src.is_dir():
+                tar.add(src, arcname=dest)
     return buf.getvalue()
 
 
@@ -109,20 +136,87 @@ def main():
     print(f"▶ mail: info@ and contact@{domain} to {club['email_forwards_to']}", flush=True)
     ssh(f"cd {remote} && bash mail-forward.sh {flag} '{club['email_forwards_to']}' '{club['email']}'", check=False)
 
-    print(f"▶ back office venue {club.get('slug', '')}", flush=True)
-    ssh(f"cd {BACKOFFICE} && node {remote}/club_venue.js {remote}/site/content/club.json {flag}")
+    slug = club.get("slug", "")
+    data = json.loads((club_dir / "backoffice.json").read_text(encoding="utf-8")) if (club_dir / "backoffice.json").is_file() else {}
+    password = os.environ.get("CLUB_ACCOUNT_PASSWORD", "")
+    pw = f"{remote}/.pw"
+    if password:
+        ssh(f"umask 077 && cat > {pw}", data=password.encode())
+    elif data.get("accounts"):
+        print("  ! no CLUB_ACCOUNT_PASSWORD: the logins keep their passwords (new ones get a random one)")
+    try:
+        print(f"▶ back office venue {slug}", flush=True)
+        data_arg = f"{remote}/backoffice.json" if data else ""
+        ssh(f"cd {BACKOFFICE} && CLUB_PASSWORD_FILE={pw} node {remote}/club_venue.js {remote}/site/content/club.json {data_arg} {flag}")
 
-    if check:
-        print("check only: nothing changed.")
-        return
-    after = ssh(f"grep -c '{club['web']['members'].split('//', 1)[1]}=' {BACKOFFICE}/.env || true", check=False).strip()
-    if before != after:
-        print("▶ back office: reload for the new member host", flush=True)
-        ssh(PM2.format("restart backoffice.vesopaepos.com --update-env") + " | tail -2")
+        print("▶ back office: the club's artwork and app", flush=True)
+        app_id = data.get("app_id") or club["web"].get("android_package", "")
+        members = club["web"]["members"].rstrip("/")
+        site_url = club["web"]["site"].rstrip("/")
+        env_script = f"""
+set -e
+E={BACKOFFICE}/.env
+changed=0
+addto() {{ # addto KEY VALUE: append to a comma list that is already set
+  if grep -q "^$1=" "$E"; then
+    if grep -E "^$1=" "$E" | grep -qF "$2"; then echo "  ✓ $1 has $2"
+    elif [ "{flag}" = "--check" ]; then echo "  ! would add $2 to $1"
+    else sed -i "s|^$1=\\(.*\\)$|$1=\\1,$2|" "$E"; echo "  ▶ $1 gains $2"; changed=1; fi
+  else echo "  - $1 not set on this server: skipped"; fi
+}}
+addto APNS_TOPICS "{slug}={app_id}"
+addto LOYALTY_IOS_APPS "G238FR2ZC9.{app_id}"
+addto GOOGLE_WALLET_ORIGINS "{members}"
+addto GOOGLE_WALLET_ORIGINS "{site_url}"
+if [ "{flag}" != "--check" ]; then
+  if [ -d {remote}/looks ]; then mkdir -p {BACKOFFICE}/assets/wallet/looks/{slug} && cp -a {remote}/looks/. {BACKOFFICE}/assets/wallet/looks/{slug}/; fi
+  if [ -d {remote}/venue-assets ]; then mkdir -p {BACKOFFICE}/public/assets/venues/{slug} && cp -a {remote}/venue-assets/. {BACKOFFICE}/public/assets/venues/{slug}/; fi
+  chown -R {USER}:{USER} {BACKOFFICE}/assets/wallet/looks {BACKOFFICE}/public/assets/venues 2>/dev/null || true
+  echo "  ✓ Wallet artwork and icons in place"
+fi
+echo "changed=$changed"
+"""
+        out = ssh(env_script) if slug and app_id else ""
+
+        if check:
+            print("check only: nothing changed.")
+            return
+        after = ssh(f"grep -c '{members.split('//', 1)[1]}=' {BACKOFFICE}/.env || true", check=False).strip()
+        if before != after or "changed=1" in out:
+            print("▶ back office: restart by name for its new settings", flush=True)
+            ssh(PM2.format("restart backoffice.vesopaepos.com --update-env") + " | tail -2")
+            ssh("sleep 6", check=False)
+        if data.get("wallet"):
+            print("▶ Google Wallet: the club's pass classes", flush=True)
+            ssh(f"cd {BACKOFFICE} && node {remote}/club_venue.js {remote}/site/content/club.json {data_arg} --wallet", check=False)
+
+        accounts = data.get("accounts") or {}
+        for email in accounts.get("vesopa", []):
+            print(f"▶ Vesopa account {email}", flush=True)
+            ssh(f"cd {AUTH} && for f in {' '.join(AUTH_SCRIPTS)}; do cp {remote}/auth/$f scripts/$f; done && chown {USER}:{USER} scripts/*.js && "
+                f"node scripts/create-person.js '{email}' '{club['name']}'"
+                + (f" && VESOPA_SET_PASSWORD_FILE={pw} node scripts/set-password.js '{email}'" if password else "")
+                + f" && node scripts/grant-venue-apps.js '{email}'", check=False)
+        box = accounts.get("mailbox")
+        if box and password:
+            local, domain = box.split("@", 1)
+            print(f"▶ mailbox {box}", flush=True)
+            ssh(f"""export PATH=$PATH:/usr/local/hestia/bin
+owner=$(v-search-domain-owner {domain} mail 2>/dev/null || true)
+mx=$(dig +short MX {domain} | sort -n | awk '{{print $2}}' | head -1)
+mxip=$(dig +short "$mx" | tail -1); here=$(curl -fsS https://api.ipify.org 2>/dev/null || true)
+if [ -z "$owner" ]; then echo "  ! {domain} is not a mail domain on this box: make {box} where {domain}'s mail is hosted ($mx)"
+elif [ -n "$mxip" ] && [ "$mxip" != "$here" ]; then echo "  ! {domain}'s mail is delivered to $mx, not this box: make {box} there (a mailbox here would never receive)"
+elif v-list-mail-account "$owner" {domain} {local} >/dev/null 2>&1; then v-change-mail-account-password "$owner" {domain} {local} "$(cat {pw})" && echo "  ✓ {box}: password set"
+else v-add-mail-account "$owner" {domain} {local} "$(cat {pw})" && echo "  ✓ {box} created"; fi
+""", check=False)
+    finally:
+        ssh(f"rm -f {pw}", check=False)
+
     print("▶ checks", flush=True)
-    ssh("sleep 4; for u in https://%s/ https://%s/club https://%s/sitemap.xml %s/; do "
+    ssh("sleep 4; for u in https://%s/ https://%s/club https://%s/sitemap.xml %s/ https://menu.vesopa.com/api/public/dinein/venue/%s; do "
         "curl -sS -o /dev/null -w \"  %%{http_code}  $u\\n\" \"$u\" || echo \"  ---  $u\"; done"
-        % (domain, domain, domain, club["web"]["members"]), check=False)
+        % (domain, domain, domain, club["web"]["members"], slug), check=False)
 
 
 if __name__ == "__main__":
