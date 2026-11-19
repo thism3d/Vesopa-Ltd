@@ -237,6 +237,20 @@ def find_app(c, bundle_id):
     return apps[0] if apps else None
 
 
+def similar(c, v):
+    """The apps this key can see whose name is like the venue's, with their
+    bundle ids: an app made by hand under another bundle id shows up here."""
+    word = v["name"].split()[0].lower()
+    try:
+        seen = c.all("/v1/apps", **{"fields[apps]": "name,bundleId,sku", "limit": "200"})
+    except AppleError as e:
+        note(f"  (could not list the apps: {e.detail()})")
+        return
+    near = [a for a in seen if word in str(a["attributes"].get("name", "")).lower()]
+    note(f"  {len(seen)} app(s) visible to this key; named like \"{v['name']}\": "
+         + (", ".join(f"{a['attributes'].get('name')} = {a['attributes'].get('bundleId')}" for a in near) or "none"))
+
+
 # ---- status -------------------------------------------------------------------
 
 
@@ -247,6 +261,7 @@ def cmd_status(venue_name):
     app = find_app(c, v["app_id"])
     if not app:
         note(f"No app record for {v['app_id']}.")
+        similar(c, v)
         return
     a = app["attributes"]
     note(f"App: {a.get('name')}  Apple ID {app['id']}  bundle {a.get('bundleId')}  SKU {a.get('sku')}  "
