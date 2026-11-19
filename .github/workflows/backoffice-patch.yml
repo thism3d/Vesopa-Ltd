@@ -33,12 +33,12 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Which server app
+        description: Which server app (website = vesopaepos.com, files under vesopa_web)
         type: choice
-        options: [staging, live]
+        options: [staging, live, website]
         default: staging
       files:
-        description: Files under vesopa_server to copy, space-separated (empty = settings only)
+        description: Files under vesopa_server (vesopa_web for website) to copy, space-separated (empty = settings only)
         required: false
         default: src/loyalty_app.js
       settings:
@@ -83,15 +83,21 @@ jobs:
           CONFIRM: ${{ inputs.confirm }}
           SSHPW: ${{ secrets.VESOPA_SSH_PASSWORD }}
         run: |
-          if [ "$TARGET" = live ] && [ "$CONFIRM" != deploy ]; then
+          if [ "$TARGET" != staging ] && [ "$CONFIRM" != deploy ]; then
             echo "::error::The live server needs 'deploy' typed in the confirm box."; exit 1
           fi
           [ -n "$SSHPW" ] || { echo "::error::VESOPA_SSH_PASSWORD is not set in the 'App Store Connect API' environment."; exit 1; }
+          src=vesopa_server
           case "$TARGET" in
             live)    domain=backoffice.vesopaepos.com ;;
             staging) domain=staging.backoffice.vesopaepos.com ;;
+            # The public website (owner, 2026-11-19: vesopaepos.com's product
+            # listings and indexing), on the same box since the move off the
+            # old AWS one (tool/migrate_old_box.py): pm2 "vesopaepos.com".
+            website) domain=vesopaepos.com; src=vesopa_web ;;
           esac
           {
+            echo "SRC=$src"
             echo "DOMAIN=$domain"
             echo "PM2_APP=$domain"
             echo "REMOTE_APP=/home/$APP_USER/web/$domain/private/nodeapp"
@@ -113,8 +119,8 @@ jobs:
           ssh -n "$SERVER" "test -d '$REMOTE_APP'" || { echo "::error::$REMOTE_APP not found on the server"; exit 1; }
           : > "$RUNNER_TEMP/to-copy"
           for f in $FILES; do
-            case "$f" in *..*|/*) echo "::error::Not a path inside vesopa_server: $f"; exit 1;; esac
-            local_path="vesopa_server/$f"
+            case "$f" in *..*|/*) echo "::error::Not a path inside $SRC: $f"; exit 1;; esac
+            local_path="$SRC/$f"
             [ -f "$local_path" ] || { echo "::error::$local_path is not in the repository"; exit 1; }
             new=$(git rev-parse "HEAD:$local_path")
             last=$(git log -1 --format=%H -- "$local_path")
@@ -168,7 +174,7 @@ jobs:
 
           while read -r f; do
             [ -n "$f" ] || continue
-            ssh "$SERVER" "cat > '$app/$f.new' && chown $APP_USER:$APP_USER '$app/$f.new' && mv '$app/$f.new' '$app/$f'" < "vesopa_server/$f"
+            ssh "$SERVER" "cat > '$app/$f.new' && chown $APP_USER:$APP_USER '$app/$f.new' && mv '$app/$f.new' '$app/$f'" < "$SRC/$f"
             echo "copied $f"
           done < "$RUNNER_TEMP/to-copy"
 

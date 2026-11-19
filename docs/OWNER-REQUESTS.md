@@ -73,7 +73,11 @@ secrets only).
 
 | Ask (owner, 2026-11-19, "quick tasks", priority) | Status |
 | --- | --- |
-| Google Search Console: product snippets missing "aggregateRating" and "review"; merchant listings missing "hasMerchantReturnPolicy" and "shippingDetails" in offers | in progress |
-| Merchant Center: products "Not approved: Missing shipping weight [shipping_weight]" | in progress |
-| Page indexing: /blog?tag=… pages (47) "Alternate page with proper canonical", www.vesopaepos.com, /trial?period=1: fix the tag URLs and listings so the right pages are indexed | in progress |
+| Google Search Console: merchant listings missing "hasMerchantReturnPolicy" and "shippingDetails" | each product's markup has its delivery (free from UK stock; standard £114 or DHL express £276 with VAT from the supplier) and the 14-day returns (hardware_catalogue.js productLd) |
+| Product snippets missing "aggregateRating" and "review" | left out on purpose: only real customer reviews may be marked up (made-up ones break Google's rules); optional, the products still show |
+| Merchant Center: "Missing shipping weight" | each product now states its own shipping cost, so no weight-based rate is needed; weights given where the supplier states them. The 15" kitchen screen and the kiosk have no known weight: if the account's shipping is weight-based, those two need a weight from the owner |
+| Page indexing: /blog?tag=… (47) "Alternate page with proper canonical" | each tag is now its own page /blog/tag/<tag> (self-canonical, in the sitemap); the old ?tag= links 301 there; blog ?kind= and ?page= pages are their own canonical |
+| www.vesopaepos.com | 301 to vesopaepos.com |
+| /trial?period=1 | correct as it is: a version of /trial, which is the page to index |
+| Deploy route | Back office - patch, target "website" (vesopa_web files, checked against git, backed up, health-checked) |
 
