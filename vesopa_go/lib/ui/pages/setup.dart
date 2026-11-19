@@ -25,6 +25,7 @@ import '../../data/models.dart';
 import '../../data/session.dart';
 import '../../modes/device_mode.dart';
 import '../theme.dart';
+import '../tv.dart';
 
 const _orange = Color(0xFFFF9F0A); // Apple's system orange
 const _blue = Color(0xFF0A84FF); // Apple's system blue
@@ -175,26 +176,34 @@ class _SetupPageState extends ConsumerState<SetupPage> with TickerProviderStateM
                       ])),
                       SizedBox(height: wide ? 32 : 24),
                       rise(1, label('BESIDE YOUR TILLS')),
+                      // A TV is a kitchen screen or a customer display only
+                      // (owner, 2026-11-19): no till, nothing on its own.
                       if (wide)
                         IntrinsicHeight(
                           child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                            Expanded(child: rise(1, epos)),
-                            const SizedBox(width: 16),
+                            if (!GoDevice.isTv) ...[
+                              Expanded(child: rise(1, epos)),
+                              const SizedBox(width: 16),
+                            ],
                             Expanded(child: rise(2, kitchen)),
                             const SizedBox(width: 16),
                             Expanded(child: rise(3, display)),
                           ]),
                         )
                       else ...[
-                        rise(1, epos),
-                        const SizedBox(height: 12),
+                        if (!GoDevice.isTv) ...[
+                          rise(1, epos),
+                          const SizedBox(height: 12),
+                        ],
                         rise(2, kitchen),
                         const SizedBox(height: 12),
                         rise(3, display),
                       ],
-                      const SizedBox(height: 28),
-                      rise(4, label('NO TILLS')),
-                      rise(4, own),
+                      if (!GoDevice.isTv) ...[
+                        const SizedBox(height: 28),
+                        rise(4, label('NO TILLS')),
+                        rise(4, own),
+                      ],
                       const SizedBox(height: 28),
                       rise(5, Center(
                         child: TextButton(
@@ -265,7 +274,7 @@ class _AnimatedModeChooserState extends State<AnimatedModeChooser> with TickerPr
 
     const green = Color(0xFF30D158); // Apple's system green
     final cards = [
-      for (final m in DeviceMode.values)
+      for (final m in DeviceMode.available)
         _ModeCard(
           key: ValueKey('mode-${m.name}'),
           scene: switch (m) {

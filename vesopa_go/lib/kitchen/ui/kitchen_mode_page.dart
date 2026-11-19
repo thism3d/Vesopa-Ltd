@@ -456,7 +456,10 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
     final done = board.completed(profile);
     final orders = inbox.orders;
     final t = Theme.of(context).textTheme;
-    final phone = MediaQuery.sizeOf(context).shortestSide < 600;
+    // A 1080p TV is 960x540 points, as small as a phone across, but it hangs
+    // on a wall and has a remote, not a thumb: the wall screen's grid, never
+    // the phone's swipe list (Play's Android TV pictures, 2026-11-19).
+    final phone = MediaQuery.sizeOf(context).shortestSide < 600 && !GoDevice.isTv && !GoDevice.remote.value;
 
     Widget body;
     if (_problem != null && board.tickets.isEmpty) {
@@ -995,14 +998,14 @@ class _ClippedState extends State<_Clipped> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                   decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(99)),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.unfold_more_rounded, size: 16, color: Colors.white),
-                    SizedBox(width: 4),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.unfold_more_rounded, size: 16, color: Colors.white),
+                    const SizedBox(width: 4),
                     Flexible(
-                      child: Text('More · tap to see all',
+                      child: Text(GoDevice.remote.value ? 'More · press OK to see all' : 'More · tap to see all',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
                     ),
                   ]),
                 ),

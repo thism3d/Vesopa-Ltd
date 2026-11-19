@@ -1,9 +1,10 @@
+// ignore_for_file: invalid_use_of_visible_for_testing_member
 // Google Play's Android TV screenshots for Vesopa Go: the app's own TV
 // screens, drawn by Flutter at 1920x1080 (a 1080p television at xhdpi, 960x540
 // points), with the Roboto a TV draws in and the app's own icons.
 //
 //   TV_SHOTS_FONTS=/usr/share/fonts/truetype/roboto \
-//     flutter test --update-goldens store_shots/tv_shots_test.dart
+//     flutter test store_shots/tv_shots_test.dart
 //
 // Writes store_shots/out/NN-name.png. Kept out of test/ so the ordinary test
 // run never compares against these. Run by .github/workflows/go-tv-shots.yml,
@@ -11,10 +12,13 @@
 // tvScreenshots.
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -36,7 +40,7 @@ import 'package:vesopa_go/ui/tv.dart';
 
 const _shot = ValueKey('tv-shot');
 
-/// Roboto (every .ttf under TV_SHOTS_FONTS named Roboto-<weight>.ttf) and the
+/// Roboto (every .ttf under TV_SHOTS_FONTS named `Roboto-<weight>.ttf`) and the
 /// Material icons from the Flutter SDK; without them a test draws boxes.
 Future<void> _loadFonts() async {
   final dir = Platform.environment['TV_SHOTS_FONTS'];
@@ -50,10 +54,21 @@ Future<void> _loadFonts() async {
       .where((f) => RegExp(r'/Roboto-(Thin|Light|Regular|Medium|Bold|Black)\.ttf$').hasMatch(f.path))
       .toList();
   if (files.isEmpty) throw StateError('No Roboto-*.ttf under $dir');
+  // Text that names no family (a button's own style) is drawn in the
+  // device's: Roboto on a TV, the block test font in a test. Roboto under
+  // the test font's name too, so it is Roboto here as well.
+  final fallbacks = [FontLoader('Ahem'), FontLoader('FlutterTest')];
   for (final f in files) {
-    roboto.addFont(Future.value(ByteData.sublistView(f.readAsBytesSync())));
+    final bytes = ByteData.sublistView(f.readAsBytesSync());
+    roboto.addFont(Future.value(bytes));
+    for (final l in fallbacks) {
+      l.addFont(Future.value(bytes));
+    }
   }
   await roboto.load();
+  for (final l in fallbacks) {
+    await l.load();
+  }
   final sdk = Platform.environment['FLUTTER_ROOT'] ?? '';
   final icons = File('$sdk/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf');
   if (icons.existsSync()) {
@@ -94,7 +109,15 @@ Future<void> _save(WidgetTester tester, String name) async {
   debugDisableShadows = false;
   try {
     await tester.pump();
-    await expectLater(find.byKey(_shot), matchesGoldenFile('out/$name.png'));
+    // At the TV's own pixels (1920x1080), not its points.
+    final boundary = tester.renderObject<RenderRepaintBoundary>(find.byKey(_shot));
+    await tester.runAsync(() async {
+      final image = await boundary.toImage(pixelRatio: tester.view.devicePixelRatio);
+      final png = await image.toByteData(format: ui.ImageByteFormat.png);
+      File('store_shots/out/$name.png')
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(png!.buffer.asUint8List());
+    });
   } finally {
     debugDisableShadows = true;
   }

@@ -91,17 +91,20 @@ class Play:
             data = json.dumps(body).encode()
         req = urllib.request.Request(url, data=data, method=method,
                                      headers={"Authorization": f"Bearer {self.token}", "Content-Type": ctype})
-        try:
-            with urllib.request.urlopen(req, timeout=600) as r:
-                raw = r.read()
-                return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode(errors="replace")
+        # Google's 503 "The service is currently unavailable" and 429 pass in
+        # a moment (2026-11-19: one cost Go 1.2.70 its build number): try
+        # again, up to four times, before giving up.
+        for wait in (5, 15, 30, 60, None):
             try:
-                detail = json.loads(detail)["error"]["message"]
-            except (ValueError, KeyError, TypeError):
-                pass
-            raise PlayError(f"{e.code}: {detail}") from None
+                with urllib.request.urlopen(req, timeout=600) as r:
+                    raw = r.read()
+                    return json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as e:
+                if e.code in (429, 500, 502, 503, 504) and wait is not None:
+                    print(f"   ({e.code} from Google Play; trying again in {wait}s)", file=sys.stderr)
+                    time.sleep(wait)
+                    continue
+                raise_play(e)
 
     def edit(self):
         return self.call("POST", f"{API}/{self.package}/edits", {})["id"]
@@ -116,6 +119,16 @@ class Play:
                 raise
             self.call("POST", f"{API}/{self.package}/edits/{edit}:commit?changesNotSentForReview=true")
             print("   committed; send the changes for review in Play Console > Publishing overview")
+
+
+def raise_play(e):
+    """A Play API refusal as a PlayError with Google's own message."""
+    detail = e.read().decode(errors="replace")
+    try:
+        detail = json.loads(detail)["error"]["message"]
+    except (ValueError, KeyError, TypeError):
+        pass
+    raise PlayError(f"{e.code}: {detail}") from None
 
 
 class PlayError(Exception):

@@ -45,7 +45,7 @@ jobs:
           TV_SHOTS_FONTS: /usr/share/fonts/truetype/roboto
         run: |
           flutter pub get
-          flutter test --update-goldens store_shots/tv_shots_test.dart
+          flutter test store_shots/tv_shots_test.dart
           mkdir -p store/screenshots/android-tv
           rm -f store/screenshots/android-tv/*.png
           cp store_shots/out/*.png store/screenshots/android-tv/
