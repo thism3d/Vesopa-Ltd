@@ -360,7 +360,7 @@ def main():
                     print("     A Wear OS testing track is made in Play Console > Test and release > Testing >"
                           " Closed testing > Create track, form factor Wear OS; or give --track one Play has.")
 
-    if only in ("phone", "wear", "apps"):
+    if only in ("phone", "wear", "tv", "apps"):
         sys.exit(1 if failed else 0)
     print("Store listing:")
     try:
