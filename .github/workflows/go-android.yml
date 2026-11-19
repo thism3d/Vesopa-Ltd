@@ -41,6 +41,11 @@ on:
         # On by default (owner, 2026-11-17: "go.vesopa.com/install why not
         # transferring to the website?"): every release reaches the installer.
         default: true
+      part:
+        description: Which bundles go to Play (tv = only the Android TV bundle onto tv:<track>, no phone release, listing or installer)
+        type: choice
+        options: [all, tv]
+        default: all
       promote_code:
         description: With mode promote, the version code already in Play to move onto the track (no build)
         required: false
@@ -219,7 +224,7 @@ jobs:
       # The same APK on go.vesopa.com/install, the website installer
       # (vesopa_go/tool/publish_install.py, over SSH as go-site.yml does it).
       - name: go.vesopa.com/install
-        if: inputs.install_page && inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.install_page && inputs.part != 'tv' && inputs.mode != 'listing' && inputs.mode != 'promote'
         env:
           VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
         run: |
@@ -241,6 +246,11 @@ jobs:
           if [ "$MODE" = "listing" ]; then set -- "$@" --listing; fi
           [ -n "$TRACK" ] && set -- "$@" --track "$TRACK"
           ok=0
+          if [ "${{ inputs.part }}" = "tv" ]; then
+            # Only the Android TV release (owner, 2026-11-19): the phone
+            # tracks and the listing are left as they are.
+            exec "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@" --only tv
+          fi
           if [ "$MODE" = "full" ]; then
             # The phone bundle and, where there is one, the TV's, each its own edit.
             "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@" --only apps || ok=1
