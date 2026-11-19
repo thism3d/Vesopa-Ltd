@@ -55,7 +55,8 @@ function refresh(key) {
 /** The last copy, at once; a fresh one is fetched behind it when this one is old. */
 function get(key) {
   const c = cache[key];
-  if (Date.now() - c.at > EVERY) refresh(key);
+  // VENUE_API_OFF (the tests): only what was set, never the live back office.
+  if (!process.env.VENUE_API_OFF && Date.now() - c.at > EVERY) refresh(key);
   return c.data;
 }
 
