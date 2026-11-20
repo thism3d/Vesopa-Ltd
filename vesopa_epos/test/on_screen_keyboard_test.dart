@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vesopa_epos/ui/theme.dart';
 import 'package:vesopa_epos/ui/widgets/on_screen_keyboard.dart';
 
@@ -39,63 +43,77 @@ void main() {
     ),
   );
 
+  // Text: the iPad-style keyboard docked along the bottom (keyboard_dock.dart).
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    KeyboardDock.instance.reset();
+  });
+
+  Finder key(String label) => find.descendant(of: find.byType(Overlay), matching: find.text(label)).last;
+
   group('it fits', () {
-    // 640 is a narrow dialog on a small till; 1920 is the common panel. Nothing
-    // in between may overflow, and neither may either end.
+    // 520 is a small panel; 1920 the common one. Nothing may overflow.
     for (final width in const [520.0, 640.0, 800.0, 1024.0, 1280.0, 1920.0]) {
       testWidgets('nothing overflows at ${width.toInt()}px', (tester) async {
-        tester.view.physicalSize = Size(width + 40, 900);
+        tester.view.physicalSize = Size(width, 900);
         tester.view.devicePixelRatio = 1.0;
         addTearDown(tester.view.reset);
 
         await tester.pumpWidget(host(TextEditingController(), width: width));
         await tester.pumpAndSettle();
 
+        expect(find.text('q'), findsOneWidget);
         expect(tester.takeException(), isNull);
       });
     }
 
-    testWidgets('the symbol layer fits too', (tester) async {
-      await tester.pumpWidget(host(TextEditingController(), width: 640));
-      await tester.tap(find.text('123'));
-      await tester.pumpAndSettle();
+    for (final layout in KeyboardLayout.values) {
+      testWidgets('the ${layout.name} keyboard fits, on every page', (tester) async {
+        tester.view.physicalSize = const Size(1366, 768);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(host(TextEditingController()));
+        await tester.pumpAndSettle();
+        unawaited(KeyboardDock.instance.setLayout(layout));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.tap(key('.?123'));
+        await tester.pumpAndSettle();
+        expect(find.text('ABC'), findsWidgets);
+        await tester.tap(key('#+='));
+        await tester.pumpAndSettle();
+        expect(find.text('€'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
 
-      expect(find.text('abc'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('a long submit label does not push the row out', (tester) async {
+    testWidgets('a long return label does not push the row out', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: buildPosTheme(Brightness.light),
           home: Scaffold(
-            body: SizedBox(
-              width: 560,
-              child: OnScreenKeyboard(
-                controller: TextEditingController(),
-                submitLabel: 'Cancel check',
-                onSubmit: () {},
-              ),
+            body: OnScreenKeyboard(
+              controller: TextEditingController(),
+              submitLabel: 'Cancel check',
+              onSubmit: () {},
             ),
           ),
         ),
       );
       await tester.pumpAndSettle();
+      expect(find.text('Cancel check'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });
 
   group('typing', () {
-    testWidgets('a controller that was never focused still types', (
-      tester,
-    ) async {
-      // The state every one of these dialogs opens in. The naive
-      // `replaceRange(selection.start, ...)` throws here, because start is -1.
+    testWidgets('a controller that was never focused still types', (tester) async {
       final controller = TextEditingController();
       await tester.pumpWidget(host(controller));
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(InkWell, 'h'));
-      await tester.tap(find.widgetWithText(InkWell, 'i'));
+      await tester.tap(key('h'));
+      await tester.tap(key('i'));
       await tester.pump();
 
       expect(controller.text, 'hi');
@@ -105,75 +123,187 @@ void main() {
     testWidgets('shift latches for one letter, then releases', (tester) async {
       final controller = TextEditingController();
       await tester.pumpWidget(host(controller));
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.arrow_upward));
+      await tester.tap(find.bySemanticsLabel('Shift').first);
       await tester.pump();
-      await tester.tap(find.widgetWithText(InkWell, 'A'));
+      await tester.tap(key('A'));
       await tester.pump();
-      await tester.tap(find.widgetWithText(InkWell, 'b'));
+      await tester.tap(key('b'));
       await tester.pump();
 
       expect(controller.text, 'Ab');
     });
 
-    testWidgets('a second tap locks caps until it is turned off', (
-      tester,
-    ) async {
+    testWidgets('a second tap locks caps until it is turned off', (tester) async {
       final controller = TextEditingController();
       await tester.pumpWidget(host(controller));
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.arrow_upward));
+      await tester.tap(find.bySemanticsLabel('Shift').first);
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_upward));
+      await tester.tap(find.bySemanticsLabel('Shift').first);
       await tester.pump();
-
-      await tester.tap(find.widgetWithText(InkWell, 'A'));
-      await tester.pump();
-      await tester.tap(find.widgetWithText(InkWell, 'B'));
+      await tester.tap(key('A'));
+      await tester.tap(key('B'));
       await tester.pump();
       expect(controller.text, 'AB');
 
-      await tester.tap(find.byIcon(Icons.keyboard_capslock));
+      await tester.tap(find.bySemanticsLabel('Shift').first);
       await tester.pump();
-      await tester.tap(find.widgetWithText(InkWell, 'c'));
+      await tester.tap(key('c'));
       await tester.pump();
       expect(controller.text, 'ABc');
     });
 
-    testWidgets('backspace removes the last character, and stops at empty', (
-      tester,
-    ) async {
+    testWidgets('a capital starts each sentence where the field wants one, and two spaces type a full stop', (tester) async {
+      final controller = TextEditingController();
+      await tester.pumpWidget(MaterialApp(
+        theme: buildPosTheme(Brightness.light),
+        home: Scaffold(body: OnScreenKeyboard(controller: controller, autoCapitalise: true)),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(key('H'));
+      await tester.pump();
+      await tester.tap(key('i'));
+      await tester.tap(find.bySemanticsLabel('space'));
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('space'));
+      await tester.pump();
+      await tester.tap(key('O'));
+      await tester.pump();
+      await tester.tap(key('k'));
+      await tester.pump();
+      expect(controller.text, 'Hi. Ok');
+    });
+
+    testWidgets('backspace removes the last character, and stops at empty', (tester) async {
       final controller = TextEditingController(text: 'ab');
       await tester.pumpWidget(host(controller));
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.backspace_outlined));
+      final back = find.bySemanticsLabel('Delete').first;
+      await tester.tap(back);
       await tester.pump();
       expect(controller.text, 'a');
-
-      await tester.tap(find.byIcon(Icons.backspace_outlined));
+      await tester.tap(back);
       await tester.pump();
       expect(controller.text, '');
-
-      // The one that used to throw rather than do nothing.
-      await tester.tap(find.byIcon(Icons.backspace_outlined));
+      await tester.tap(back);
       await tester.pump();
       expect(controller.text, '');
       expect(tester.takeException(), isNull);
     });
 
-    // On the letter layer, not behind a layer switch. These are what the fields
-    // this exists for are full of, and hiding a full stop behind `123` is how a
-    // note ends up unwritten.
-    testWidgets('at, dot and dash are on the letter layer', (tester) async {
+    testWidgets('the comma and full stop are on the letters; pull down for ! and ?', (tester) async {
       final controller = TextEditingController();
       await tester.pumpWidget(host(controller));
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(InkWell, '@'));
-      await tester.tap(find.widgetWithText(InkWell, '.'));
-      await tester.tap(find.widgetWithText(InkWell, '-'));
+      await tester.tap(key(','));
+      await tester.tap(key('.'));
       await tester.pump();
+      expect(controller.text, ',.');
+      await tester.drag(key('.'), const Offset(0, 40));
+      await tester.pump();
+      expect(controller.text, ',.?');
+      await tester.drag(key('q'), const Offset(0, 40));
+      await tester.pump();
+      expect(controller.text, ',.?1', reason: 'the top row types its number pulled down');
+    });
 
-      expect(controller.text, '@.-');
+    testWidgets('.?123 has the UK iPad symbols, and @ and £ are there', (tester) async {
+      final controller = TextEditingController();
+      await tester.pumpWidget(host(controller));
+      await tester.pumpAndSettle();
+      await tester.tap(key('.?123'));
+      await tester.pumpAndSettle();
+      await tester.tap(key('@'));
+      await tester.tap(key('5'));
+      await tester.pump();
+      await tester.drag(key('#'), const Offset(0, 40));
+      await tester.pump();
+      expect(controller.text, '@5£');
+    });
+  });
+
+  group('editing', () {
+    testWidgets('undo and redo', (tester) async {
+      final controller = TextEditingController();
+      await tester.pumpWidget(host(controller));
+      await tester.pumpAndSettle();
+      await tester.tap(key('a'));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Undo'));
+      await tester.pump();
+      expect(controller.text, '');
+      await tester.tap(find.byTooltip('Redo'));
+      await tester.pump();
+      expect(controller.text, 'a');
+    });
+
+    testWidgets('select all, cut and paste', (tester) async {
+      final clip = <String, dynamic>{};
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') clip['text'] = (call.arguments as Map)['text'];
+        if (call.method == 'Clipboard.getData') return {'text': clip['text']};
+        return null;
+      });
+      final controller = TextEditingController(text: 'pie');
+      await tester.pumpWidget(host(controller));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Select all'));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Cut'));
+      await tester.pumpAndSettle();
+      expect(controller.text, '');
+      await tester.tap(find.byTooltip('Paste'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Paste'));
+      await tester.pumpAndSettle();
+      expect(controller.text, 'piepie');
+    });
+
+    testWidgets('typing on a real keyboard puts it away; the keyboard button brings it back', (tester) async {
+      final controller = TextEditingController();
+      await tester.pumpWidget(MaterialApp(
+        theme: buildPosTheme(Brightness.light),
+        home: Scaffold(
+          body: Column(children: [
+            TextField(controller: controller, autofocus: true, keyboardType: TextInputType.none),
+            OnScreenKeyboard(controller: controller),
+          ]),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('q'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyX);
+      await tester.pumpAndSettle();
+      expect(find.text('q'), findsNothing);
+      expect(find.byTooltip('Keyboard'), findsOneWidget, reason: 'the keyboard button in the corner');
+      await tester.tap(find.byTooltip('Keyboard'));
+      await tester.pumpAndSettle();
+      expect(find.text('q'), findsOneWidget);
+    });
+
+    testWidgets('the page makes room for it while it is docked', (tester) async {
+      final controller = TextEditingController();
+      await tester.pumpWidget(MaterialApp(
+        theme: buildPosTheme(Brightness.light),
+        builder: (context, child) => KeyboardInsets(child: child!),
+        home: Builder(builder: (context) {
+          return Scaffold(body: Column(children: [
+            Text('inset ${MediaQuery.viewInsetsOf(context).bottom.round()}'),
+            OnScreenKeyboard(controller: controller),
+          ]));
+        }),
+      ));
+      await tester.pumpAndSettle();
+      expect(KeyboardDock.instance.inset.value, greaterThan(150));
+      expect(find.text('inset ${KeyboardDock.instance.inset.value.round()}'), findsOneWidget);
+      unawaited(KeyboardDock.instance.setLayout(KeyboardLayout.floating));
+      await tester.pumpAndSettle();
+      expect(KeyboardDock.instance.inset.value, 0);
     });
   });
 
@@ -183,15 +313,16 @@ void main() {
       await tester.pumpWidget(
         host(controller, width: 380, mode: PosKeyboardMode.number),
       );
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(InkWell, '4'));
-      await tester.tap(find.widgetWithText(InkWell, '0'));
+      await tester.tap(key('4'));
+      await tester.tap(key('0'));
       await tester.pump();
 
       expect(controller.text, '40');
       // No letters to reach for on a Covers field.
-      expect(find.widgetWithText(InkWell, 'q'), findsNothing);
-      expect(find.widgetWithText(InkWell, 'space'), findsNothing);
+      expect(find.text('q'), findsNothing);
+      expect(find.bySemanticsLabel('space'), findsNothing);
     });
 
     // Guarded on the key rather than in the parser: "12.3.7" typed into a price
@@ -201,17 +332,18 @@ void main() {
       await tester.pumpWidget(
         host(controller, width: 380, mode: PosKeyboardMode.decimal),
       );
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(InkWell, '1'));
+      await tester.tap(key('1'));
       await tester.pump();
-      await tester.tap(find.widgetWithText(InkWell, '.'));
+      await tester.tap(key('.'));
       await tester.pump();
-      await tester.tap(find.widgetWithText(InkWell, '5'));
+      await tester.tap(key('5'));
       await tester.pump();
       expect(controller.text, '1.5');
 
       // The second point does nothing at all.
-      await tester.tap(find.widgetWithText(InkWell, '.'));
+      await tester.tap(key('.'));
       await tester.pump();
       expect(controller.text, '1.5');
     });
@@ -224,7 +356,8 @@ void main() {
           mode: PosKeyboardMode.number,
         ),
       );
-      expect(find.widgetWithText(InkWell, '.'), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('.'), findsNothing);
     });
   });
 
@@ -233,7 +366,8 @@ void main() {
       await tester.pumpWidget(host(TextEditingController()));
       // Present, but not wired — a disabled key that is still visible tells the
       // clerk the way out exists and is not available yet.
-      expect(find.widgetWithText(InkWell, 'Done'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(key('Done'), findsOneWidget);
     });
 
     testWidgets('fires once when it is', (tester) async {
@@ -242,7 +376,8 @@ void main() {
         host(TextEditingController(), onSubmit: () => fired++),
       );
 
-      await tester.tap(find.widgetWithText(InkWell, 'Done'));
+      await tester.pumpAndSettle();
+      await tester.tap(key('Done'));
       await tester.pump();
       expect(fired, 1);
     });

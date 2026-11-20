@@ -449,13 +449,16 @@ class Art:
         icons.mkdir(parents=True)
         size, height = 1024, 1024 * 0.80
         master = self.grounded(size, height, WHITE).convert("RGB")
-        dark = self.icon(size, height)
-        r, g, b, a = dark.split()
+        # Dark: the crest on nothing, which iOS shows on black. A venue with
+        # its own square picture of the crest (Loughor RFC) uses that instead,
+        # so its icon is never a crest in a black box (owner, 2026-11-20).
+        dark = self.square.resize((size, size), Image.LANCZOS).convert("RGBA") if self.square else self.icon(size, height)
+        r, g, b, a = self.icon(size, height).split()
         grey = ImageOps.autocontrast(Image.merge("RGB", (r, g, b)).convert("L"), cutoff=1)
         tinted = Image.merge("RGBA", (grey, grey, grey, a))
         files = {"any": "AppIcon-1024.png", "dark": "AppIcon-1024-dark.png", "tinted": "AppIcon-1024-tinted.png"}
         save_png(master, icons / files["any"])
-        save_png(dark, icons / files["dark"])
+        save_png(dark.convert("RGB") if self.square else dark, icons / files["dark"])
         save_png(tinted, icons / files["tinted"])
         images = []
         for look, filename in files.items():

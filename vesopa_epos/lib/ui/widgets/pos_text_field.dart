@@ -19,13 +19,9 @@
 ///
 /// HOW IT APPEARS
 ///
-/// Docked along the bottom of the window in an overlay, while the field holds
-/// focus, and gone the moment it does not. An overlay rather than a widget in
-/// the tree because these fields live inside dialogs and bottom sheets of every
-/// shape, and a keyboard laid out inside one of those is a keyboard that is
-/// half off the screen on the next one.
-///
-/// The page is padded by the keyboard's height while it is up, so the field
+/// The till's iPad-style keyboard, docked along the bottom of the window while
+/// the field holds focus and gone the moment it does not (keyboard_dock.dart).
+/// The page is told it is there through `MediaQuery.viewInsets`, so the field
 /// being typed into is never underneath it — which is the failure that makes an
 /// on-screen keyboard worse than none at all.
 ///
@@ -100,7 +96,10 @@ class PosTextField extends StatefulWidget {
 class _PosTextFieldState extends State<PosTextField> {
   late final FocusNode _focus = widget.focusNode ?? FocusNode();
   bool _ownsFocus = false;
-  OverlayEntry? _entry;
+
+  /// The till's one keyboard, docked like an iPad's (keyboard_dock.dart),
+  /// asked for while this box has focus.
+  KeyboardRequest? _ask;
 
   @override
   void initState() {
@@ -112,10 +111,7 @@ class _PosTextFieldState extends State<PosTextField> {
   @override
   void dispose() {
     _focus.removeListener(_focusChanged);
-    // Not _hide(): its setState on a state being disposed is an assertion
-    // failure whenever a dialog closes with its keyboard still up.
-    _entry?.remove();
-    _entry = null;
+    _hide();
     if (_ownsFocus) _focus.dispose();
     super.dispose();
   }
@@ -130,39 +126,33 @@ class _PosTextFieldState extends State<PosTextField> {
   }
 
   void _show() {
-    if (_entry != null) return;
-    final overlay = Overlay.maybeOf(context, rootOverlay: true);
-    if (overlay == null) return;
-
-    _entry = OverlayEntry(
-      builder: (context) => _FloatingKeyboard(
-        keyboard: OnScreenKeyboard(
-          controller: widget.controller,
-          mode: widget.mode,
-          submitLabel: widget.submitLabel,
-          onSubmit: () {
-            widget.onSubmitted?.call(widget.controller.text);
-            // Dismissed on Done, because Done is the word for "finished
-            // with this box". Leaving it up after that is a board sitting
-            // over the thing the clerk pressed Done to get back to.
-            _focus.unfocus();
-          },
-        ),
-      ),
-    );
-    overlay.insert(_entry!);
-    setState(() {});
+    final ask = _ask ??= KeyboardRequest(controller: widget.controller);
+    ask
+      ..controller = widget.controller
+      ..mode = widget.mode
+      ..submitLabel = widget.submitLabel
+      // Not for an email address or a code.
+      ..autoCapitalise = widget.mode == PosKeyboardMode.text && widget.textCapitalization != TextCapitalization.none
+      ..onSubmit = () {
+        widget.onSubmitted?.call(widget.controller.text);
+        // Done is the word for "finished with this box": the keyboard goes
+        // with it, rather than sitting over what the clerk went back to.
+        _focus.unfocus();
+      };
+    KeyboardDock.instance.show(context, ask);
   }
 
   void _hide() {
-    _entry?.remove();
-    _entry = null;
-    if (mounted) setState(() {});
+    final ask = _ask;
+    _ask = null;
+    if (ask != null) KeyboardDock.instance.release(ask);
   }
 
   @override
   Widget build(BuildContext context) {
-    final field = TextField(
+    // The page makes room for the keyboard through MediaQuery.viewInsets, as it
+    // would for a phone's own (KeyboardInsets, in the app's builder).
+    return TextField(
       controller: widget.controller,
       focusNode: _focus,
       decoration: widget.decoration,
@@ -175,219 +165,15 @@ class _PosTextFieldState extends State<PosTextField> {
       style: widget.style,
       onChanged: widget.onChanged,
       onSubmitted: widget.onSubmitted,
-      keyboardType: switch (widget.mode) {
-        PosKeyboardMode.number => TextInputType.number,
-        PosKeyboardMode.decimal =>
-          const TextInputType.numberWithOptions(decimal: true),
-        PosKeyboardMode.text => TextInputType.text,
-      },
-    );
-
-    // Room underneath, so the box being typed into is never behind the board.
-    //
-    // The overlay is drawn over everything and reports nothing to the tree, so
-    // nothing else can make this space — `MediaQuery.viewInsets` is the
-    // system keyboard's channel and stays at zero for a keyboard the
-    // application drew itself.
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOut,
-      // Only while it is docked along the bottom: a floating keyboard is
-      // wherever the clerk put it.
-      padding: EdgeInsets.only(bottom: _entry == null || KeyboardSize.place.value != null ? 0 : _boardHeight),
-      child: field,
-    );
-  }
-
-  /// Roughly what the board occupies. Deliberately an estimate: the exact
-  /// height depends on the width it is given, and a field that had to measure
-  /// the overlay before it could lay itself out would need a frame in between —
-  /// which is a visible jump under a finger that is already moving.
-  static const _boardHeight = 300.0;
-}
-
-/// The keyboard over the screen: docked along the bottom as it first opens,
-/// or dragged anywhere by its handle and resized by its corner grip
-/// (2026-10-21, Pontardawe RFC). Where it was left is kept on this till.
-/// Resizing changes the keys as well as the width.
-class _FloatingKeyboard extends StatefulWidget {
-  const _FloatingKeyboard({required this.keyboard});
-
-  final Widget keyboard;
-
-  @override
-  State<_FloatingKeyboard> createState() => _FloatingKeyboardState();
-}
-
-class _FloatingKeyboardState extends State<_FloatingKeyboard> {
-  /// The width a keyboard is drawn at for the standard size; the grip's
-  /// width over this is the scale.
-  static const _standardWidth = 820.0;
-  static const _minWidth = 420.0;
-
-  @override
-  void initState() {
-    super.initState();
-    KeyboardSize.load();
-  }
-
-  Rect _clamp(Rect r, Size screen) {
-    final w = r.width.clamp(_minWidth, screen.width);
-    final x = r.left.clamp(0.0, (screen.width - w).clamp(0.0, double.infinity));
-    final y = r.top.clamp(0.0, (screen.height - 120).clamp(0.0, double.infinity));
-    return Rect.fromLTWH(x, y, w, 0);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final screen = MediaQuery.sizeOf(context);
-    return ValueListenableBuilder<Rect?>(
-      valueListenable: KeyboardSize.place,
-      builder: (context, place, _) {
-        final docked = place == null;
-        final rect = docked ? null : _clamp(place, screen);
-        final board = Material(
-          elevation: 14,
-          borderRadius: docked ? null : BorderRadius.circular(16),
-          clipBehavior: Clip.antiAlias,
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _handle(context, place, screen),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                  child: widget.keyboard,
-                ),
-              ],
-            ),
-          ),
-        );
-        // Part of the box being typed into, as far as taps go. On Windows a
-        // text field lets go of its focus at any touch outside it, and the
-        // board is drawn in an overlay of its own -- so the first key pressed
-        // closed the keyboard before the letter landed, and nothing could be
-        // typed (Nicki, Pontardawe RFC, 2026-10-26: a new member's name).
-        if (docked) {
-          // Docked, it is resized as on Windows: hold the grip at the top
-          // right and drag up for bigger keys, down for smaller.
-          return Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: TextFieldTapRegion(
-              child: Stack(children: [
-                board,
-                Positioned(
-                  right: 8,
-                  top: 0,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onVerticalDragUpdate: (d) => KeyboardSize.scale.value =
-                        (KeyboardSize.scale.value - d.delta.dy / 300).clamp(KeyboardSize.minScale, KeyboardSize.maxScale),
-                    onVerticalDragEnd: (_) => KeyboardSize.set(KeyboardSize.scale.value),
-                    child: const SizedBox(width: 44, height: 34, child: Icon(Icons.height_rounded, size: 20)),
-                  ),
-                ),
-              ]),
-            ),
-          );
-        }
-        return Positioned(
-          left: rect!.left,
-          top: rect.top,
-          width: rect.width,
-          child: TextFieldTapRegion(child: Stack(
-            children: [
-              board,
-              // The resize grip, bottom right.
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanUpdate: (d) {
-                    final r = KeyboardSize.place.value ?? rect;
-                    final w = (r.width + d.delta.dx).clamp(_minWidth, screen.width - r.left);
-                    KeyboardSize.place.value = Rect.fromLTWH(r.left, r.top, w, 0);
-                    KeyboardSize.scale.value = (w / _standardWidth).clamp(KeyboardSize.minScale, KeyboardSize.maxScale);
-                  },
-                  onPanEnd: (_) {
-                    KeyboardSize.setPlace(KeyboardSize.place.value);
-                    KeyboardSize.set(KeyboardSize.scale.value);
-                  },
-                  child: const SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: Icon(Icons.open_in_full, size: 18),
-                  ),
-                ),
-              ),
-            ],
-          )),
-        );
-      },
-    );
-  }
-
-  /// The bar to drag the keyboard by, with Dock / Float.
-  Widget _handle(BuildContext context, Rect? place, Size screen) {
-    final docked = place == null;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onPanStart: (d) {
-        if (KeyboardSize.place.value == null) {
-          // Lifting it off the bottom: it floats where it was, at its size.
-          final w = (_standardWidth * KeyboardSize.scale.value).clamp(_minWidth, screen.width);
-          KeyboardSize.place.value = _clamp(Rect.fromLTWH((screen.width - w) / 2, screen.height - 380, w, 0), screen);
-        }
-      },
-      onPanUpdate: (d) {
-        final r = KeyboardSize.place.value;
-        if (r == null) return;
-        KeyboardSize.place.value = _clamp(r.translate(d.delta.dx, d.delta.dy), screen);
-      },
-      onPanEnd: (_) => KeyboardSize.setPlace(KeyboardSize.place.value),
-      child: SizedBox(
-        height: 34,
-        child: Row(
-          children: [
-            const SizedBox(width: 12),
-            // Icons, and an info key for what they do (the owner,
-            // 2026-10-30: fewer words on the keyboard).
-            const Icon(Icons.drag_indicator, size: 20),
-            const Spacer(),
-            IconButton(
-              tooltip: 'About the keyboard',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.info_outline, size: 18),
-              onPressed: () => showDialog<void>(
-                context: context,
-                builder: (c) => AlertDialog(
-                  title: const Text('The keyboard'),
-                  content: const Text('Drag the bar to move it.\n'
-                      'Docked: hold the arrows at the top right and drag up or down to resize.\n'
-                      'Floating: drag the corner to resize.\n'
-                      'A− and A+ make the keys smaller or bigger.'),
-                  actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Done'))],
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: docked ? 'Float' : 'Dock',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => docked
-                  ? KeyboardSize.setPlace(_clamp(
-                      Rect.fromLTWH(screen.width * 0.15, screen.height * 0.35, (_standardWidth * KeyboardSize.scale.value).clamp(_minWidth, screen.width * 0.7), 0),
-                      screen))
-                  : KeyboardSize.setPlace(null),
-              icon: Icon(docked ? Icons.picture_in_picture_alt_outlined : Icons.vertical_align_bottom, size: 18),
-            ),
-            SizedBox(width: docked ? 52 : 6),
-          ],
-        ),
-      ),
+      // Ours is the input method. A hardware keyboard still types into it;
+      // this stops Windows sliding its own touch keyboard over ours.
+      keyboardType: widget.keyboard
+          ? TextInputType.none
+          : switch (widget.mode) {
+              PosKeyboardMode.number => TextInputType.number,
+              PosKeyboardMode.decimal => const TextInputType.numberWithOptions(decimal: true),
+              PosKeyboardMode.text => TextInputType.text,
+            },
     );
   }
 }

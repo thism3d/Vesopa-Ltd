@@ -245,7 +245,6 @@ class _CountSheetState extends ConsumerState<_CountSheet> {
               ),
 
               if (!_counting) ...[
-                const SizedBox(height: 10),
                 OnScreenKeyboard(
                   controller: _typed,
                   mode: PosKeyboardMode.decimal,

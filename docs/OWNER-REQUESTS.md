@@ -60,6 +60,13 @@ secrets only).
 | "I did not get the updates" (2026-11-19) | Go 1.2.73 had gone to open testing only, while the owner's devices take internal testing (still 1.2.71): 1.2.73 (75) and TV 2000075 now also on internal and tv:internal; Go iOS 1.2.73 (1) on TestFlight, sent to Beta App Review (public link https://testflight.apple.com/join/zgg5YSn8). Check any time with Go - Android / Android - venue app, mode status |
 | Faster workflows: cache tools between runs | done (Gradle, NDK, SwiftPM, Flutter caches) |
 
+## Vesopa EPOS till (Windows, `vesopa_epos/`)
+
+| Ask | Status |
+| --- | --- |
+| iPad-style keyboard replacing the old one on every field (owner, 2026-11-20; Meirion, Pontardawe RFC: "a larger keypad"): UK layout, `.?123` and `#+=` as an iPad's, no word suggestions, emoji or dictation; undo, redo, cut, copy, paste, select all; a real keyboard's typing puts it away, leaving a keyboard button in the bottom corner (drag it to the other corner); Dock, Undock, Split, Floating; fields laid out above it | 1.16.56: `lib/ui/widgets/keyboard_dock.dart` (the one keyboard, docked in the root overlay; pages make room through `MediaQuery.viewInsets`, `KeyboardInsets` in main.dart). Every text field and every number/price field uses it (`OnScreenKeyboard` and `PosTextField` only ask for it); the old inline keyboards and the old floating keyboard are removed. Number fields get a round iPad-passcode pad with Clear, the keyboard button and a tall return key. Pictures on The Vesopa Kitchen's till: `vesopa_epos/store_shots/keyboard/` (`flutter test --update-goldens store_shots/keyboard_shots_test.dart`) |
+| Store upload and admin unsigned installer for the keyboard | 1.16.56: Windows - till release, sign off (as asked) |
+
 ## Loughor RFC (`LoughorRFC/`)
 
 | Ask | Status |
@@ -69,6 +76,11 @@ secrets only).
 | Apps `com.vesopaepos.loughorrfc` (watch `…watchkitapp`), name "Loughor RFC"; App Store Apple ID 6836592429, SKU LoughorRFC | iOS 1.0.0 (1) on TestFlight. Android 1.0.0 (3) on Play open testing (beta) and the watch on wear:beta, 2026-11-19, as drafts: Play keeps every release of a never-published app as a draft until the owner rolls out the first one in Play Console (Test and release > Open testing > Edit release > Roll out) |
 | Wear OS app on Play | Play makes Wear OS internal, open and production tracks (no closed): the watch goes on wear:internal (private) |
 | Crest: transparent PNG and round icon from the club's own crest | done (`LoughorRFC/brand/`) |
+| Crest "still showing black" in the app and websites (owner, 2026-11-20: both the artwork's dark rim and a black box) | make_crest_cutouts.py peels the dark shadow rim and grey glow from the letters, stalks and shield (the crows stay black); every icon, splash, website crest and Wallet picture redrawn. The black box was the iPhone's dark-mode home-screen icon (iOS puts a transparent icon on black): it is now the club's own square crest |
+| Google Play and TestFlight test links at the top of loughorrfc.site's homepage (owner, 2026-11-20) | see the next site deploy |
+| Wear OS open testing "not published" (owner, 2026-11-20) | wear:beta holds 1.0.0 (6), completed; checking why Play shows it unpublished |
+| Google Wallet: the Add to Google Wallet button always shown (Android, iPhone, iPad) but a Google account linked before it is used; "Added to Google Wallet" once saved, as Apple Wallet's | in progress |
+| Wallet passes redesigned (Apple Pass Designer guidelines) | in progress |
 | Back office venue "Loughor RFC" (office 99): login info@loughorrfc.site with every module, realistic demo data, the review member test@test.com / 123456 for the app stores | done |
 | Vesopa accounts info@loughorrfc.site and loughorrfc@vesopa.com, and the loughorrfc@vesopa.com mailbox on Vesopa Cloud (password in the `LOUGHOR_ACCOUNT_PASSWORD` secret) | done. Mail from outside arrives only once vesopa.com's MX points at Vesopa Cloud |
 | Google Wallet pass classes (loyalty, customer) through the workflow | done 2026-11-19: loyalty class approved, customer class under Google's review (issuer Vesopa Software Ltd) |

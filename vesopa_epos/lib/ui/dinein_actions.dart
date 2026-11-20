@@ -423,7 +423,7 @@ class _RefusalDialogState extends State<_RefusalDialog> {
       // Widened once the keyboard is out. The keyboard divides its keys out of
       // whatever width it is given rather than overflowing, so a narrow dialog
       // does not break — it just makes the keys too small to hit.
-      width: KeyboardSize.dialogWidth(context, _isCustom ? 660 : 420),
+      width: KeyboardSize.dialogWidth(context, _isCustom ? 540 : 420),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -473,7 +473,6 @@ class _RefusalDialogState extends State<_RefusalDialog> {
                   border: OutlineInputBorder(),
                 ),
               ),
-              const SizedBox(height: 10),
               OnScreenKeyboard(
                 controller: _typed,
                 submitLabel: 'Send',

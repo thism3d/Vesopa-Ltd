@@ -837,7 +837,6 @@ class _NoReceiptDialogState extends State<_NoReceiptDialog> {
                   border: OutlineInputBorder(),
                 ),
               ),
-              const SizedBox(height: 12),
               OnScreenKeyboard(
                 controller: _focused,
                 mode: _focused == _amount

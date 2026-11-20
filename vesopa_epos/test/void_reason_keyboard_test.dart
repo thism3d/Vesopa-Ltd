@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vesopa_epos/ui/widgets/on_screen_keyboard.dart' show KeyboardInsets;
 import 'package:vesopa_epos/ui/theme.dart';
 import 'package:vesopa_epos/ui/void_dialog.dart';
 
@@ -25,6 +26,7 @@ void main() {
           voidReasonsProvider.overrideWith((_) async => const <String>[]),
         ],
         child: MaterialApp(
+          builder: (context, child) => KeyboardInsets(child: child!),
           theme: buildPosTheme(Brightness.light),
           home: Scaffold(
             body: Builder(
@@ -55,7 +57,9 @@ void main() {
 
   /// Press a drawn key, the way a clerk on a touch screen does.
   Future<void> pressKey(WidgetTester tester, String key) async {
-    await tester.tap(find.widgetWithText(InkWell, key).last);
+    // The keyboard is docked in the overlay (keyboard_dock.dart).
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(key).last);
     await tester.pump();
   }
 
@@ -130,6 +134,7 @@ void main() {
           ),
         ],
         child: MaterialApp(
+          builder: (context, child) => KeyboardInsets(child: child!),
           theme: buildPosTheme(Brightness.light),
           home: Scaffold(
             body: Consumer(
