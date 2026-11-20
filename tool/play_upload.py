@@ -361,8 +361,20 @@ def main():
                 except PlayError:
                     pass
             try:
-                edit = play.edit()
-                release(play, edit, aab, t, name, p["release_notes"], p["language"])
+                # Another run using Play at the same time (Club site reads the
+                # signing key) ends this one's edit: "This edit has expired" or
+                # "has been deleted" (Loughor RFC 1.0.0 (7), 2026-11-20). The
+                # upload is started again, once, in a fresh edit.
+                for attempt in (1, 2):
+                    try:
+                        edit = play.edit()
+                        release(play, edit, aab, t, name, p["release_notes"], p["language"])
+                        break
+                    except PlayError as e:
+                        gone = "edit has expired" in str(e).lower() or "edit has been deleted" in str(e).lower()
+                        if attempt == 2 or not gone:
+                            raise
+                        print("   (Play ended the edit while uploading: starting it again)")
                 try:
                     play.commit(edit)
                 except PlayError as e:
