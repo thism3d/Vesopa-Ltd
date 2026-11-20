@@ -31,7 +31,11 @@ const PROVIDERS = {
   google: {
     issuers: ['https://accounts.google.com', 'accounts.google.com'],
     jwks: 'https://www.googleapis.com/oauth2/v3/certs',
-    audiences: () => list(process.env.LOYALTY_GOOGLE_AUDIENCES, ''),
+    // The club apps' Google sign-in: Android asks for an ID token for the
+    // venue's Web client (venue.json google_server_client_id), iOS for its
+    // own iOS client. Loughor RFC's Web client is built in; more come from
+    // LOYALTY_GOOGLE_AUDIENCES.
+    audiences: () => list(process.env.LOYALTY_GOOGLE_AUDIENCES, '561180189171-na3jtfi2d08052cah8er327k58rvbg5u.apps.googleusercontent.com'),
   },
 };
 
