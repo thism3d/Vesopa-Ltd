@@ -471,3 +471,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy); outline: 
   .mark img { width: 44px; height: 44px; }
   .ask-tab span { display: none; }
 }
+
+/* The apps' public tests, at the top of the homepage (owner, 2026-11-20). */
+.app-strip { background: var(--navy, #0b1f4a); color: #fff; font: .95rem/1.35 var(--sans); }
+.app-strip-in { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 20px; padding-top: 10px; padding-bottom: 10px; }
+.app-strip p { margin: 0; }
+.app-strip strong { color: var(--gold); }
+.strip-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.strip-btn { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 3px; color: #fff; text-decoration: none; font-weight: 700; }
+.strip-btn small { display: block; font-weight: 400; font-size: .72rem; opacity: .8; }
+.strip-btn span { line-height: 1.1; }
+.strip-btn:hover, .strip-btn:focus-visible { background: var(--gold); border-color: var(--gold); color: #111; }
