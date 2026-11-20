@@ -38,8 +38,8 @@ test("Loughor's classes have the club's own ids, one card per member", () => {
 
 test('the loyalty class is filled in: modules, links, homepage, place, Smart Tap, callbacks, discovery', () => {
   const { klass, object } = G.buildPass({ kind: 'loyalty', config, office: 'x', brand, subject: { id: 'm1', card_number: '999800001' } });
-  assert.ok(klass.imageModulesData[0].mainImage.sourceUri.uri.endsWith('wallet-banner.png'));
-  assert.ok(klass.wideProgramLogo.sourceUri.uri.endsWith('wallet-wordmark.png'));
+  assert.match(klass.imageModulesData[0].mainImage.sourceUri.uri, /wallet-banner\.png(\?v=\d+)?$/);
+  assert.match(klass.wideProgramLogo.sourceUri.uri, /wallet-wordmark\.png(\?v=\d+)?$/);
   assert.ok(klass.textModulesData.length >= 3);
   assert.equal(klass.messages[0].messageType, 'TEXT');
   assert.deepEqual(klass.linksModuleData.uris.map((u) => u.uri), ['https://loughorrfc.com', 'https://vesopaepos.com', 'tel:01792 894109']);

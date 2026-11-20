@@ -106,9 +106,9 @@ const LOOKS = {
       ],
       homepage: { uri: 'https://loughorrfc.com', description: 'Loughor RFC' },
       locations: [{ latitude: 51.6627, longitude: -4.0655 }],
-      wordmark: 'https://backoffice.vesopaepos.com/assets/venues/loughor-rfc/wallet-wordmark.png',
+      wordmark: 'https://backoffice.vesopaepos.com/assets/venues/loughor-rfc/wallet-wordmark.png?v=2',
       images: [{
-        uri: 'https://backoffice.vesopaepos.com/assets/venues/loughor-rfc/wallet-banner.png',
+        uri: 'https://backoffice.vesopaepos.com/assets/venues/loughor-rfc/wallet-banner.png?v=2',
         description: "Loughor RFC, Villa Field, est. 1882: members' card",
       }],
       texts: [
