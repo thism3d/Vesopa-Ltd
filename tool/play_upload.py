@@ -281,10 +281,11 @@ def main():
                 if not t.get("releases"):
                     continue
                 try:
-                    a = play.call("GET", f"{API}/{play.package}/edits/{edit}/countryAvailability/{t['track']}")
+                    # A track's name may have spaces ("wear:Closed testing - Alpha").
+                    a = play.call("GET", f"{API}/{play.package}/edits/{edit}/countryAvailability/{urllib.parse.quote(t['track'], safe=':')}")
                     n = len(a.get("countries", []))
                     reach[t["track"]] = f"{n} countries" + (" + rest of world" if a.get("restOfWorld") else "") if (n or a.get("restOfWorld")) else "NO COUNTRIES (published nowhere)"
-                except PlayError as e:
+                except Exception as e:  # noqa: BLE001 - a readout; never stops the run
                     reach[t["track"]] = f"countries unknown ({str(e)[:60]})"
         finally:
             play.call("DELETE", f"{API}/{play.package}/edits/{edit}")
