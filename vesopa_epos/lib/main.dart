@@ -59,6 +59,7 @@ import 'payments/teya_provider.dart';
 import 'payments/dojo_office_sync.dart';
 import 'payments/dojo_native.dart';
 import 'payments/payment_provider.dart';
+import 'ui/widgets/keyboard_dock.dart' show KeyboardInsets;
 import 'ui/idle_screen.dart';
 import 'ui/gym_greeting.dart';
 import 'ui/shell.dart';
@@ -1296,7 +1297,9 @@ class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
       navigatorKey: _rootNavigator,
       debugShowCheckedModeBanner: false,
       navigatorObservers: [ActivityLog.instance.observer],
-      builder: (context, child) => ActivityLog.instance.wrap(LanIdentifyBanner(child: child ?? const SizedBox.shrink())),
+      // The till's own keyboard tells the pages it is there, as a phone's does,
+      // so a dialog moves up above it (keyboard_dock.dart).
+      builder: (context, child) => KeyboardInsets(child: ActivityLog.instance.wrap(LanIdentifyBanner(child: child ?? const SizedBox.shrink()))),
       // The venue's font, if it has chosen one and this terminal has it on
       // disk. Null until the list has loaded, which is the honest answer: the
       // alternative is lettering the whole till in the app's own typeface and

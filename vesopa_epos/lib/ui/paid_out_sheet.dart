@@ -175,7 +175,6 @@ class _PaidOutDialogState extends State<_PaidOutDialog> {
                   border: const OutlineInputBorder(),
                 ),
               ),
-              const SizedBox(height: 12),
               OnScreenKeyboard(
                 controller: _focused,
                 mode: _focused == _amount

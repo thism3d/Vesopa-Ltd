@@ -41,6 +41,38 @@ def background(rgb):
     return ndimage.binary_closing(field, iterations=2) & ~ndimage.binary_erosion(~field, iterations=1) | field
 
 
+def peel_shadow(rgb, a):
+    """Takes off the dark shadow rim, and the grey glow under it, that the
+    artwork draws round its letters, stalks and shield (owner, 2026-11-20:
+    the transparent crest "still showing black colors"). Peeled a pixel at a
+    time from the outside in, only through dark or grey pixels, so it stops
+    at the gold, the green and the blue; the crow on top, black all through,
+    is kept whole. The crows on the shield are inside its gold border."""
+    rgb = rgb.astype(float)
+    mx, mn = rgb.max(-1), rgb.min(-1)
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1), 0)
+    luma = 0.3 * rgb[..., 0] + 0.59 * rgb[..., 1] + 0.11 * rgb[..., 2]
+    rimlike = (luma < 85) | ((sat < 0.30) & (luma >= 85))
+    h = a.shape[0]
+    dark = (luma < 70) & (a > 0.3)
+    labels, _ = ndimage.label(dark)
+    top = labels[: int(h * 0.33)]
+    ids, counts = np.unique(top[top > 0], return_counts=True)
+    protect = np.zeros_like(dark)
+    if len(ids):
+        protect = ndimage.binary_dilation(labels == ids[np.argmax(counts)], iterations=3)
+    alive = a > 0.02
+    st = np.ones((3, 3), bool)
+    for _ in range(20):
+        front = ndimage.binary_dilation(~alive, structure=st) & alive & rimlike & ~protect
+        if not front.any():
+            break
+        alive &= ~front
+    a = np.where(alive, a, 0)
+    edge = alive & ndimage.binary_dilation(~alive, structure=st)
+    return np.where(edge, a * 0.6, a)
+
+
 def main():
     src = Image.open(HERE / "crest-original.jpeg").convert("RGB")
     rgb = np.asarray(src)
@@ -74,6 +106,7 @@ def main():
     out = rgb.astype(float)
     edge = (a > 0.02) & (a < 0.98) & ~fade
     out[edge] = np.clip((out[edge] - field_rgb * (1 - a[edge, None])) / a[edge, None], 0, 255)
+    a = peel_shadow(out, a)
     cut = Image.fromarray(np.dstack([out.astype(np.uint8), (a * 255).astype(np.uint8)]), "RGBA")
     cut = cut.crop(cut.split()[3].getbbox())
     side = max(cut.size)

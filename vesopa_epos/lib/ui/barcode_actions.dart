@@ -393,7 +393,6 @@ class _NewProductDialogState extends ConsumerState<_NewProductDialog> {
                 ],
                 onChanged: (v) => setState(() => _group = v),
               ),
-              const SizedBox(height: 12),
               OnScreenKeyboard(
                 controller: _focused,
                 mode: _focused == _price

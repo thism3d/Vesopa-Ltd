@@ -149,7 +149,6 @@ class _PriceOverrideDialogState extends State<_PriceOverrideDialog> {
                     style: TextStyle(color: scheme.error),
                   ),
                 ),
-              const SizedBox(height: 6),
               OnScreenKeyboard(
                 controller: _amount,
                 mode: PosKeyboardMode.decimal,

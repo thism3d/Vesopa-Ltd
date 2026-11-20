@@ -2051,10 +2051,10 @@ class _FieldDialogState extends State<_FieldDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.title),
-      // Wide enough for the keyboard to lay out at a usable key size, and
-      // scrollable so it survives the shortest till anybody runs this on.
+      // The keyboard is docked below (keyboard_dock.dart) and the dialog
+      // moves up above it; scrollable for the shortest till.
       content: SizedBox(
-        width: KeyboardSize.dialogWidth(context, widget.mode == PosKeyboardMode.text ? 660 : 380),
+        width: KeyboardSize.dialogWidth(context, widget.mode == PosKeyboardMode.text ? 540 : 380),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -2079,7 +2079,6 @@ class _FieldDialogState extends State<_FieldDialog> {
                 // keyboard over the top of the one below.
                 keyboardType: TextInputType.none,
               ),
-              const SizedBox(height: 12),
               OnScreenKeyboard(
                 controller: widget.controller,
                 mode: widget.mode,
