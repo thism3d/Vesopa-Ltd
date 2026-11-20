@@ -1,0 +1,8 @@
+Version 1.16.56.0 - A bigger keyboard, like an iPad's
+
+Every box on the till now uses one bigger keyboard along the bottom of the screen, laid out like an iPad's UK keyboard, with .?123 and #+= for numbers and symbols. Pull a key down to type the small character above it.
+The box being typed into moves up above the keyboard instead of hiding under it.
+The bar above the keys has undo, redo, cut, copy, paste and select all, and A- and A+ for the key size.
+The keyboard button chooses Dock, Undock, Split (two halves for two thumbs) or Floating (small, anywhere on the screen).
+Typing on a real keyboard puts the screen keyboard away and leaves a keyboard button in the corner to bring it back. Drag that button to the other corner if you prefer it there.
+Prices, quantities and covers get a large number pad in the same place.
