@@ -271,8 +271,21 @@ def main():
     # "I did not get the updates": which release is live, a draft, or halted).
     if "--status" in sys.argv:
         edit = play.edit()
+        reach = {}
         try:
             tracks = play.call("GET", f"{API}/{play.package}/edits/{edit}/tracks").get("tracks", [])
+            # Where each testing track is offered: a form factor's own track
+            # (wear:beta) has its own countries, and with none it is published
+            # nowhere (owner, 2026-11-20: Wear OS open testing "not published").
+            for t in tracks:
+                if not t.get("releases"):
+                    continue
+                try:
+                    a = play.call("GET", f"{API}/{play.package}/edits/{edit}/countryAvailability/{t['track']}")
+                    n = len(a.get("countries", []))
+                    reach[t["track"]] = f"{n} countries" + (" + rest of world" if a.get("restOfWorld") else "") if (n or a.get("restOfWorld")) else "NO COUNTRIES (published nowhere)"
+                except PlayError as e:
+                    reach[t["track"]] = f"countries unknown ({str(e)[:60]})"
         finally:
             play.call("DELETE", f"{API}/{play.package}/edits/{edit}")
         print(f"{p['title']} ({p['package']}): what each track holds")
@@ -282,7 +295,7 @@ def main():
                 continue
             for r in rels:
                 frac = f" {round(100 * float(r['userFraction']))}% of users" if r.get("userFraction") else ""
-                print(f"  {t['track']:<22} {r.get('name', '?'):<16} {r.get('status', '?'):<11}{frac}  codes {', '.join(r.get('versionCodes', []))}")
+                print(f"  {t['track']:<22} {r.get('name', '?'):<16} {r.get('status', '?'):<11}{frac}  codes {', '.join(r.get('versionCodes', []))}  [{reach.get(t['track'], '?')}]")
         print("  (completed = sent to Google; a new app's first release stays a draft until it is rolled out in Play Console)")
         return
     if "--next-build" in sys.argv:
