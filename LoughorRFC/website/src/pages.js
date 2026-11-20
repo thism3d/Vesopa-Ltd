@@ -10,7 +10,7 @@
 const { club, news, updates, images, longDate, yearsOld } = require('./content');
 const wru = require('./wru');
 const venue = require('./venue_api');
-const { page, masthead, appSoon, esc, icon, SITE, MEMBERS, MENU_URL } = require('./layout');
+const { page, masthead, appSoon, appStrip, esc, icon, SITE, MEMBERS, MENU_URL } = require('./layout');
 const { zoned } = require('./posts');
 const legal = require('./legal');
 
@@ -122,7 +122,7 @@ function home() {
   const latest = news.slice(0, 4);
   const lead = latest[0];
   const results = wru.fixtures().results.slice(0, 3);
-  const body = `
+  const body = `${appStrip()}
 <section class="cover" aria-label="${esc(club.name)}">
   <div class="wrap cover-in">
     <div class="cover-words">

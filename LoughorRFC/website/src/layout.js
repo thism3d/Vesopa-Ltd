@@ -145,6 +145,24 @@ function appSoon({ cls = '' } = {}) {
 </div>`;
 }
 
+/** The apps' public tests in a strip at the very top of the homepage
+ *  (owner, 2026-11-20: "show the Google and Apple Store testing link to the
+ *  top of the homepage"). Nothing until a test link is set. */
+function appStrip() {
+  const w = club.web;
+  const links = [
+    w.ios_test && `<a class="strip-btn" href="${esc(w.ios_test)}" rel="noopener">${icon('apple', { size: 16 })}<span>iPhone &amp; iPad <small>TestFlight</small></span></a>`,
+    w.android_test && `<a class="strip-btn" href="${esc(w.android_test)}" rel="noopener">${icon('android', { size: 16 })}<span>Android &amp; Wear OS <small>Google Play</small></span></a>`,
+  ].filter(Boolean);
+  if (!links.length) return '';
+  return `<aside class="app-strip" aria-label="Try the Loughor RFC app">
+  <div class="wrap app-strip-in">
+    <p><strong>New: the Loughor RFC app.</strong> Your members' card on your phone and watch. Try it now:</p>
+    <p class="strip-links">${links.join('')}</p>
+  </div>
+</aside>`;
+}
+
 function header(path) {
   const link = ([href, label]) => {
     const on = path === href || path.startsWith(`${href}/`);
@@ -279,4 +297,4 @@ function masthead({ kicker, title, lead = '', no = '' }) {
 </section>`;
 }
 
-module.exports = { page, masthead, appSoon, esc, icon, SITE, MEMBERS, MENU_URL, NAV, clubLd, ASSET_VERSION };
+module.exports = { page, masthead, appSoon, appStrip, esc, icon, SITE, MEMBERS, MENU_URL, NAV, clubLd, ASSET_VERSION };

@@ -221,6 +221,11 @@ test('the club app: not in the stores yet, so no store badges; the public tests 
   assert.match(membership, /Try it now/);
   assert.match(membership, /href="https:\/\/testflight\.apple\.com\/join\/tegkU2kN"/);
   assert.match(membership, /href="https:\/\/play\.google\.com\/apps\/testing\/com\.vesopaepos\.loughorrfc"/);
+  // The test links lead the homepage, above the cover (owner, 2026-11-20).
+  const home = await (await fetch(`${base}/`)).text();
+  const strip = home.indexOf('class="app-strip"');
+  assert.ok(strip > 0 && strip < home.indexOf('class="cover"'), 'the app strip comes before the cover');
+  assert.match(home.slice(strip, home.indexOf('class="cover"')), /testflight\.apple\.com\/join\/tegkU2kN[\s\S]*play\.google\.com\/apps\/testing\/com\.vesopaepos\.loughorrfc/);
   const go = (ua) => fetch(`${base}/app`, { redirect: 'manual', headers: { 'User-Agent': ua } }).then((r) => r.headers.get('location'));
   assert.strictEqual(await go('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'), 'https://testflight.apple.com/join/tegkU2kN');
   assert.strictEqual(await go('Mozilla/5.0 (Linux; Android 15; Pixel 9)'), 'https://play.google.com/apps/testing/com.vesopaepos.loughorrfc');
