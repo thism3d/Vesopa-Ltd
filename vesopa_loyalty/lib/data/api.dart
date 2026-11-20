@@ -288,6 +288,27 @@ class LoyaltyApi {
   /// The member's "Add to Google Wallet" link: the server's own page, which
   /// signs the card at Google and sends the phone on to Google Wallet's save
   /// page (vesopa_server/src/wallet.js, /wallet/s/). Lasts ten minutes.
+  /// The member's Google Wallet state (vesopa_server wallet_google_state.js):
+  /// the Google account linked for it, and whether Google says the card is
+  /// saved. Null fields when the club's server does not say.
+  Future<({bool? linked, String? email, bool? saved})> googleWalletStatus() async {
+    final json = await _send('GET', '/loyalty/v1/me/wallet');
+    return (
+      linked: json['google_linked'] as bool?,
+      email: (json['google_email'] as String?)?.trim(),
+      saved: json['google_saved'] as bool?,
+    );
+  }
+
+  /// Link the member's Google account (an ID token from Google's own sign-in
+  /// sheet) before their card goes into Google Wallet. Returns the address.
+  Future<String?> linkGoogle(String idToken) async {
+    final json = await _send('POST', '/loyalty/v1/me/google', body: {'id_token': idToken});
+    return (json['google_email'] as String?)?.trim();
+  }
+
+  Future<void> unlinkGoogle() => _send('DELETE', '/loyalty/v1/me/google');
+
   Future<Uri> googleWalletLink() async {
     final json = await _send('GET', '/loyalty/v1/me/wallet');
     final link = (json['google'] as String?)?.trim() ?? '';

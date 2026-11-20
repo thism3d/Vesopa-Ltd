@@ -60,6 +60,35 @@ void main() {
     );
   });
 
+  test('the card shows "Added to Google Wallet" once Google says it is saved; linking sends Google\'s token (owner, 2026-11-20)', () async {
+    final sent = <String>[];
+    var saved = false;
+    final api = LoyaltyApi(
+      base: 'https://loyalty.example',
+      slug: 'club',
+      client: MockClient((req) async {
+        sent.add('${req.method} ${req.url.path}');
+        if (req.method == 'POST') {
+          expect(jsonDecode(req.body), {'id_token': 'google-id-token'});
+          return http.Response(jsonEncode({'ok': true, 'google_linked': true, 'google_email': 'member@gmail.com'}), 200, headers: {'content-type': 'application/json'});
+        }
+        return http.Response(
+          jsonEncode({'google': 'https://loyalty.example/wallet/s/x', 'google_linked': saved, 'google_email': null, 'google_saved': saved}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    )..token = 't';
+
+    var st = await api.googleWalletStatus();
+    expect((st.linked, st.saved), (false, false));
+    expect(await api.linkGoogle('google-id-token'), 'member@gmail.com');
+    saved = true;
+    st = await api.googleWalletStatus();
+    expect((st.linked, st.saved), (true, true));
+    expect(sent, ['GET /loyalty/v1/me/wallet', 'POST /loyalty/v1/me/google', 'GET /loyalty/v1/me/wallet']);
+  });
+
   test('the button is offered only when the club\'s server can issue the card', () {
     String resolve(String u) => u;
     expect(Brand.fromJson({'wallet': {'google': true}}, resolve).googleWallet, isTrue);

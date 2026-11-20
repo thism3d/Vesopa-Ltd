@@ -6,6 +6,7 @@ const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const { requireAuth } = require('./auth');
 const G = require('./wallet_google');
+const GoogleState = require('./wallet_google_state');
 // Only ever asked whether this deployment can sign a `.pkpass`, so that a
 // customer on an iPhone is not offered a Google button and nothing else — or,
 // worse, refused a card because Google is the half that is broken.
@@ -1605,6 +1606,9 @@ function walletPublicRoutes({ pool, secret, core, fetchImpl = fetch }) {
       const { issuerId } = G.readConfig(process.env);
       const message = G.verifyCallback(req.body, { issuerId, rootKeys: await rootKeys() });
       console.log(`[wallet] Google ${message.eventType === 'del' ? 'deleted' : 'saved'} ${message.objectId} (${message.classId}) nonce ${message.nonce || '-'}`);
+      // Kept, so the club app shows "Added to Google Wallet" (and the button
+      // again once the card is deleted). Google is answered whatever happens.
+      await GoogleState.recordEvent(pool, message).catch((e) => console.warn(`[wallet] could not record the Google event: ${e.message}`));
       res.status(200).json({ ok: true });
     } catch (e) {
       res.status(e.status && e.status < 500 ? e.status : 400).json({ error: e.message });

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/brand.dart';
 import '../data/api.dart';
 import '../data/session.dart';
+import '../platform/native_auth.dart';
 import '../platform/wallet.dart';
 import '../data/venue_style.dart';
 import 'widgets.dart';
@@ -499,7 +501,7 @@ class _AddToWallet extends ConsumerStatefulWidget {
   ConsumerState<_AddToWallet> createState() => _AddToWalletState();
 }
 
-class _AddToWalletState extends ConsumerState<_AddToWallet> {
+class _AddToWalletState extends ConsumerState<_AddToWallet> with WidgetsBindingObserver {
   // Google's button, when the club's server can issue the card: Android,
   // iPhone and iPad.
   late final bool _google = GoogleWallet.available && (ref.read(brandProvider).value?.googleWallet ?? false);
@@ -515,14 +517,84 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
 
   String get _key => '${ref.read(meProvider).value?['member_number'] ?? ''}';
 
+  /// Google Wallet, as the club's server knows it from Google's own save and
+  /// delete callbacks (owner, 2026-11-20: "once walletpass is added ... show
+  /// that wallet added like Apple"), and the Google account linked for it.
+  bool _googleSaved = false;
+  bool _googleLinked = false;
+  String? _googleEmail;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (_ios) {
       AppleWallet.contains(_key).then((there) {
         if (mounted && there) setState(() => _inWallet = true);
       });
     }
+    if (_google) unawaited(_googleStatus());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Back from Google Wallet: Google tells the club within seconds, so ask
+  /// now and again shortly after.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !_google) return;
+    unawaited(_googleStatus());
+    for (final s in const [3, 8]) {
+      Future.delayed(Duration(seconds: s), () {
+        if (mounted && !_googleSaved) unawaited(_googleStatus());
+      });
+    }
+  }
+
+  Future<void> _googleStatus() async {
+    try {
+      final st = await ref.read(apiProvider).googleWalletStatus();
+      if (!mounted) return;
+      setState(() {
+        _googleSaved = st.saved ?? false;
+        _googleLinked = st.linked ?? false;
+        _googleEmail = st.email;
+      });
+    } catch (_) {
+      // Unknown: the button stays, as before.
+    }
+  }
+
+  /// A Google account first (owner, 2026-11-20: "must be Google Account
+  /// linked in order to use Add to Google Wallet"): Google's own sign-in
+  /// sheet where the app has it. Where it has not (an iPhone or iPad without
+  /// the club's iOS Google client), Google Wallet's save page asks for the
+  /// account itself, and the save links it. False when the member cancelled.
+  Future<bool> _linkGoogle({bool again = false}) async {
+    if (_googleLinked && !again) return true;
+    if (!NativeAuth.google) return true;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final idToken = await NativeAuth.googleIdToken();
+      if (idToken == null) return false;
+      final email = await ref.read(apiProvider).linkGoogle(idToken);
+      if (mounted) {
+        setState(() {
+          _googleLinked = true;
+          _googleEmail = email;
+        });
+      }
+      return true;
+    } on ApiError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('Your Google account could not be linked. Please try again.')));
+    }
+    return false;
   }
 
   /// The server signs the card at Google, Google Wallet saves it.
@@ -531,6 +603,7 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
+      if (!await _linkGoogle()) return;
       final link = await ref.read(apiProvider).googleWalletLink();
       final opened = await launchUrl(link, mode: LaunchMode.externalApplication);
       if (!opened) {
@@ -567,7 +640,39 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
     }
   }
 
-  Widget _googleButton() => Stack(
+  Widget _googleButton() {
+    final theme = Theme.of(context);
+    final on = theme.colorScheme.onSurface;
+    if (_googleSaved) {
+      // In Google Wallet: said once, with the way to it, as Apple's.
+      return Column(mainAxisSize: MainAxisSize.min, children: [
+        Semantics(
+          label: 'Added to Google Wallet.',
+          excludeSemantics: true,
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.check_circle_rounded, size: 20, color: on.withValues(alpha: 0.85)),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                'Added to Google Wallet',
+                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: on.withValues(alpha: 0.85)),
+              ),
+            ),
+          ]),
+        ),
+        TextButton(
+          onPressed: () => launchUrl(Uri.parse('https://wallet.google.com/'), mode: LaunchMode.externalApplication),
+          child: const Text('Open Google Wallet'),
+        ),
+      ]);
+    }
+    final note = !NativeAuth.google
+        ? null
+        : _googleLinked
+            ? (_googleEmail == null ? 'Your Google account is linked.' : 'Saves to $_googleEmail')
+            : 'You will link your Google account first.';
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Stack(
         alignment: Alignment.center,
         children: [
           GoogleWalletButton(onPressed: _busy ? null : _addGoogle),
@@ -576,7 +681,23 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
               child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator.adaptive(strokeWidth: 2.5)),
             ),
         ],
-      );
+      ),
+      if (note != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Flexible(
+              child: Text(note, textAlign: TextAlign.center, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ),
+            if (_googleLinked)
+              TextButton(
+                onPressed: _busy ? null : () => _linkGoogle(again: true),
+                child: const Text('Change'),
+              ),
+          ]),
+        ),
+    ]);
+  }
 
   Widget _boxed(Widget child) => Padding(
         padding: const EdgeInsets.only(top: 18),
