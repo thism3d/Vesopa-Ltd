@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vesopa Square Catalogue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@500&display=swap">
+<style>
+/* Layout: four 210 mm squares. Each page has one bold colour block (ink or
+   green) and one solid piece of the Vesopa V; drawn devices carry the story. */
+:root {
+  --green: #a5c715;        /* brand green: fills, and text on ink only */
+  --green-text: #4a5c00;   /* green for text on white, 7.4:1 */
+  --ink: #1d1d1b;
+  --ink-2: #2c2c29;
+  --ink-3: #3a3a36;
+  --paper: #ffffff;
+  --mist: #f3f5ee;
+  --muted: #55594f;
+  --on-ink-muted: #c3c6bc;
+  --rule: #dfe3d6;
+  --club-red: #8f0000;     /* Pontardawe RFC's own red, case-study card only */
+  --surround: #d9dcd3;
+  --font-display: 'Sora', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Roboto Mono', ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --surround: #2a2b27; } }
+:root[data-theme="dark"] { --surround: #2a2b27; }
+
+@page { size: 210mm 210mm; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--surround); color: var(--ink);
+  font-family: var(--font-body); font-size: 8pt; line-height: 1.42;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.sheets {
+  display: flex; flex-direction: column; align-items: center; gap: 24px;
+  padding-block: 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  overflow-x: auto;
+}
+.page {
+  width: 210mm; height: 210mm; flex: none; background: var(--paper);
+  position: relative; overflow: hidden; display: flex; flex-direction: column;
+  box-shadow: 0 1px 3px rgba(29,29,27,.18), 0 12px 32px rgba(29,29,27,.14);
+}
+h1, h2, h3, h4 { font-family: var(--font-display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+p { margin: 0; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+.num { font-variant-numeric: tabular-nums; }
+.eyebrow { font-family: var(--font-display); font-size: 6.8pt; font-weight: 700; text-transform: uppercase; letter-spacing: .16em; color: var(--green-text); }
+.on-ink .eyebrow, .on-ink.eyebrow { color: var(--green); }
+.tbc {
+  display: inline-block; font-family: var(--font-mono); font-size: .62em; font-weight: 500;
+  letter-spacing: .04em; padding: .1em .45em; border: 1px dashed currentColor;
+  border-radius: 3px; vertical-align: .3em; white-space: nowrap;
+}
+.foot {
+  margin-top: auto; display: flex; justify-content: space-between; align-items: center;
+  padding: 0 12mm 6.5mm; font-size: 6.8pt; color: var(--muted);
+}
+.foot b { font-family: var(--font-display); color: var(--ink); letter-spacing: .14em; font-weight: 800; }
+.foot .num { font-family: var(--font-mono); }
+svg.dev { display: block; height: auto; filter: drop-shadow(0 2.5mm 3mm rgba(0,0,0,.35)); }
+
+/* ---------- Page 1 ---------- */
+.p1-dark { background: var(--ink); color: var(--paper); height: 156mm; position: relative; overflow: hidden; padding: 12mm 12mm 0; }
+.p1-v { position: absolute; right: -46mm; top: -18mm; width: 150mm; }
+.brandline { display: flex; align-items: center; gap: 3mm; position: relative; }
+.brandline svg { width: 10mm; height: auto; }
+.brandline span { font-family: var(--font-display); font-weight: 600; font-size: 6.8pt; letter-spacing: .18em; text-transform: uppercase; color: var(--on-ink-muted); }
+.p1-copy { position: relative; width: 84mm; margin-top: 11mm; }
+.wordmark { font-family: var(--font-display); font-weight: 800; font-size: 50pt; line-height: .92; letter-spacing: .02em; }
+.tagline { margin-top: 3.5mm; font-family: var(--font-display); font-size: 13pt; font-weight: 600; line-height: 1.22; }
+.tagline em { font-style: normal; color: var(--green); }
+.who { margin-top: 8mm; padding-top: 4mm; border-top: 1px solid var(--ink-3); }
+.who h2 { font-size: 11.5pt; margin: 1.6mm 0 2mm; }
+.who p.lead { font-size: 8.8pt; line-height: 1.52; color: #e7e9e1; }
+.p1-devices { position: absolute; left: 100mm; right: 0; bottom: 0; top: 34mm; }
+.p1-devices .till { position: absolute; right: 6mm; top: 4mm; width: 96mm; }
+.p1-devices .phone { position: absolute; right: 2mm; bottom: 4mm; width: 30mm; }
+.p1-devices .terminal { position: absolute; left: 2mm; bottom: 4mm; width: 24mm; }
+.p1-band { background: var(--green); color: var(--ink); flex: 1; padding: 7mm 12mm 0; display: flex; flex-direction: column; }
+.contents { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; }
+.contents li { border-top: 1.5px solid var(--ink); padding-top: 2mm; }
+.contents .num { font-family: var(--font-mono); font-size: 7.2pt; }
+.contents strong { display: block; font-family: var(--font-display); font-weight: 700; font-size: 10pt; line-height: 1.2; margin: .6mm 0 .4mm; }
+.contents small { font-size: 7.8pt; display: block; line-height: 1.3; }
+.p1-contact { margin-top: auto; padding-bottom: 6mm; display: flex; justify-content: space-between; align-items: baseline; gap: 4mm; font-size: 8pt; border-top: 1.5px solid var(--ink); padding-top: 3mm; font-weight: 500; }
+.p1-contact .num:last-child { font-family: var(--font-mono); font-size: 6.8pt; }
+
+/* ---------- Shared bold header (pages 2 and 3) ---------- */
+.band-head { background: var(--ink); color: var(--paper); position: relative; overflow: hidden; padding: 12mm 12mm 9mm; }
+.band-head .v { position: absolute; right: -20mm; top: -8mm; width: 86mm; }
+.band-head h2 { font-size: 21pt; line-height: 1.12; margin-top: 1.5mm; max-width: 120mm; position: relative; }
+.band-head p.intro { margin-top: 3mm; color: var(--on-ink-muted); font-size: 9pt; max-width: 110mm; position: relative; }
+
+/* ---------- Page 2 ---------- */
+.svc-grid { padding: 8mm 12mm 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 9mm 6.5mm; }
+.svc { min-width: 0; }
+.svc-top { display: flex; align-items: center; gap: 2.8mm; margin-bottom: 2mm; }
+.icon { width: 14mm; height: 14mm; flex: none; border-radius: 2.6mm; background: var(--green); display: grid; place-items: center; color: var(--ink); }
+.icon svg { width: 8.6mm; height: 8.6mm; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.svc small { display: block; font-weight: 700; font-size: 6.8pt; letter-spacing: .12em; text-transform: uppercase; color: var(--green-text); }
+.svc h3 { font-size: 10.6pt; line-height: 1.18; }
+.svc p { font-size: 8.8pt; color: var(--ink-2); line-height: 1.45; }
+.also { margin: 10mm 12mm 0; padding: 6mm 6mm; background: var(--green); border-radius: 2mm; display: grid; grid-template-columns: 22mm 1fr 1fr 1fr; gap: 4.5mm; }
+.also h4 { font-size: 10.5pt; line-height: 1.15; }
+.also strong { display: block; font-family: var(--font-display); font-weight: 700; font-size: 9pt; margin-bottom: .6mm; }
+.also p { font-size: 8.3pt; line-height: 1.4; }
+
+/* ---------- Page 3 ---------- */
+.p3-head { padding: 10mm 12mm 0; display: grid; grid-template-columns: 1fr 52mm; gap: 6mm; align-items: end; }
+.p3-head h2 { font-size: 20pt; line-height: 1.12; margin-top: 1.5mm; }
+.p3-head p.intro { color: var(--muted); font-size: 7.8pt; text-align: right; }
+.details { padding: 6mm 12mm 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5.5mm; }
+.detail { min-width: 0; border-top: 2mm solid var(--green); padding-top: 3mm; }
+.detail h3 { font-size: 11.5pt; }
+.detail .lead { font-size: 8.2pt; color: var(--muted); margin: 1.2mm 0 2.4mm; }
+.detail ul { display: grid; gap: 1.9mm; }
+.detail li { display: grid; grid-template-columns: 3.2mm 1fr; font-size: 8pt; line-height: 1.4; }
+.detail li::before { content: ""; width: 2mm; height: 2mm; margin-top: 1mm; background: var(--green-text); clip-path: polygon(0 0, 45% 0, 100% 100%, 55% 100%); }
+.case { margin: 5.5mm 12mm 0; background: var(--ink); color: var(--paper); border-radius: 2mm; padding: 7mm 7mm 6.5mm; position: relative; overflow: hidden; display: grid; grid-template-columns: 1fr 38mm; gap: 5mm; }
+.case .v { position: absolute; right: -14mm; bottom: -12mm; width: 64mm; }
+.case h3 { font-size: 15pt; margin: 1.2mm 0 1.6mm; }
+.case .lead { color: var(--on-ink-muted); font-size: 8.6pt; }
+.case-grid { margin-top: 3.5mm; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+.case-grid div { border-top: 1px solid #4a4b44; padding-top: 2mm; min-width: 0; }
+.case-grid strong { display: block; font-family: var(--font-display); color: var(--green); font-size: 8.4pt; margin-bottom: 1mm; }
+.case-grid p { font-size: 7.9pt; color: #e7e9e1; line-height: 1.42; }
+.case .phone { position: relative; width: 33mm; align-self: center; justify-self: center; }
+
+/* ---------- Page 4 ---------- */
+.p4-head { padding: 9mm 12mm 0; display: flex; justify-content: space-between; align-items: end; gap: 6mm; }
+.p4-head h2 { font-size: 17pt; margin-top: 1.2mm; }
+.p4-head p.intro { color: var(--muted); font-size: 7.6pt; text-align: right; max-width: 62mm; }
+.plans { padding: 4.5mm 12mm 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+.plan { border-radius: 2mm; padding: 3.6mm 4mm; display: flex; flex-direction: column; gap: .8mm; background: var(--mist); }
+.plan.dark { background: var(--ink); color: var(--paper); }
+.plan h3 { font-size: 9pt; }
+.plan .term { font-size: 6.9pt; color: var(--muted); }
+.plan.dark .term, .plan.dark .billed { color: var(--on-ink-muted); }
+.plan .price { font-family: var(--font-display); font-weight: 800; font-size: 21pt; line-height: 1.05; margin-top: .8mm; }
+.plan .price span { font-size: 7.6pt; font-weight: 400; }
+.plan .billed { font-size: 6.9pt; color: var(--ink-2); }
+.plan .save { align-self: flex-start; margin-top: .6mm; font-size: 6.3pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: var(--green); color: var(--ink); padding: .4mm 1.8mm; border-radius: 1mm; }
+.plan .save.none { background: var(--paper); color: var(--muted); }
+.price-notes { padding: 4.5mm 12mm 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; font-size: 7.5pt; }
+.price-notes h4 { font-size: 7.4pt; margin-bottom: .8mm; }
+.price-notes li { display: flex; justify-content: space-between; gap: 2mm; padding: .55mm 0; border-bottom: 1px dotted var(--rule); }
+.price-notes li > span:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.price-notes .incl li { justify-content: flex-start; }
+.price-notes .incl li::before { content: "✓"; color: var(--green-text); font-weight: 700; }
+.vat { padding: 1.8mm 12mm 0; font-size: 6.4pt; color: var(--muted); }
+.steps-wrap { padding: 5mm 12mm 0; }
+.steps-wrap h3 { font-size: 10pt; margin-top: 1mm; }
+.steps { margin-top: 2.6mm; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4.5mm; counter-reset: step; }
+.step { display: grid; grid-template-columns: 8mm 1fr; gap: 2.4mm; }
+.step::before { counter-increment: step; content: counter(step); width: 8mm; height: 8mm; border-radius: 50%; background: var(--green); color: var(--ink); font-family: var(--font-display); font-weight: 800; font-size: 9pt; display: grid; place-items: center; }
+.step strong { display: block; font-family: var(--font-display); font-size: 7.8pt; margin-bottom: .4mm; }
+.step p { font-size: 7.3pt; color: var(--ink-2); line-height: 1.36; }
+.contact { margin: 5.5mm 12mm 0; border-radius: 2mm; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; }
+.cta { background: var(--green); padding: 5mm; display: grid; grid-template-columns: 1fr 23mm; gap: 3.5mm; align-items: start; }
+.cta h3 { font-size: 12.5pt; line-height: 1.12; margin: 1mm 0 1.6mm; }
+.cta p { font-size: 7.1pt; line-height: 1.38; }
+.cta .url { margin-top: 2.6mm; font-family: var(--font-display); font-weight: 800; font-size: 8.4pt; border-top: 1.5px solid var(--ink); padding-top: 1.6mm; }
+.qr { background: var(--paper); border-radius: 1.6mm; padding: 1.6mm; }
+.qr svg { display: block; width: 100%; height: auto; }
+.qr small { display: block; text-align: center; font-size: 5.6pt; font-weight: 700; margin-top: .8mm; letter-spacing: .04em; }
+.reach { background: var(--ink); color: var(--paper); padding: 5mm; display: grid; grid-template-columns: 1fr 1fr; gap: 2.4mm 4mm; align-content: start; position: relative; overflow: hidden; font-style: normal; }
+.reach .v { position: absolute; right: -9mm; bottom: -7mm; width: 30mm; opacity: .9; }
+.reach div { min-width: 0; position: relative; }
+.reach span { display: block; font-size: 5.8pt; text-transform: uppercase; letter-spacing: .12em; color: var(--on-ink-muted); }
+.reach b { font-weight: 500; font-size: 7.6pt; overflow-wrap: anywhere; }
+.reach .wide { grid-column: 1 / -1; padding-right: 16mm; }
+.reach .wide b { font-weight: 400; font-size: 7.2pt; }
+
+@media print {
+  body { background: var(--paper); }
+  .sheets { display: block; padding: 0; overflow: visible; }
+  .page { box-shadow: none; margin: 0; break-after: page; page-break-after: always; }
+  .page:last-child { break-after: auto; page-break-after: auto; }
+}
+</style>
+</head>
+<body>
+<!-- Shared drawings: the Vesopa mark and a real QR code for vesopaepos.com/trial -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="vmark" viewBox="0 0 46.35 33.09">
+    <polygon points="9.95 0 0 0 18.01 33.09 27.96 33.09 9.95 0" fill="#a5c715"/>
+    <polygon points="27.4 16.54 37.35 16.54 46.35 0 36.4 0 27.4 16.54" fill="#a5c715"/>
+    <polygon points="27.4 16.54 18.39 33.09 28.34 33.09 37.35 16.54 27.4 16.54" fill="currentColor"/>
+  </symbol>
+  <symbol id="qr" viewBox="0 0 29 29"><path d="M0 0h1v1h-1zM1 0h1v1h-1zM2 0h1v1h-1zM3 0h1v1h-1zM4 0h1v1h-1zM5 0h1v1h-1zM6 0h1v1h-1zM9 0h1v1h-1zM10 0h1v1h-1zM13 0h1v1h-1zM16 0h1v1h-1zM17 0h1v1h-1zM18 0h1v1h-1zM22 0h1v1h-1zM23 0h1v1h-1zM24 0h1v1h-1zM25 0h1v1h-1zM26 0h1v1h-1zM27 0h1v1h-1zM28 0h1v1h-1zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h1v1h-1zM11 1h1v1h-1zM12 1h1v1h-1zM14 1h1v1h-1zM17 1h1v1h-1zM18 1h1v1h-1zM19 1h1v1h-1zM22 1h1v1h-1zM28 1h1v1h-1zM0 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM6 2h1v1h-1zM10 2h1v1h-1zM11 2h1v1h-1zM13 2h1v1h-1zM15 2h1v1h-1zM16 2h1v1h-1zM19 2h1v1h-1zM22 2h1v1h-1zM24 2h1v1h-1zM25 2h1v1h-1zM26 2h1v1h-1zM28 2h1v1h-1zM0 3h1v1h-1zM2 3h1v1h-1zM3 3h1v1h-1zM4 3h1v1h-1zM6 3h1v1h-1zM8 3h1v1h-1zM9 3h1v1h-1zM10 3h1v1h-1zM11 3h1v1h-1zM13 3h1v1h-1zM15 3h1v1h-1zM17 3h1v1h-1zM22 3h1v1h-1zM24 3h1v1h-1zM25 3h1v1h-1zM26 3h1v1h-1zM28 3h1v1h-1zM0 4h1v1h-1zM2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM8 4h1v1h-1zM9 4h1v1h-1zM11 4h1v1h-1zM12 4h1v1h-1zM13 4h1v1h-1zM18 4h1v1h-1zM19 4h1v1h-1zM22 4h1v1h-1zM24 4h1v1h-1zM25 4h1v1h-1zM26 4h1v1h-1zM28 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM9 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM14 5h1v1h-1zM16 5h1v1h-1zM17 5h1v1h-1zM20 5h1v1h-1zM22 5h1v1h-1zM28 5h1v1h-1zM0 6h1v1h-1zM1 6h1v1h-1zM2 6h1v1h-1zM3 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h1v1h-1zM16 6h1v1h-1zM18 6h1v1h-1zM20 6h1v1h-1zM22 6h1v1h-1zM23 6h1v1h-1zM24 6h1v1h-1zM25 6h1v1h-1zM26 6h1v1h-1zM27 6h1v1h-1zM28 6h1v1h-1zM8 7h1v1h-1zM9 7h1v1h-1zM10 7h1v1h-1zM13 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1zM1 8h1v1h-1zM3 8h1v1h-1zM4 8h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM8 8h1v1h-1zM9 8h1v1h-1zM10 8h1v1h-1zM11 8h1v1h-1zM15 8h1v1h-1zM16 8h1v1h-1zM18 8h1v1h-1zM19 8h1v1h-1zM21 8h1v1h-1zM22 8h1v1h-1zM24 8h1v1h-1zM25 8h1v1h-1zM27 8h1v1h-1zM2 9h1v1h-1zM3 9h1v1h-1zM4 9h1v1h-1zM5 9h1v1h-1zM7 9h1v1h-1zM14 9h1v1h-1zM15 9h1v1h-1zM17 9h1v1h-1zM18 9h1v1h-1zM19 9h1v1h-1zM24 9h1v1h-1zM26 9h1v1h-1zM27 9h1v1h-1zM1 10h1v1h-1zM4 10h1v1h-1zM5 10h1v1h-1zM6 10h1v1h-1zM7 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM11 10h1v1h-1zM13 10h1v1h-1zM15 10h1v1h-1zM21 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM25 10h1v1h-1zM0 11h1v1h-1zM1 11h1v1h-1zM2 11h1v1h-1zM4 11h1v1h-1zM7 11h1v1h-1zM8 11h1v1h-1zM12 11h1v1h-1zM13 11h1v1h-1zM14 11h1v1h-1zM16 11h1v1h-1zM17 11h1v1h-1zM28 11h1v1h-1zM0 12h1v1h-1zM1 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM10 12h1v1h-1zM12 12h1v1h-1zM13 12h1v1h-1zM20 12h1v1h-1zM21 12h1v1h-1zM22 12h1v1h-1zM25 12h1v1h-1zM27 12h1v1h-1zM2 13h1v1h-1zM3 13h1v1h-1zM4 13h1v1h-1zM5 13h1v1h-1zM10 13h1v1h-1zM11 13h1v1h-1zM14 13h1v1h-1zM15 13h1v1h-1zM16 13h1v1h-1zM22 13h1v1h-1zM24 13h1v1h-1zM26 13h1v1h-1zM27 13h1v1h-1zM28 13h1v1h-1zM1 14h1v1h-1zM2 14h1v1h-1zM4 14h1v1h-1zM6 14h1v1h-1zM8 14h1v1h-1zM10 14h1v1h-1zM11 14h1v1h-1zM13 14h1v1h-1zM16 14h1v1h-1zM18 14h1v1h-1zM19 14h1v1h-1zM23 14h1v1h-1zM25 14h1v1h-1zM28 14h1v1h-1zM4 15h1v1h-1zM7 15h1v1h-1zM9 15h1v1h-1zM10 15h1v1h-1zM12 15h1v1h-1zM13 15h1v1h-1zM18 15h1v1h-1zM19 15h1v1h-1zM21 15h1v1h-1zM24 15h1v1h-1zM25 15h1v1h-1zM26 15h1v1h-1zM27 15h1v1h-1zM0 16h1v1h-1zM4 16h1v1h-1zM6 16h1v1h-1zM7 16h1v1h-1zM9 16h1v1h-1zM10 16h1v1h-1zM11 16h1v1h-1zM12 16h1v1h-1zM13 16h1v1h-1zM14 16h1v1h-1zM17 16h1v1h-1zM18 16h1v1h-1zM20 16h1v1h-1zM23 16h1v1h-1zM25 16h1v1h-1zM28 16h1v1h-1zM0 17h1v1h-1zM1 17h1v1h-1zM2 17h1v1h-1zM7 17h1v1h-1zM8 17h1v1h-1zM9 17h1v1h-1zM10 17h1v1h-1zM11 17h1v1h-1zM14 17h1v1h-1zM17 17h1v1h-1zM18 17h1v1h-1zM19 17h1v1h-1zM20 17h1v1h-1zM21 17h1v1h-1zM24 17h1v1h-1zM25 17h1v1h-1zM26 17h1v1h-1zM0 18h1v1h-1zM1 18h1v1h-1zM3 18h1v1h-1zM5 18h1v1h-1zM6 18h1v1h-1zM8 18h1v1h-1zM9 18h1v1h-1zM11 18h1v1h-1zM13 18h1v1h-1zM16 18h1v1h-1zM17 18h1v1h-1zM18 18h1v1h-1zM19 18h1v1h-1zM20 18h1v1h-1zM25 18h1v1h-1zM28 18h1v1h-1zM0 19h1v1h-1zM1 19h1v1h-1zM2 19h1v1h-1zM5 19h1v1h-1zM9 19h1v1h-1zM10 19h1v1h-1zM11 19h1v1h-1zM12 19h1v1h-1zM13 19h1v1h-1zM14 19h1v1h-1zM15 19h1v1h-1zM16 19h1v1h-1zM18 19h1v1h-1zM20 19h1v1h-1zM21 19h1v1h-1zM22 19h1v1h-1zM23 19h1v1h-1zM26 19h1v1h-1zM0 20h1v1h-1zM1 20h1v1h-1zM2 20h1v1h-1zM4 20h1v1h-1zM5 20h1v1h-1zM6 20h1v1h-1zM7 20h1v1h-1zM8 20h1v1h-1zM12 20h1v1h-1zM13 20h1v1h-1zM17 20h1v1h-1zM19 20h1v1h-1zM20 20h1v1h-1zM21 20h1v1h-1zM22 20h1v1h-1zM23 20h1v1h-1zM24 20h1v1h-1zM25 20h1v1h-1zM26 20h1v1h-1zM8 21h1v1h-1zM9 21h1v1h-1zM11 21h1v1h-1zM12 21h1v1h-1zM14 21h1v1h-1zM15 21h1v1h-1zM17 21h1v1h-1zM18 21h1v1h-1zM19 21h1v1h-1zM20 21h1v1h-1zM24 21h1v1h-1zM25 21h1v1h-1zM26 21h1v1h-1zM0 22h1v1h-1zM1 22h1v1h-1zM2 22h1v1h-1zM3 22h1v1h-1zM4 22h1v1h-1zM5 22h1v1h-1zM6 22h1v1h-1zM9 22h1v1h-1zM13 22h1v1h-1zM15 22h1v1h-1zM16 22h1v1h-1zM19 22h1v1h-1zM20 22h1v1h-1zM22 22h1v1h-1zM24 22h1v1h-1zM26 22h1v1h-1zM0 23h1v1h-1zM6 23h1v1h-1zM8 23h1v1h-1zM9 23h1v1h-1zM10 23h1v1h-1zM13 23h1v1h-1zM14 23h1v1h-1zM18 23h1v1h-1zM19 23h1v1h-1zM20 23h1v1h-1zM24 23h1v1h-1zM25 23h1v1h-1zM28 23h1v1h-1zM0 24h1v1h-1zM2 24h1v1h-1zM3 24h1v1h-1zM4 24h1v1h-1zM6 24h1v1h-1zM8 24h1v1h-1zM14 24h1v1h-1zM15 24h1v1h-1zM17 24h1v1h-1zM19 24h1v1h-1zM20 24h1v1h-1zM21 24h1v1h-1zM22 24h1v1h-1zM23 24h1v1h-1zM24 24h1v1h-1zM27 24h1v1h-1zM28 24h1v1h-1zM0 25h1v1h-1zM2 25h1v1h-1zM3 25h1v1h-1zM4 25h1v1h-1zM6 25h1v1h-1zM8 25h1v1h-1zM9 25h1v1h-1zM11 25h1v1h-1zM12 25h1v1h-1zM14 25h1v1h-1zM18 25h1v1h-1zM23 25h1v1h-1zM25 25h1v1h-1zM26 25h1v1h-1zM27 25h1v1h-1zM0 26h1v1h-1zM2 26h1v1h-1zM3 26h1v1h-1zM4 26h1v1h-1zM6 26h1v1h-1zM10 26h1v1h-1zM11 26h1v1h-1zM12 26h1v1h-1zM14 26h1v1h-1zM15 26h1v1h-1zM18 26h1v1h-1zM20 26h1v1h-1zM21 26h1v1h-1zM23 26h1v1h-1zM24 26h1v1h-1zM26 26h1v1h-1zM27 26h1v1h-1zM28 26h1v1h-1zM0 27h1v1h-1zM6 27h1v1h-1zM8 27h1v1h-1zM9 27h1v1h-1zM16 27h1v1h-1zM19 27h1v1h-1zM21 27h1v1h-1zM22 27h1v1h-1zM24 27h1v1h-1zM25 27h1v1h-1zM26 27h1v1h-1zM28 27h1v1h-1zM0 28h1v1h-1zM1 28h1v1h-1zM2 28h1v1h-1zM3 28h1v1h-1zM4 28h1v1h-1zM5 28h1v1h-1zM6 28h1v1h-1zM9 28h1v1h-1zM14 28h1v1h-1zM15 28h1v1h-1zM19 28h1v1h-1zM20 28h1v1h-1zM21 28h1v1h-1zM23 28h1v1h-1zM24 28h1v1h-1z" fill="#1d1d1b"/></symbol>
+  <symbol id="contactless" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 8.5a5 5 0 0 1 0 7"/><path d="M11.5 6a8.5 8.5 0 0 1 0 12"/><path d="M15 3.5a12 12 0 0 1 0 17"/></g></symbol>
+</svg>
+
+<main class="sheets">
+
+<!-- ======================= PAGE 1 ======================= -->
+<section class="page" aria-label="Page 1: Cover and introduction">
+  <header class="p1-dark on-ink">
+    <svg class="p1-v" viewBox="0 0 46.35 33.09" aria-hidden="true" style="color:#ffffff"><use href="#vmark"/></svg>
+    <div class="brandline">
+      <svg viewBox="0 0 46.35 33.09" role="img" aria-label="Vesopa logo" style="color:#ffffff"><use href="#vmark"/></svg>
+      <span>Company catalogue · 2026</span>
+    </div>
+    <div class="p1-copy">
+      <h1 class="wordmark">VESOPA</h1>
+      <p class="tagline">Tills, apps and websites for <em>busy venues.</em> <span class="tbc">TBC</span></p>
+      <div class="who">
+        <p class="eyebrow">Who we are</p>
+        <h2>One team for the till, the app and the website.</h2>
+        <p class="lead">Vesopa builds the software a venue runs on. Vesopa EPOS takes orders and payments at the counter, at the tables and in the kitchen. We also build members' apps, wallet cards, websites and hosting, so one team looks after the whole system. We are based in Port Talbot and support everything we sell.</p>
+      </div>
+    </div>
+
+    <div class="p1-devices">
+      <!-- Till: Vesopa EPOS on a touch screen -->
+      <svg class="dev till" viewBox="0 0 300 236" role="img" aria-label="Illustration of the Vesopa EPOS till: a touch screen with the bill on the left and product buttons on the right">
+        <rect x="118" y="186" width="64" height="34" fill="#2c2c29"/>
+        <rect x="80" y="216" width="140" height="14" rx="7" fill="#3a3a36"/>
+        <rect x="0" y="0" width="300" height="192" rx="12" fill="#0d0d0c" stroke="#4a4b44" stroke-width="1.5"/>
+        <rect x="10" y="10" width="280" height="172" rx="5" fill="#f3f5ee"/>
+        <rect x="10" y="10" width="280" height="18" rx="5" fill="#1d1d1b"/>
+        <rect x="10" y="20" width="280" height="8" fill="#1d1d1b"/>
+        <svg x="16" y="13" width="17" height="12" viewBox="0 0 46.35 33.09" style="color:#ffffff"><use href="#vmark"/></svg>
+        <text x="38" y="22.5" font-family="Roboto, sans-serif" font-size="7" font-weight="700" fill="#ffffff">Table 12</text>
+        <text x="282" y="22.5" font-family="Roboto, sans-serif" font-size="7" fill="#c3c6bc" text-anchor="end">Bar · Counter</text>
+        <!-- bill -->
+        <rect x="16" y="34" width="96" height="142" rx="4" fill="#ffffff"/>
+        <g font-family="Roboto, sans-serif" font-size="7" fill="#1d1d1b">
+          <text x="22" y="47" font-weight="700">Bill</text>
+          <text x="22" y="62">Cheeseburger</text><rect x="92" y="57" width="14" height="5" rx="2" fill="#dfe3d6"/>
+          <text x="22" y="75">Fries</text><rect x="92" y="70" width="14" height="5" rx="2" fill="#dfe3d6"/>
+          <text x="22" y="88">Flat white</text><rect x="92" y="83" width="14" height="5" rx="2" fill="#dfe3d6"/>
+          <text x="22" y="101">Lemonade</text><rect x="92" y="96" width="14" height="5" rx="2" fill="#dfe3d6"/>
+          <text x="22" y="114" fill="#55594f">+ Extra cheese</text>
+        </g>
+        <line x1="22" y1="128" x2="106" y2="128" stroke="#dfe3d6"/>
+        <text x="22" y="141" font-family="Roboto, sans-serif" font-size="8" font-weight="700" fill="#1d1d1b">Total</text>
+        <rect x="80" y="135" width="26" height="7" rx="2" fill="#1d1d1b"/>
+        <rect x="22" y="150" width="84" height="20" rx="4" fill="#a5c715"/>
+        <text x="64" y="163.5" font-family="Sora, sans-serif" font-size="8.5" font-weight="700" fill="#1d1d1b" text-anchor="middle">Pay</text>
+        <!-- categories -->
+        <g font-family="Roboto, sans-serif" font-size="6.5" font-weight="700">
+          <rect x="118" y="34" width="40" height="14" rx="7" fill="#1d1d1b"/><text x="138" y="43.5" fill="#a5c715" text-anchor="middle">Food</text>
+          <rect x="162" y="34" width="40" height="14" rx="7" fill="#ffffff"/><text x="182" y="43.5" fill="#1d1d1b" text-anchor="middle">Drinks</text>
+          <rect x="206" y="34" width="40" height="14" rx="7" fill="#ffffff"/><text x="226" y="43.5" fill="#1d1d1b" text-anchor="middle">Desserts</text>
+          <rect x="250" y="34" width="34" height="14" rx="7" fill="#ffffff"/><text x="267" y="43.5" fill="#1d1d1b" text-anchor="middle">Offers</text>
+        </g>
+        <!-- product buttons -->
+        <g font-family="Roboto, sans-serif" font-size="6.6" font-weight="500" fill="#1d1d1b">
+          <rect x="118" y="54" width="52" height="38" rx="4" fill="#a5c715"/><text x="123" y="86">Burger</text>
+          <rect x="175" y="54" width="52" height="38" rx="4" fill="#ffffff"/><text x="180" y="86">Pizza</text>
+          <rect x="232" y="54" width="52" height="38" rx="4" fill="#ffffff"/><text x="237" y="86">Bowl</text>
+          <rect x="118" y="97" width="52" height="38" rx="4" fill="#ffffff"/><text x="123" y="129">Ribs</text>
+          <rect x="175" y="97" width="52" height="38" rx="4" fill="#d7e89a"/><text x="180" y="129">Wings</text>
+          <rect x="232" y="97" width="52" height="38" rx="4" fill="#ffffff"/><text x="237" y="129">Brunch</text>
+          <rect x="118" y="140" width="52" height="36" rx="4" fill="#ffffff"/><text x="123" y="170">Latte</text>
+          <rect x="175" y="140" width="52" height="36" rx="4" fill="#ffffff"/><text x="180" y="170">Cola</text>
+          <rect x="232" y="140" width="52" height="36" rx="4" fill="#1d1d1b"/><text x="237" y="170" fill="#ffffff">Sundae</text>
+        </g>
+        <g fill="#1d1d1b" opacity=".85">
+          <circle cx="160" cy="63" r="4"/><circle cx="217" cy="63" r="4" fill="#a5c715"/><circle cx="274" cy="63" r="4" fill="#a5c715"/>
+          <circle cx="160" cy="106" r="4" fill="#a5c715"/><circle cx="274" cy="106" r="4" fill="#a5c715"/>
+          <circle cx="160" cy="149" r="4" fill="#a5c715"/><circle cx="217" cy="149" r="4" fill="#a5c715"/><circle cx="274" cy="149" r="4"/>
+        </g>
+      </svg>
+
+      <!-- Card machine -->
+      <svg class="dev terminal" viewBox="0 0 110 196" role="img" aria-label="Illustration of a card machine showing 'Tap or insert card'">
+        <rect x="4" y="2" width="102" height="192" rx="16" fill="#2c2c29" stroke="#4a4b44" stroke-width="1.5"/>
+        <rect x="14" y="14" width="82" height="70" rx="6" fill="#f3f5ee"/>
+        <svg x="40" y="22" width="30" height="30" viewBox="0 0 24 24" style="color:#4a5c00"><use href="#contactless"/></svg>
+        <text x="55" y="66" font-family="Sora, sans-serif" font-size="9" font-weight="700" fill="#1d1d1b" text-anchor="middle">Tap or insert</text>
+        <text x="55" y="77" font-family="Roboto, sans-serif" font-size="7" fill="#55594f" text-anchor="middle">card</text>
+        <g fill="#3a3a36">
+          <rect x="16" y="94" width="22" height="15" rx="4"/><rect x="44" y="94" width="22" height="15" rx="4"/><rect x="72" y="94" width="22" height="15" rx="4"/>
+          <rect x="16" y="114" width="22" height="15" rx="4"/><rect x="44" y="114" width="22" height="15" rx="4"/><rect x="72" y="114" width="22" height="15" rx="4"/>
+          <rect x="16" y="134" width="22" height="15" rx="4"/><rect x="44" y="134" width="22" height="15" rx="4"/><rect x="72" y="134" width="22" height="15" rx="4"/>
+        </g>
+        <rect x="16" y="154" width="22" height="15" rx="4" fill="#c0392b"/><rect x="44" y="154" width="22" height="15" rx="4" fill="#3a3a36"/><rect x="72" y="154" width="22" height="15" rx="4" fill="#a5c715"/>
+        <rect x="30" y="180" width="50" height="4" rx="2" fill="#111110"/>
+      </svg>
+
+      <!-- Phone with a Vesopa members' wallet card -->
+      <svg class="dev phone" viewBox="0 0 120 240" role="img" aria-label="Illustration of a phone showing a members' wallet card with points and a QR code">
+        <rect x="2" y="2" width="116" height="236" rx="20" fill="#0d0d0c" stroke="#4a4b44" stroke-width="1.5"/>
+        <rect x="8" y="8" width="104" height="224" rx="15" fill="#ffffff"/>
+        <rect x="44" y="13" width="32" height="8" rx="4" fill="#0d0d0c"/>
+        <text x="16" y="38" font-family="Sora, sans-serif" font-size="9" font-weight="700" fill="#1d1d1b">Wallet</text>
+        <rect x="14" y="46" width="92" height="58" rx="7" fill="#1d1d1b"/>
+        <svg x="20" y="52" width="17" height="12" viewBox="0 0 46.35 33.09" style="color:#ffffff"><use href="#vmark"/></svg>
+        <text x="100" y="61" font-family="Roboto, sans-serif" font-size="6" font-weight="700" fill="#a5c715" text-anchor="end" letter-spacing=".6">MEMBER</text>
+        <text x="20" y="81" font-family="Roboto, sans-serif" font-size="6" fill="#c3c6bc">Points</text>
+        <text x="20" y="95" font-family="Sora, sans-serif" font-size="12" font-weight="700" fill="#ffffff">Your venue</text>
+        <rect x="27" y="114" width="66" height="66" rx="4" fill="#ffffff" stroke="#dfe3d6"/>
+        <svg x="31" y="118" width="58" height="58"><use href="#qr"/></svg>
+        <text x="60" y="194" font-family="Roboto, sans-serif" font-size="6.5" fill="#55594f" text-anchor="middle">Scan at the till</text>
+        <rect x="14" y="204" width="92" height="16" rx="8" fill="#a5c715"/>
+        <text x="60" y="214.5" font-family="Roboto, sans-serif" font-size="6.5" font-weight="700" fill="#1d1d1b" text-anchor="middle">Add to Wallet</text>
+      </svg>
+    </div>
+  </header>
+
+  <div class="p1-band">
+    <nav aria-label="In this catalogue">
+      <ol class="contents">
+        <li><span class="num">p. 2</span><strong>What we do</strong><small>Six services at a glance</small></li>
+        <li><span class="num">p. 3</span><strong>In detail</strong><small>EPOS, Dojo payments and club apps</small></li>
+        <li><span class="num">p. 3</span><strong>Case study</strong><small>Pontardawe RFC</small></li>
+        <li><span class="num">p. 4</span><strong>Pricing and getting started</strong><small>Plans, three steps, contact</small></li>
+      </ol>
+    </nav>
+    <div class="p1-contact">
+      <span>info@vesopa.com</span><span class="num">+44 7501 928043</span><span>vesopaepos.com</span><span>30-day free trial</span><span class="num">1 / 4</span>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= PAGE 2 ======================= -->
+<section class="page" aria-label="Page 2: Services overview">
+  <header class="band-head on-ink">
+    <svg class="v" viewBox="0 0 46.35 33.09" aria-hidden="true" style="color:#ffffff"><use href="#vmark"/></svg>
+    <p class="eyebrow">What we do</p>
+    <h2>Everything a venue needs to sell, serve and stay in touch.</h2>
+    <p class="intro">Take one service or the full set. Every part works with the Vesopa Back Office.</p>
+  </header>
+
+  <div class="svc-grid">
+    <article class="svc">
+      <div class="svc-top"><div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/><path d="M7 8h4M7 11h7"/></svg></div><div><small>Point of sale</small><h3>Vesopa EPOS</h3></div></div>
+      <p>One till for the counter, the tables, the kitchen and the back office. It keeps selling when the broadband drops, then syncs everything once it is back.</p>
+    </article>
+    <article class="svc">
+      <div class="svc-top"><div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2"/><path d="M9 6.5h6M9 17.5h6"/><path d="M10 11.5a2.5 2.5 0 0 1 4 0M8.5 9.8a5 5 0 0 1 7 0"/></svg></div><div><small>Payments</small><h3>Card payments with Dojo</h3></div></div>
+      <p>The till sends the amount straight to the Dojo card machine, so nobody keys it twice. Take cash, card, contactless, Apple Pay and Google Pay, with Teya and Barclaycard also supported.</p>
+    </article>
+    <article class="svc">
+      <div class="svc-top"><div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="11" height="8" rx="1"/><rect x="15" y="4" width="6.5" height="11" rx="1"/><rect x="2.5" y="14" width="11" height="6" rx="1"/><path d="M5 7h6M5 9.5h4"/></svg></div><div><small>Screens</small><h3>Kitchen, customer display and kiosk</h3></div></div>
+      <p>Vesopa Kitchen replaces the kitchen printer with a screen at each station. A customer display shows the bill line by line, and a self-service kiosk lets guests order and pay by card.</p>
+    </article>
+    <article class="svc">
+      <div class="svc-top"><div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.5"/><path d="M6.5 14.5h5"/></svg></div><div><small>Loyalty</small><h3>Rewards and wallet cards</h3></div></div>
+      <p>Members collect points on every visit and spend them against the exact price at the till. Their card sits in Apple Wallet or Google Wallet, ready to scan.</p>
+    </article>
+    <article class="svc">
+      <div class="svc-top"><div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/><path d="M3.5 9l-1.5 3 1.5 3M20.5 9l1.5 3-1.5 3"/></svg></div><div><small>Apps</small><h3>Custom app development</h3></div></div>
+      <p>We design and build apps for iPhone, iPad, Android, Apple Watch and Wear OS under your own name. We also handle the App Store and Google Play listings and testing.</p>
+    </article>
+    <article class="svc">
+      <div class="svc-top"><div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/></svg></div><div><small>Web</small><h3>Websites, domains and hosting</h3></div></div>
+      <p>Register a domain, host your website and set up email from one control panel. We build business and club websites, and keep them running.</p>
+    </article>
+  </div>
+
+  <aside class="also" aria-label="Also from Vesopa">
+    <h4>Also from Vesopa</h4>
+    <div><strong>Vesopa Go</strong><p>Take orders at the table and card payments on the phone itself, with Dojo Tap to Pay. Android and iPhone.</p></div>
+    <div><strong>Hardware</strong><p>Tills, receipt printers, kitchen screens and kiosks, delivered from UK stock. See vesopaepos.com/hardware.</p></div>
+    <div><strong>Training and support</strong><p>We train your staff when you start, and updates and support come with every plan.</p></div>
+  </aside>
+
+  <footer class="foot"><b>VESOPA</b><span>What we do</span><span class="num">2 / 4</span></footer>
+</section>
+
+<!-- ======================= PAGE 3 ======================= -->
+<section class="page" aria-label="Page 3: Service details and case study">
+  <div class="p3-head">
+    <div>
+      <p class="eyebrow">In detail</p>
+      <h2>Built for the busiest hour of the week.</h2>
+    </div>
+    <p class="intro">Our three core services, and a club that runs on them.</p>
+  </div>
+
+  <div class="details">
+    <article class="detail">
+      <h3>Vesopa EPOS</h3>
+      <p class="lead">One till, every part of the floor: the counter, the tables, the kitchen and the office.</p>
+      <ul>
+        <li>Keeps trading offline. The menu, prices and open bills live on the till, and it syncs when the connection returns, with nothing typed twice.</li>
+        <li>Table plan for seating, splitting bills and moving guests.</li>
+        <li>Change prices and menus, and read live reports, in the Back Office.</li>
+        <li>A large touch keyboard and light or dark mode for every shift.</li>
+      </ul>
+    </article>
+    <article class="detail">
+      <h3>Payments with Dojo</h3>
+      <p class="lead">Card payments joined to the till, so the bill and the card machine always agree.</p>
+      <ul>
+        <li>The till sends the amount to the Dojo terminal. No re-keying and no mistyped totals.</li>
+        <li>Cash, card, contactless, Apple Pay and Google Pay on one bill.</li>
+        <li>Vesopa Go takes Dojo Tap to Pay on a phone at the table.</li>
+        <li>Teya and Barclaycard card machines are supported too.</li>
+      </ul>
+    </article>
+    <article class="detail">
+      <h3>Club and venue apps</h3>
+      <p class="lead">Your own app in the stores, with your name, crest and colours, run from the same Back Office.</p>
+      <ul>
+        <li>iPhone, iPad, Android, Apple Watch and Wear OS.</li>
+        <li>Members' cards in Apple Wallet and Google Wallet, with points and a QR code.</li>
+        <li>News, members' sign-in and branding managed in the Back Office.</li>
+        <li>We publish to the App Store and Google Play and run the test releases.</li>
+      </ul>
+    </article>
+  </div>
+
+  <article class="case on-ink" aria-label="Case study: Pontardawe RFC">
+    <svg class="v" viewBox="0 0 46.35 33.09" aria-hidden="true" style="color:#3a3a36"><use href="#vmark"/></svg>
+    <div style="position:relative">
+      <p class="eyebrow">Case study</p>
+      <h3>Pontardawe RFC <span class="tbc">TBC: club approval</span></h3>
+      <p class="lead">A rugby club with members, a bar and a busy match day. The club wanted its own app, under its own name, that members would actually open.</p>
+      <div class="case-grid">
+        <div><strong>What we built</strong><p>The club's members' app, "Pontardawe RFC", for iPhone, Android and the watch, in the club's own red and crest.</p></div>
+        <div><strong>How members use it</strong><p>Members sign in, carry their card in Apple Wallet or Google Wallet, and follow club news. The same card works on the web at member.pontardawerfc.com.</p></div>
+        <div><strong>Where it is now</strong><p>Live on the App Store and Google Play. We also look after the club's website, pontardawerfc.com, and its news.</p></div>
+      </div>
+    </div>
+    <!-- Phone with the club's members' card (club name and colour only, no crest drawn) -->
+    <svg class="dev phone" viewBox="0 0 120 240" role="img" aria-label="Illustration of a phone showing a Pontardawe RFC members' card in the club's red">
+      <rect x="2" y="2" width="116" height="236" rx="20" fill="#0d0d0c" stroke="#5a5b54" stroke-width="1.5"/>
+      <rect x="8" y="8" width="104" height="224" rx="15" fill="#ffffff"/>
+      <rect x="44" y="13" width="32" height="8" rx="4" fill="#0d0d0c"/>
+      <text x="16" y="38" font-family="Sora, sans-serif" font-size="8" font-weight="700" fill="#1d1d1b">Members' card</text>
+      <rect x="14" y="46" width="92" height="62" rx="7" fill="#8f0000"/>
+      <rect x="14" y="94" width="92" height="14" rx="0" fill="#3f0000" opacity=".55"/>
+      <text x="20" y="62" font-family="Sora, sans-serif" font-size="8.5" font-weight="800" fill="#ffffff" letter-spacing=".3">PONTARDAWE</text>
+      <text x="20" y="73" font-family="Sora, sans-serif" font-size="8.5" font-weight="800" fill="#ffffff" letter-spacing=".3">RFC</text>
+      <text x="20" y="104" font-family="Roboto, sans-serif" font-size="6" fill="#ffd9d9">Members' Club</text>
+      <rect x="27" y="118" width="66" height="66" rx="4" fill="#ffffff" stroke="#dfe3d6"/>
+      <svg x="31" y="122" width="58" height="58"><use href="#qr"/></svg>
+      <text x="60" y="198" font-family="Roboto, sans-serif" font-size="6.5" fill="#55594f" text-anchor="middle">Club news · Fixtures</text>
+      <rect x="14" y="206" width="92" height="16" rx="8" fill="#1d1d1b"/>
+      <text x="60" y="216.5" font-family="Roboto, sans-serif" font-size="6.5" font-weight="700" fill="#ffffff" text-anchor="middle">Open in Wallet</text>
+    </svg>
+  </article>
+
+  <footer class="foot"><b>VESOPA</b><span>In detail</span><span class="num">3 / 4</span></footer>
+</section>
+
+<!-- ======================= PAGE 4 ======================= -->
+<section class="page" aria-label="Page 4: Pricing, how to work with us and contact">
+  <div class="p4-head">
+    <div>
+      <p class="eyebrow">Pricing</p>
+      <h2>Vesopa EPOS plans</h2>
+    </div>
+    <p class="intro">Every plan starts with a 30-day free trial. Prices per venue.</p>
+  </div>
+
+  <div class="plans">
+    <article class="plan">
+      <h3>Starter</h3>
+      <p class="term">Rolling monthly</p>
+      <p class="price num">£85<span> / month</span></p>
+      <p class="billed num">Billed monthly</p>
+      <p class="save none">No contract</p>
+    </article>
+    <article class="plan dark">
+      <h3>Business</h3>
+      <p class="term">12-month term</p>
+      <p class="price num">£70<span> / month</span></p>
+      <p class="billed num">£780 for the year (was £840)</p>
+      <p class="save">Save 7%</p>
+    </article>
+    <article class="plan">
+      <h3>Enterprise</h3>
+      <p class="term">24-month term</p>
+      <p class="price num">£60<span> / month</span></p>
+      <p class="billed num">£1,300 for two years (was £1,440)</p>
+      <p class="save">Save 10%</p>
+    </article>
+  </div>
+
+  <div class="price-notes">
+    <div class="incl">
+      <h4>Every plan includes</h4>
+      <ul>
+        <li>One Vesopa EPOS till</li>
+        <li>One customer display</li>
+        <li>Back Office, reports, programming</li>
+        <li>Updates and support</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Add-ons</h4>
+      <ul>
+        <li><span>Extra customer display</span><span>£15 / month</span></li>
+        <li><span>Vesopa Kitchen, per venue</span><span>£15 / month</span></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Other services</h4>
+      <ul>
+        <li><span>App development</span><span>On request</span></li>
+        <li><span>Websites</span><span>On request</span></li>
+        <li><span>Domains and hosting</span><span>On request <span class="tbc">TBC</span></span></li>
+        <li><span>Hardware</span><span>vesopaepos.com</span></li>
+      </ul>
+    </div>
+  </div>
+  <p class="vat">Prices exclude VAT. VAT may apply. Card processing fees are agreed with your payment provider.</p>
+
+  <div class="steps-wrap">
+    <p class="eyebrow">How to get started</p>
+    <h3>From first call to first sale in three steps.</h3>
+    <div class="steps">
+      <div class="step"><div><strong>Tell us about your venue</strong><p>Call, email or WhatsApp us, or request a demo at vesopaepos.com. A person will walk you through it.</p></div></div>
+      <div class="step"><div><strong>Try it free for 30 days</strong><p>We set up your menu and connect your card machine, then train your staff on the till.</p></div></div>
+      <div class="step"><div><strong>Go live</strong><p>Pick the plan that suits you and open for business. Updates and support carry on with every plan.</p></div></div>
+    </div>
+  </div>
+
+  <div class="contact">
+    <div class="cta">
+      <div>
+        <p class="eyebrow" style="color:var(--ink)">Next step</p>
+        <h3>Start your free 30-day trial.</h3>
+        <p>Your email address is all it takes. Or call us and we will show you Vesopa EPOS running on a real till.</p>
+        <p class="url">vesopaepos.com/trial</p>
+      </div>
+      <div class="qr">
+        <svg viewBox="0 0 29 29" role="img" aria-label="QR code linking to vesopaepos.com/trial"><use href="#qr"/></svg>
+        <small>Scan to start</small>
+      </div>
+    </div>
+    <address class="reach on-ink">
+      <svg class="v" viewBox="0 0 46.35 33.09" aria-hidden="true" style="color:#ffffff"><use href="#vmark"/></svg>
+      <div><span>Email</span><b>info@vesopa.com</b></div>
+      <div><span>Phone and WhatsApp</span><b class="num">+44 7501 928043</b></div>
+      <div><span>Support</span><b>support@vesopa.com</b></div>
+      <div><span>Urgent support line</span><b class="num">+44 1792 316282</b></div>
+      <div><span>Website</span><b>vesopaepos.com</b></div>
+      <div><span>Company</span><b>Vesopa Software Ltd, No. <span class="num" style="display:inline;font-size:inherit;letter-spacing:0;text-transform:none;color:inherit">17362206</span></b></div>
+      <div class="wide"><span>Address</span><b>Baglan Innovation Centre, Central Avenue, Baglan, Port Talbot, SA12 7AX</b></div>
+    </address>
+  </div>
+
+  <footer class="foot"><b>VESOPA</b><span>Pricing and contact</span><span class="num">4 / 4</span></footer>
+</section>
+
+</main>
+<script>
+/* Screen only: shrink the square pages to fit a narrow window. Print is unaffected. */
+(function () {
+  var W = 793.7; // 210mm in CSS px
+  function fit() {
+    var avail = document.documentElement.clientWidth - 32;
+    var z = avail < W ? Math.max(avail / W, 0.3) : 1;
+    document.querySelectorAll('.page').forEach(function (p) { p.style.zoom = z === 1 ? '' : z; });
+  }
+  addEventListener('resize', fit);
+  addEventListener('beforeprint', function () { document.querySelectorAll('.page').forEach(function (p) { p.style.zoom = ''; }); });
+  addEventListener('afterprint', fit);
+  fit();
+})();
+</script>
+</body>
+</html>
