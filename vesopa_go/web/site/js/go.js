@@ -254,7 +254,12 @@
     }, { passive: true });
 
     var visible = true;
-    if (io) new IntersectionObserver(function (es) { visible = es[0].isIntersecting; }).observe(canvas);
+    // Off screen the frames stop, so the fixed caption is put away here: a quick
+    // scroll could otherwise leave it half-shown over the rest of the page.
+    if (io) new IntersectionObserver(function (es) {
+      visible = es[0].isIntersecting;
+      if (!visible && zoomCap) { zoomCap.style.opacity = '0'; zoomCap.style.transform = 'translate3d(-50%,24px,0)'; }
+    }).observe(canvas);
 
     // Zoom mode (a page with html.zoom-hero, wide screens): the hero is a tall
     // scroll scene; the iPad drifts back and the iPhone comes to the middle,

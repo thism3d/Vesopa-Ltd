@@ -180,7 +180,10 @@ footer.bottom small { width: 100%; font-size: 12px; opacity: .75; }
 .doc .box { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
 
 @media (max-width: 900px) {
-  nav.links { display: none; }
+  /* Phones: the links sit in a row under the brand, swiped sideways, so every
+     page (and the home page's sections) stays one tap away. */
+  nav.links { order: 3; width: calc(100% + 40px); margin: 0 -20px; padding: 0 20px 12px; gap: 20px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+  nav.links::-webkit-scrollbar { display: none; }
   header.top .btn { margin-left: auto; }
   .grid { grid-template-columns: 1fr; }
   .split, .split.rev { grid-template-columns: 1fr; gap: 40px; }
@@ -192,7 +195,7 @@ footer.bottom small { width: 100%; font-size: 12px; opacity: .75; }
   .rail img { height: 300px; }
   .tilt { transform: none !important; }
   .steps-grid { grid-template-columns: 1fr; gap: 0; }
-  .steps-phone { top: 64px; z-index: 2; padding: 10px 0 16px; background: linear-gradient(var(--bg) 82%, transparent); }
+  .steps-phone { top: 64px; z-index: 2; padding: 10px 0 16px; background: linear-gradient(var(--ink) 82%, transparent); }
   .steps-phone .device.phone .frame { width: 132px; border-radius: 22px; box-shadow: 0 0 0 4px #121410, 0 20px 40px rgba(0,0,0,.6); }
   .steps-list { padding: 4vh 0 10vh; }
   .step { min-height: 34vh; }
@@ -201,6 +204,79 @@ footer.bottom small { width: 100%; font-size: 12px; opacity: .75; }
   .film { padding: 80px 0 20px; }
   .film-frame { border-radius: 14px; }
 }
+/* ---- one app, four jobs ---- */
+.jobs, .tv, .pricing, .faq { padding: 110px 0; }
+.job-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+.job { background: linear-gradient(160deg, var(--raised), var(--card)); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; display: flex; flex-direction: column; transition: transform .5s var(--ease), border-color .3s; }
+.job:hover { transform: translateY(-6px); border-color: rgba(var(--lime-rgb),.5); }
+.job .ic { width: 46px; height: 46px; border-radius: 13px; background: rgba(var(--lime-rgb),.14); display: grid; place-items: center; }
+.job .ic svg { width: 26px; height: 26px; fill: none; stroke: var(--lime); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.job h3 { margin: 16px 0 6px; font-size: 20px; }
+.job p { margin: 0 0 18px; color: var(--muted); font-size: 15.5px; flex: 1; }
+.chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.chips li { font-size: 12.5px; font-weight: 700; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--text); }
+.chips li.hot { background: var(--lime); border-color: var(--lime); color: var(--on-lime); }
+
+/* ---- on your TV ---- */
+.tv-stage { display: grid; justify-items: center; gap: 26px; }
+.tv-set { width: min(900px, 100%); }
+.tv-screen { position: relative; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: #050605; border: 10px solid #141712; box-shadow: 0 0 0 2px #3a3f35, 0 50px 100px rgba(0,0,0,.6), 0 0 120px rgba(var(--lime-rgb),.12); }
+.tv-screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transform: scale(1.03); transition: opacity .7s var(--ease), transform .9s var(--ease); }
+.tv-screen img.on { opacity: 1; transform: none; }
+.tv-foot { display: block; width: 34%; height: 10px; margin: 0 auto; border-radius: 0 0 10px 10px; background: linear-gradient(#2a2e26, #141712); }
+.tv-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.tv-tabs button { font: inherit; font-size: 15px; font-weight: 700; min-height: 44px; padding: 0 18px; border-radius: 99px; border: 1px solid var(--line); background: var(--card); color: var(--muted); cursor: pointer; transition: color .2s, border-color .2s, background .2s; }
+.tv-tabs button:hover, .tv-tabs button:focus-visible { color: var(--text); border-color: var(--lime); outline: none; }
+.tv-tabs button[aria-selected="true"] { background: var(--lime); border-color: var(--lime); color: var(--on-lime); }
+.tv-points { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 48px 0 34px; }
+.tv-points > div { padding: 20px 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+.tv-points b { display: block; font-size: 17.5px; margin-bottom: 4px; }
+.tv-points span { color: var(--muted); font-size: 15.5px; }
+.centre { text-align: center; }
+.centre .btn { justify-content: center; }
+
+/* ---- pricing ---- */
+.price-card { background: linear-gradient(160deg, var(--raised), var(--card)); border: 1px solid rgba(var(--lime-rgb),.45); border-radius: 24px; padding: 32px; box-shadow: 0 40px 90px rgba(0,0,0,.45), 0 0 90px rgba(var(--lime-rgb),.10); max-width: 480px; width: 100%; justify-self: center; }
+.price-card .price-name { margin: 0; color: var(--lime); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; font-size: 13px; }
+.price-card .price { margin: 10px 0 0; display: flex; align-items: baseline; gap: 10px; }
+.price-card .price b { font-size: 64px; line-height: 1; letter-spacing: -.04em; font-weight: 900; color: var(--text); }
+.price-card .price span { color: var(--muted); font-size: 18px; }
+.price-card .price-trial { display: inline-block; margin: 14px 0 6px; padding: 4px 12px; border-radius: 99px; background: rgba(var(--lime-rgb),.15); color: var(--lime-hi); font-weight: 800; font-size: 14px; }
+.price-list { list-style: none; margin: 16px 0 26px; padding: 0; display: grid; gap: 10px; }
+.price-list li { position: relative; padding-left: 28px; color: var(--text); font-size: 15.5px; }
+.price-list li::before { content: ""; position: absolute; left: 2px; top: 6px; width: 12px; height: 7px; border-left: 2.5px solid var(--lime); border-bottom: 2.5px solid var(--lime); transform: rotate(-45deg); }
+.btn.wide { width: 100%; justify-content: center; }
+.pricing .split p.fine { font-size: 14.5px; }
+.price-alt { display: block; margin-top: 14px; text-align: center; font-size: 14.5px; }
+
+/* ---- questions ---- */
+.faq-list { max-width: 820px; margin: 0 auto; display: grid; gap: 10px; }
+.faq details { border: 1px solid var(--line); border-radius: 16px; background: var(--card); transition: border-color .3s; }
+.faq details[open] { border-color: rgba(var(--lime-rgb),.5); }
+.faq summary { cursor: pointer; list-style: none; padding: 18px 56px 18px 22px; font-weight: 800; font-size: 17.5px; position: relative; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; position: absolute; right: 22px; top: 50%; transform: translateY(-50%); color: var(--lime); font-size: 26px; font-weight: 400; transition: transform .3s var(--ease); }
+.faq details[open] summary::after { transform: translateY(-50%) rotate(45deg); }
+.faq summary:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; border-radius: 16px; }
+.faq details p { margin: 0; padding: 0 22px 20px; color: var(--muted); }
+
+/* ---- get it: the third card and "your device" ---- */
+.qr-tv { display: grid; place-items: center; width: 180px; height: 180px; margin: 0 auto 16px; border-radius: 14px; background: rgba(var(--lime-rgb),.12); }
+.qr-tv svg { width: 96px; height: 96px; fill: none; stroke: var(--lime); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.qr.mine { border-color: var(--lime); box-shadow: 0 0 0 3px rgba(var(--lime-rgb),.25); }
+.your-device { display: block; margin-top: 8px; color: var(--lime-hi); font-weight: 700; }
+
+@media (max-width: 900px) {
+  .jobs, .tv, .pricing, .faq { padding: 80px 0; }
+  .job-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tv-points { grid-template-columns: 1fr; }
+  .tv-screen { border-width: 6px; }
+  .price-card .price b { font-size: 52px; }
+}
+@media (max-width: 560px) {
+  .job-grid { grid-template-columns: 1fr; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .js .reveal { opacity: 1; transform: none; }

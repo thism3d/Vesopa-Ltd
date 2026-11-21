@@ -6,13 +6,30 @@
 <meta name="robots" content="noindex">
 <title>Install Vesopa Go (test builds)</title>
 <link rel="icon" href="/favicon.png">
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/style.css?v=8">
 <script src="/js/accent.js?v=1"></script>
+<style>
+.pick { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 6px; }
+.pick a { padding: 8px 16px; border-radius: 99px; border: 1px solid var(--line); color: var(--text); text-decoration: none; font-weight: 700; font-size: 15px; }
+.pick a:hover, .pick a.mine { border-color: var(--lime); }
+.pick a.mine { background: var(--lime); color: var(--on-lime); }
+section.dl { scroll-margin-top: 90px; padding: 2px 20px 6px; margin: 22px -20px 0; border-radius: var(--radius); border: 1px solid transparent; }
+section.dl.mine { border-color: rgba(var(--lime-rgb),.55); background: var(--card); }
+.mine-note { color: var(--lime-hi); font-weight: 700; margin: 0; }
+</style>
 </head>
 <body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/go-mark.png" alt="">Vesopa <b>Go</b></a>
+  <nav class="links"><a href="/">Home</a><a href="/whats-new/">What's new</a><a href="/support/">Support</a></nav>
+</div></header>
 <main class="doc">
   <h1>Vesopa Go: test builds</h1>
+  <p>Most people should join the test from the <a href="/#get">home page</a> (TestFlight on iPhone and iPad, Google Play on Android). These files are for installing straight from this site.</p>
+  <p class="mine-note" hidden></p>
+  <nav class="pick" aria-label="Choose your device"><a href="#iphone" data-k="ios">iPhone</a><a href="#android" data-k="android">Android phone or tablet</a><a href="#tv" data-k="tv">Android TV</a></nav>
 
+  <section class="dl" id="iphone" data-k="ios">
   <h2>iPhone</h2>
   <p class="version">Version 1.2.61 (1)</p>
   <p>For Vesopa's registered test iPhones only. It carries Tap to Pay on iPhone for testing before Apple approves the app for the App Store.</p>
@@ -23,6 +40,9 @@
     <li>If it says the app cannot be opened: Settings &gt; Privacy &amp; Security &gt; Developer Mode, turn it on and restart the iPhone.</li>
   </ol>
 
+  </section>
+
+  <section class="dl" id="android" data-k="android">
   <h2>Android</h2>
   <p class="version-android">Version 1.2.63 (65)</p>
   <p>The same app as Google Play's test track, as a file to install straight from this page.</p>
@@ -33,7 +53,10 @@
     <li>If Android asks, allow Chrome to <strong>install unknown apps</strong>, then tap <strong>Install</strong>.</li>
   </ol>
 
-  <h2 id="tv">Android TV</h2>
+  </section>
+
+  <section class="dl" id="tv" data-k="tv">
+  <h2>Android TV</h2>
   <p class="version-tv">Version 1.2.63 (65)</p>
   <p>The same app for a TV or a Google TV stick, where it runs as the kitchen screen or the customer display, controlled with the TV remote.</p>
   <p><a class="btn primary" href="/install/VesopaGo.apk" download>Download for Android TV</a></p>
@@ -42,7 +65,39 @@
     <li>Install the free <strong>Downloader</strong> app from Google Play on the TV, open it and type <strong>go.vesopa.com/install/VesopaGo.apk</strong>.</li>
     <li>When the TV asks, allow Downloader to <strong>install unknown apps</strong>, then choose <strong>Install</strong>.</li>
     <li>Open Vesopa Go from the TV's apps and choose <strong>Kitchen</strong> or <strong>Customer display</strong>.</li>
+    <li>Connect it: scan the QR code the TV shows with a phone signed in to Vesopa Go. From then on the phone can drive the TV too (More › Control a screen or TV).</li>
   </ol>
+  </section>
+
+  <h2>Need a hand?</h2>
+  <p>Email <a href="mailto:support@vesopasoftware.com">support@vesopasoftware.com</a> any day, or see <a href="/support/">support</a>. What changed in each version: <a href="/whats-new/">what's new</a>.</p>
 </main>
+
+<footer class="bottom"><div class="wrap">
+  <span>© Vesopa Software Ltd · company number 17362206</span>
+  <a href="/">Home</a><a href="/support/">Support</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a>
+</div></footer>
+<script>
+/* Outline the download for this device. */
+(function () {
+  var ua = navigator.userAgent || '';
+  var iPad = /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var k = /Android TV|AFT|BRAVIA|GoogleTV|SMART-TV|SmartTV/i.test(ua) ? 'tv'
+    : /iPhone|iPod/.test(ua) ? 'ios'
+    : /Android/.test(ua) ? 'android' : '';
+  if (iPad && !k) {
+    var n = document.querySelector('.mine-note');
+    n.textContent = 'On an iPad, join the TestFlight test from the home page: these files are for iPhones, Android and TVs.';
+    n.hidden = false;
+    return;
+  }
+  if (!k) return;
+  var all = document.querySelectorAll('[data-k="' + k + '"]');
+  for (var i = 0; i < all.length; i++) all[i].classList.add('mine');
+  var note = document.querySelector('.mine-note');
+  note.textContent = { ios: 'Your iPhone: see iPhone below.', android: 'Your Android device: see Android below.', tv: 'Your TV: see Android TV below.' }[k];
+  note.hidden = false;
+})();
+</script>
 </body>
 </html>
