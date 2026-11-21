@@ -443,6 +443,9 @@ app.use('/api/admin', adminLicenceRoutes({ pool }));
 // admin.vesopa.com's live overview: every venue's devices, takings, overdue
 // invoices and holds in one read. See src/admin_overview.js.
 app.use('/api/admin', adminOverviewRoutes({ pool }));
+// Vesopa AI for the owner of Vesopa (admin.vesopa.com/ai): the whole business,
+// read-only, behind the same admin gate. See src/owner_ai.js.
+app.use('/api/admin', require('./owner_ai').ownerAiRoutes({ pool, secret: JWT_SECRET }));
 // Pausing and removing a venue's apps, modules and Loyalty app, with a grace
 // day (admin.vesopa.com, 2026-10-05). See src/admin_holds.js.
 app.use('/api/admin', adminHoldRoutes({

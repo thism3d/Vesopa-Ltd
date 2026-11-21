@@ -1,0 +1,43 @@
+# admin.vesopa.com's code (vesopa_admin: src, views, public) to the Cloud box,
+# with tool/deploy_admin_files.py, which the office PC runs too: backs up what
+# is there, uploads the three folders, checks the code, restarts
+# admin.vesopa.com by name and asks /healthz. Leaves .env, node_modules and
+# the database alone.
+#
+# Actions > "admin.vesopa.com - code" > Run workflow, with "deploy" typed in
+# the confirm box. The repository and its logs are public: the tool prints
+# names and status codes only.
+name: admin.vesopa.com - code
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type deploy to put admin.vesopa.com's code live
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-code
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: App Store Connect API
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+          VESOPA_SSH_HOST: root@34.63.118.67
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          [ "$CONFIRM" = "deploy" ] || { echo "::error::Type deploy in the confirm box to put admin.vesopa.com live"; exit 1; }
+          [ -n "$VESOPA_SSH_PASSWORD" ] || { echo "::error::VESOPA_SSH_PASSWORD is not set"; exit 1; }
+          python3 -m pip install --quiet paramiko
+          python3 tool/deploy_admin_files.py
