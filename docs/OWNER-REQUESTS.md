@@ -115,3 +115,9 @@ secrets only).
 | /trial?period=1 | correct as it is: a version of /trial, which is the page to index |
 | Deploy route | Back office - patch, target "website" (vesopa_web files, checked against git, backed up, health-checked). Deployed live 2026-11-19 06:06, healthy. Owner: press Validate fix in Search Console |
 
+
+## Sales material
+
+| Ask | Status |
+| --- | --- |
+| 4-page company catalogue (A4, prints to PDF) for prospective clients (2026-11-21) | draft: `documents/vesopa-catalogue.html` and `documents/vesopa-catalogue.pdf`. Facts from vesopa_web (`src/config.js` prices, contact, brand green #a5c715, Sora/Roboto). Left for the owner: the tagline (marked TBC), Pontardawe RFC's approval to be named as a case study, domains and hosting pricing, and a check that the plan prices match the live vesopaepos.com/pricing (the site's plans can be edited in the admin) |

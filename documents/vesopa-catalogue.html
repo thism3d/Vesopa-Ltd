@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vesopa Company Catalogue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@500&display=swap">
+<style>
+/* Layout: four A4 sheets. Each opens with an ink band or a green rule, then a
+   fixed grid; the V from the Vesopa mark is the one recurring graphic. */
+:root {
+  --green: #a5c715;        /* brand green, fills and on ink only (1.95:1 on white) */
+  --green-text: #4a5c00;   /* green for text on white, 7.4:1 */
+  --ink: #1d1d1b;          /* brand ink */
+  --ink-2: #2c2c29;
+  --paper: #ffffff;
+  --mist: #f3f5ee;         /* green-biased neutral for panels */
+  --muted: #55594f;        /* secondary text on paper and mist, 6.5:1+ */
+  --on-ink-muted: #b9bcb2; /* secondary text on ink, 8.8:1 */
+  --rule: #dfe3d6;
+  --surround: #d9dcd3;     /* screen-only grey behind the sheets */
+  --font-display: 'Sora', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Roboto Mono', ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --surround: #2a2b27; } }
+:root[data-theme="dark"] { --surround: #2a2b27; }
+
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--surround);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 9.5pt;
+  line-height: 1.45;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.sheets {
+  display: flex; flex-direction: column; align-items: center; gap: 24px;
+  padding-block: 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  overflow-x: auto;
+}
+.page {
+  width: 210mm; height: 297mm; flex: none;
+  background: var(--paper);
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 1px 3px rgba(29,29,27,.18), 0 12px 32px rgba(29,29,27,.14);
+}
+h1, h2, h3, h4 { font-family: var(--font-display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+p { margin: 0; }
+ul { margin: 0; padding: 0; list-style: none; }
+a { color: inherit; text-decoration: none; }
+.eyebrow {
+  font-family: var(--font-display); font-size: 7.5pt; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .14em; color: var(--green-text);
+}
+.on-ink .eyebrow { color: var(--green); }
+.tbc {
+  display: inline-block; font-family: var(--font-mono); font-size: .72em; font-weight: 500;
+  letter-spacing: .04em; padding: .1em .45em; border: 1px dashed currentColor;
+  border-radius: 3px; vertical-align: .2em; white-space: nowrap;
+}
+.num { font-variant-numeric: tabular-nums; }
+
+/* Running foot, the same on every sheet */
+.foot {
+  margin-top: auto; display: flex; justify-content: space-between; align-items: center;
+  padding: 0 16mm 9mm; font-size: 7.5pt; color: var(--muted);
+}
+.foot b { font-family: var(--font-display); color: var(--ink); letter-spacing: .12em; font-weight: 700; }
+.foot .num { font-family: var(--font-mono); }
+
+/* ---------- Page 1: cover ---------- */
+.cover-band {
+  background: var(--ink); color: var(--paper);
+  height: 168mm; position: relative; overflow: hidden;
+  padding: 18mm 16mm 16mm;
+  display: flex; flex-direction: column;
+}
+.cover-mark {
+  position: absolute; right: -34mm; bottom: -6mm; width: 168mm; height: auto;
+}
+.cover-top { display: flex; align-items: center; gap: 3.5mm; position: relative; }
+.cover-top svg { width: 12mm; height: auto; }
+.cover-top span { font-family: var(--font-display); font-weight: 600; font-size: 8pt; letter-spacing: .16em; text-transform: uppercase; color: var(--on-ink-muted); }
+.wordmark {
+  margin-top: auto; position: relative;
+  font-family: var(--font-display); font-weight: 800; font-size: 64pt; line-height: .9;
+  letter-spacing: .02em;
+}
+.tagline {
+  position: relative; margin-top: 6mm; max-width: 105mm;
+  font-family: var(--font-display); font-size: 17pt; font-weight: 600; line-height: 1.2;
+}
+.tagline em { font-style: normal; color: var(--green); }
+.cover-body {
+  padding: 13mm 16mm 0; display: grid; grid-template-columns: 1.15fr 1fr; gap: 12mm;
+}
+.cover-body h2 { font-size: 15pt; margin: 2mm 0 4mm; }
+.cover-body .lead { font-size: 10.5pt; line-height: 1.55; max-width: 92mm; }
+.inside { border-left: 1px solid var(--rule); padding-left: 8mm; }
+.inside ol { list-style: none; margin: 3mm 0 0; padding: 0; display: grid; gap: 3.2mm; }
+.inside li { display: grid; grid-template-columns: 9mm 1fr; align-items: baseline; }
+.inside li .num { font-family: var(--font-mono); font-size: 8pt; color: var(--green-text); }
+.inside li strong { font-family: var(--font-display); font-weight: 600; font-size: 10pt; display: block; }
+.inside li small { color: var(--muted); font-size: 8.5pt; }
+.cover-strip {
+  margin: 11mm 16mm 0; padding: 4.5mm 6mm; background: var(--mist); border-radius: 2mm;
+  display: flex; justify-content: space-between; gap: 6mm; font-size: 8.5pt;
+}
+.cover-strip div { display: flex; flex-direction: column; gap: .6mm; }
+.cover-strip span { color: var(--muted); font-size: 7.5pt; text-transform: uppercase; letter-spacing: .1em; }
+.cover-strip b { font-weight: 500; }
+
+/* ---------- Shared sheet header ---------- */
+.sheet-head { padding: 16mm 16mm 0; display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8mm; }
+.sheet-head h2 { font-size: 22pt; line-height: 1.1; margin-top: 2mm; max-width: 120mm; }
+.sheet-head > p { color: var(--muted); max-width: 62mm; font-size: 9pt; text-align: right; }
+.green-rule { height: 1.6mm; background: var(--green); margin: 7mm 16mm 0; width: 22mm; border-radius: 1mm; }
+
+/* ---------- Page 2: services grid ---------- */
+.services {
+  padding: 11mm 16mm 0;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 7.5mm 9mm;
+}
+.service {
+  display: grid; grid-template-columns: 13mm 1fr; gap: 4.5mm;
+  padding-top: 6mm; border-top: 1px solid var(--rule);
+}
+.icon {
+  width: 13mm; height: 13mm; border-radius: 3mm; background: var(--mist);
+  display: grid; place-items: center; color: var(--ink);
+}
+.icon svg { width: 7mm; height: 7mm; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.service h3 { font-size: 12.5pt; margin-bottom: 1.6mm; }
+.service h3 small { display: block; font-family: var(--font-body); font-weight: 500; font-size: 7.5pt; letter-spacing: .1em; text-transform: uppercase; color: var(--green-text); margin-bottom: .8mm; }
+.service p { color: var(--ink-2); font-size: 9.8pt; line-height: 1.5; }
+.also {
+  margin: 10mm 16mm 0; padding: 7mm 7mm; background: var(--ink); color: var(--paper);
+  border-radius: 2mm; display: grid; grid-template-columns: auto 1fr 1fr 1fr; gap: 7mm; align-items: start;
+}
+.also h4 { font-size: 10pt; color: var(--green); white-space: nowrap; }
+.also strong { display: block; font-family: var(--font-display); font-weight: 600; font-size: 9pt; margin-bottom: 1mm; }
+.also p { font-size: 8.8pt; color: var(--on-ink-muted); }
+
+/* ---------- Page 3: details and case study ---------- */
+.details { padding: 11mm 16mm 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 7mm; }
+.detail { display: flex; flex-direction: column; gap: 3mm; min-width: 0; }
+.detail h3 { font-size: 13pt; }
+.detail .lead { font-size: 9.6pt; color: var(--muted); min-height: 19mm; }
+.detail ul { display: grid; gap: 3.4mm; border-top: 1px solid var(--rule); padding-top: 3.5mm; }
+.detail li { display: grid; grid-template-columns: 4mm 1fr; font-size: 9.4pt; line-height: 1.45; }
+.detail li::before { content: ""; width: 2.2mm; height: 2.2mm; margin-top: 1.3mm; background: var(--green); clip-path: polygon(0 0, 45% 0, 100% 100%, 55% 100%); }
+.case {
+  margin: 13mm 16mm 0; background: var(--ink); color: var(--paper); border-radius: 2mm;
+  padding: 10mm 9mm 9mm; position: relative; overflow: hidden;
+}
+.case-mark { position: absolute; right: -10mm; top: -8mm; width: 62mm; opacity: .16; }
+.case h3 { font-size: 16pt; margin: 2mm 0 2.5mm; position: relative; }
+.case > p { color: var(--on-ink-muted); max-width: 120mm; font-size: 10pt; position: relative; }
+.case-grid { margin-top: 8mm; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6mm; position: relative; }
+.case-grid div { border-top: 1px solid #45463f; padding-top: 3mm; min-width: 0; }
+.case-grid strong { display: block; font-family: var(--font-display); font-weight: 600; color: var(--green); font-size: 9pt; margin-bottom: 1.5mm; }
+.case-grid p { font-size: 9.2pt; color: #e7e9e1; }
+
+/* ---------- Page 4: pricing, steps, contact ---------- */
+.plans { padding: 8mm 16mm 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5mm; }
+.plan { border: 1px solid var(--rule); border-radius: 2mm; padding: 5mm 5mm 4.5mm; display: flex; flex-direction: column; gap: 1.4mm; }
+.plan h3 { font-size: 10.5pt; }
+.plan .term { font-size: 8pt; color: var(--muted); }
+.plan .price { font-family: var(--font-display); font-weight: 700; font-size: 22pt; line-height: 1.1; margin-top: 1.5mm; }
+.plan .price span { font-size: 9pt; font-weight: 400; color: var(--muted); }
+.plan .billed { font-size: 8pt; color: var(--ink-2); }
+.plan .save { align-self: flex-start; margin-top: 1mm; font-size: 7.5pt; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: var(--green); color: var(--ink); padding: .5mm 2mm; border-radius: 1mm; }
+.plan .save.none { background: var(--mist); color: var(--muted); }
+.price-notes { padding: 4mm 16mm 0; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5mm; font-size: 8.5pt; }
+.price-notes h4 { font-size: 8.5pt; margin-bottom: 1.5mm; }
+.price-notes li { display: flex; justify-content: space-between; gap: 3mm; padding: .9mm 0; border-bottom: 1px dotted var(--rule); }
+.price-notes li span:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.price-notes .incl li { justify-content: flex-start; }
+.price-notes .incl li::before { content: "✓"; color: var(--green-text); font-weight: 700; }
+.vat { padding: 2.5mm 16mm 0; font-size: 7.5pt; color: var(--muted); }
+.steps-wrap { padding: 8mm 16mm 0; }
+.steps-wrap h3 { font-size: 13pt; margin-top: 1.5mm; }
+.steps { margin-top: 4mm; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6mm; counter-reset: step; }
+.step { display: grid; grid-template-columns: 10mm 1fr; gap: 3mm; }
+.step::before {
+  counter-increment: step; content: counter(step);
+  width: 10mm; height: 10mm; border-radius: 50%; background: var(--ink); color: var(--green);
+  font-family: var(--font-display); font-weight: 700; font-size: 11pt; display: grid; place-items: center;
+}
+.step strong { display: block; font-family: var(--font-display); font-weight: 600; font-size: 9.5pt; margin-bottom: .8mm; }
+.step p { font-size: 8.5pt; color: var(--ink-2); }
+.contact {
+  margin: 9mm 16mm 0; border-radius: 2mm; overflow: hidden;
+  display: grid; grid-template-columns: 1fr 1.15fr;
+}
+.cta { background: var(--green); color: var(--ink); padding: 7mm; display: flex; flex-direction: column; gap: 2.5mm; }
+.cta h3 { font-size: 17pt; line-height: 1.12; }
+.cta p { font-size: 9pt; }
+.cta .url { margin-top: auto; font-family: var(--font-display); font-weight: 700; font-size: 11pt; border-top: 1.5px solid var(--ink); padding-top: 2.5mm; }
+.reach { background: var(--ink); color: var(--paper); padding: 7mm; display: grid; grid-template-columns: 1fr 1fr; gap: 4mm 6mm; align-content: start; }
+.reach div { min-width: 0; }
+.reach span { display: block; font-size: 7pt; text-transform: uppercase; letter-spacing: .12em; color: var(--on-ink-muted); margin-bottom: .6mm; }
+.reach b { font-weight: 500; font-size: 9.5pt; overflow-wrap: anywhere; }
+.reach .wide { grid-column: 1 / -1; }
+.reach .wide b { font-weight: 400; font-size: 8.8pt; }
+
+@media print {
+  body { background: var(--paper); }
+  .sheets { display: block; padding: 0; overflow: visible; }
+  .page { box-shadow: none; margin: 0; break-after: page; page-break-after: always; }
+  .page:last-child { break-after: auto; page-break-after: auto; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .page { transition: box-shadow .2s; }
+}
+</style>
+</head>
+<body>
+<main class="sheets" id="sheets">
+
+<!-- ======================= PAGE 1 ======================= -->
+<section class="page" aria-label="Page 1: Cover and introduction">
+  <header class="cover-band on-ink">
+    <svg class="cover-mark" viewBox="0 0 46.35 33.09" aria-hidden="true">
+      <polygon points="9.95 0 0 0 18.01 33.09 27.96 33.09 9.95 0" fill="#a5c715"/>
+      <polygon points="27.4 16.54 37.35 16.54 46.35 0 36.4 0 27.4 16.54" fill="#a5c715"/>
+      <polygon points="27.4 16.54 18.39 33.09 28.34 33.09 37.35 16.54 27.4 16.54" fill="#ffffff"/>
+    </svg>
+    <div class="cover-top">
+      <svg viewBox="0 0 46.35 33.09" role="img" aria-label="Vesopa logo">
+        <polygon points="9.95 0 0 0 18.01 33.09 27.96 33.09 9.95 0" fill="#a5c715"/>
+        <polygon points="27.4 16.54 37.35 16.54 46.35 0 36.4 0 27.4 16.54" fill="#a5c715"/>
+        <polygon points="27.4 16.54 18.39 33.09 28.34 33.09 37.35 16.54 27.4 16.54" fill="#ffffff"/>
+      </svg>
+      <span>Company catalogue · 2026</span>
+    </div>
+    <h1 class="wordmark">VESOPA</h1>
+    <p class="tagline">Tills, apps and websites for <em>busy venues.</em> <span class="tbc">TBC</span></p>
+  </header>
+
+  <div class="cover-body">
+    <div>
+      <p class="eyebrow">Who we are</p>
+      <h2>One team for the till, the app and the website.</h2>
+      <p class="lead">Vesopa builds the software a venue runs on. Vesopa EPOS takes orders and payments at the counter, at the tables and in the kitchen. We also build members' apps, wallet cards, websites and hosting, so one team looks after the whole system. We are based in Port Talbot and support everything we sell.</p>
+    </div>
+    <nav class="inside" aria-label="In this catalogue">
+      <p class="eyebrow">In this catalogue</p>
+      <ol>
+        <li><span class="num">p. 2</span><div><strong>What we do</strong><small>Six services at a glance</small></div></li>
+        <li><span class="num">p. 3</span><div><strong>In detail</strong><small>EPOS, Dojo payments and club apps</small></div></li>
+        <li><span class="num">p. 3</span><div><strong>Case study</strong><small>Pontardawe RFC</small></div></li>
+        <li><span class="num">p. 4</span><div><strong>Pricing and getting started</strong><small>Plans, three steps, contact</small></div></li>
+      </ol>
+    </nav>
+  </div>
+
+  <div class="cover-strip">
+    <div><span>Email</span><b>info@vesopa.com</b></div>
+    <div><span>Phone</span><b class="num">+44 7501 928043</b></div>
+    <div><span>Web</span><b>vesopaepos.com</b></div>
+    <div><span>Free trial</span><b>30 days</b></div>
+  </div>
+
+  <footer class="foot"><b>VESOPA</b><span>Vesopa Software Ltd</span><span class="num">1 / 4</span></footer>
+</section>
+
+<!-- ======================= PAGE 2 ======================= -->
+<section class="page" aria-label="Page 2: Services overview">
+  <div class="sheet-head">
+    <div>
+      <p class="eyebrow">What we do</p>
+      <h2>Everything a venue needs to sell, serve and stay in touch.</h2>
+    </div>
+    <p>Take one service or the full set. Every part works with the Vesopa Back Office.</p>
+  </div>
+  <div class="green-rule" aria-hidden="true"></div>
+
+  <div class="services">
+    <article class="service">
+      <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/><path d="M7 8h4M7 11h7"/></svg></div>
+      <div>
+        <h3><small>Point of sale</small>Vesopa EPOS</h3>
+        <p>One till for the counter, the tables, the kitchen and the back office. It keeps selling when the broadband drops, then syncs everything once it is back.</p>
+      </div>
+    </article>
+    <article class="service">
+      <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2"/><path d="M9 6.5h6M9 17.5h6"/><path d="M10 11.5a2.5 2.5 0 0 1 4 0M8.5 9.8a5 5 0 0 1 7 0"/></svg></div>
+      <div>
+        <h3><small>Payments</small>Card payments with Dojo</h3>
+        <p>The till sends the amount straight to the Dojo card machine, so nobody keys it twice. Take cash, card, contactless, Apple Pay and Google Pay, with Teya and Barclaycard also supported.</p>
+      </div>
+    </article>
+    <article class="service">
+      <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="11" height="8" rx="1"/><rect x="15" y="4" width="6.5" height="11" rx="1"/><rect x="2.5" y="14" width="11" height="6" rx="1"/><path d="M5 7h6M5 9.5h4"/></svg></div>
+      <div>
+        <h3><small>Screens</small>Kitchen, customer display and kiosk</h3>
+        <p>Vesopa Kitchen replaces the kitchen printer with a screen at each station. A customer display shows the bill line by line, and a self-service kiosk lets guests order and pay by card.</p>
+      </div>
+    </article>
+    <article class="service">
+      <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.5"/><path d="M6.5 14.5h5"/></svg></div>
+      <div>
+        <h3><small>Loyalty</small>Rewards and wallet cards</h3>
+        <p>Members collect points on every visit and spend them against the exact price at the till. Their card sits in Apple Wallet or Google Wallet, ready to scan.</p>
+      </div>
+    </article>
+    <article class="service">
+      <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/><path d="M3.5 9l-1.5 3 1.5 3M20.5 9l1.5 3-1.5 3"/></svg></div>
+      <div>
+        <h3><small>Apps</small>Custom app development</h3>
+        <p>We design and build apps for iPhone, iPad, Android, Apple Watch and Wear OS under your own name. We also handle the App Store and Google Play listings and testing.</p>
+      </div>
+    </article>
+    <article class="service">
+      <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/></svg></div>
+      <div>
+        <h3><small>Web</small>Websites, domains and hosting</h3>
+        <p>Register a domain, host your website and set up email from one control panel. We build business and club websites, and keep them running.</p>
+      </div>
+    </article>
+  </div>
+
+  <aside class="also on-ink" aria-label="Also from Vesopa">
+    <h4>Also from Vesopa</h4>
+    <div><strong>Vesopa Go</strong><p>Take orders at the table and card payments on the phone itself, with Dojo Tap to Pay. Android and iPhone.</p></div>
+    <div><strong>Hardware</strong><p>Tills, receipt printers, kitchen screens and kiosks, delivered from UK stock. See vesopaepos.com/hardware.</p></div>
+    <div><strong>Training and support</strong><p>We train your staff when you start, and updates and support come with every plan.</p></div>
+  </aside>
+
+  <footer class="foot"><b>VESOPA</b><span>What we do</span><span class="num">2 / 4</span></footer>
+</section>
+
+<!-- ======================= PAGE 3 ======================= -->
+<section class="page" aria-label="Page 3: Service details and case study">
+  <div class="sheet-head">
+    <div>
+      <p class="eyebrow">In detail</p>
+      <h2>Built for the busiest hour of the week.</h2>
+    </div>
+    <p>Our three core services, and a club that runs on them.</p>
+  </div>
+  <div class="green-rule" aria-hidden="true"></div>
+
+  <div class="details">
+    <article class="detail">
+      <h3>Vesopa EPOS</h3>
+      <p class="lead">One till, every part of the floor: the counter, the tables, the kitchen and the office.</p>
+      <ul>
+        <li>Keeps trading offline. The menu, prices and open bills live on the till, and it syncs when the connection returns, with nothing typed twice.</li>
+        <li>Table plan for seating, splitting bills and moving guests.</li>
+        <li>Change prices and menus, and read live reports, in the Back Office.</li>
+        <li>A large touch keyboard and light or dark mode for every shift.</li>
+      </ul>
+    </article>
+    <article class="detail">
+      <h3>Payments with Dojo</h3>
+      <p class="lead">Card payments joined to the till, so the bill and the card machine always agree.</p>
+      <ul>
+        <li>The till sends the amount to the Dojo terminal. No re-keying and no mistyped totals.</li>
+        <li>Cash, card, contactless, Apple Pay and Google Pay on one bill.</li>
+        <li>Vesopa Go takes Dojo Tap to Pay on a phone at the table.</li>
+        <li>Teya and Barclaycard card machines are supported too.</li>
+      </ul>
+    </article>
+    <article class="detail">
+      <h3>Club and venue apps</h3>
+      <p class="lead">Your own app in the stores, with your name, crest and colours, run from the same Back Office.</p>
+      <ul>
+        <li>iPhone, iPad, Android, Apple Watch and Wear OS.</li>
+        <li>Members' cards in Apple Wallet and Google Wallet, with points and a QR code.</li>
+        <li>News, members' sign-in and branding managed in the Back Office.</li>
+        <li>We publish to the App Store and Google Play and run the test releases.</li>
+      </ul>
+    </article>
+  </div>
+
+  <article class="case on-ink" aria-label="Case study: Pontardawe RFC">
+    <svg class="case-mark" viewBox="0 0 46.35 33.09" aria-hidden="true">
+      <polygon points="9.95 0 0 0 18.01 33.09 27.96 33.09 9.95 0" fill="#a5c715"/>
+      <polygon points="27.4 16.54 37.35 16.54 46.35 0 36.4 0 27.4 16.54" fill="#a5c715"/>
+      <polygon points="27.4 16.54 18.39 33.09 28.34 33.09 37.35 16.54 27.4 16.54" fill="#ffffff"/>
+    </svg>
+    <p class="eyebrow">Case study</p>
+    <h3>Pontardawe RFC <span class="tbc">TBC: club approval</span></h3>
+    <p>A rugby club with members, a bar and a busy match day. The club wanted its own app, under its own name, that members would actually open.</p>
+    <div class="case-grid">
+      <div><strong>What we built</strong><p>The club's members' app, "Pontardawe RFC", for iPhone, Android and the watch, in the club's own red and crest.</p></div>
+      <div><strong>How members use it</strong><p>Members sign in, carry their card in Apple Wallet or Google Wallet, and follow club news. The same card works on the web at member.pontardawerfc.com.</p></div>
+      <div><strong>Where it is now</strong><p>Live on the App Store and Google Play. We also look after the club's website, pontardawerfc.com, and its news.</p></div>
+    </div>
+  </article>
+
+  <footer class="foot"><b>VESOPA</b><span>In detail</span><span class="num">3 / 4</span></footer>
+</section>
+
+<!-- ======================= PAGE 4 ======================= -->
+<section class="page" aria-label="Page 4: Pricing, how to work with us and contact">
+  <div class="sheet-head">
+    <div>
+      <p class="eyebrow">Pricing</p>
+      <h2>Vesopa EPOS plans</h2>
+    </div>
+    <p>Every plan starts with a 30-day free trial. Prices per venue.</p>
+  </div>
+
+  <div class="plans">
+    <article class="plan">
+      <h3>Starter</h3>
+      <p class="term">Rolling monthly</p>
+      <p class="price num">£85<span> / month</span></p>
+      <p class="billed num">Billed monthly</p>
+      <p class="save none">No contract</p>
+    </article>
+    <article class="plan">
+      <h3>Business</h3>
+      <p class="term">12-month term</p>
+      <p class="price num">£70<span> / month</span></p>
+      <p class="billed num">£780 for the year (was £840)</p>
+      <p class="save">Save 7%</p>
+    </article>
+    <article class="plan">
+      <h3>Enterprise</h3>
+      <p class="term">24-month term</p>
+      <p class="price num">£60<span> / month</span></p>
+      <p class="billed num">£1,300 for two years (was £1,440)</p>
+      <p class="save">Save 10%</p>
+    </article>
+  </div>
+
+  <div class="price-notes">
+    <div class="incl">
+      <h4>Every plan includes</h4>
+      <ul>
+        <li>One Vesopa EPOS till</li>
+        <li>One customer display</li>
+        <li>Back Office, reports, programming</li>
+        <li>Updates and support</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Add-ons</h4>
+      <ul>
+        <li><span>Extra customer display</span><span>£15 / month</span></li>
+        <li><span>Vesopa Kitchen, per venue</span><span>£15 / month</span></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Other services</h4>
+      <ul>
+        <li><span>App development</span><span>On request</span></li>
+        <li><span>Websites</span><span>On request</span></li>
+        <li><span>Domains and hosting</span><span>On request <span class="tbc">TBC</span></span></li>
+        <li><span>Hardware</span><span>vesopaepos.com</span></li>
+      </ul>
+    </div>
+  </div>
+  <p class="vat">Prices exclude VAT. VAT may apply. Card processing fees are agreed with your payment provider.</p>
+
+  <div class="steps-wrap">
+    <p class="eyebrow">How to get started</p>
+    <h3>From first call to first sale in three steps.</h3>
+    <div class="steps">
+      <div class="step"><div><strong>Tell us about your venue</strong><p>Call, email or WhatsApp us, or request a demo at vesopaepos.com. A person will walk you through it.</p></div></div>
+      <div class="step"><div><strong>Try it free for 30 days</strong><p>We set up your menu and connect your card machine, then train your staff on the till.</p></div></div>
+      <div class="step"><div><strong>Go live</strong><p>Pick the plan that suits you and open for business. Updates and support carry on with every plan.</p></div></div>
+    </div>
+  </div>
+
+  <div class="contact">
+    <div class="cta">
+      <p class="eyebrow" style="color:var(--ink)">Next step</p>
+      <h3>Start your free 30-day trial.</h3>
+      <p>Your email address is all it takes. Or call us and we will show you Vesopa EPOS running on a real till.</p>
+      <p class="url">vesopaepos.com/trial</p>
+    </div>
+    <address class="reach on-ink" style="font-style:normal">
+      <div><span>Email</span><b>info@vesopa.com</b></div>
+      <div><span>Phone and WhatsApp</span><b class="num">+44 7501 928043</b></div>
+      <div><span>Support</span><b>support@vesopa.com</b></div>
+      <div><span>Urgent support line</span><b class="num">+44 1792 316282</b></div>
+      <div><span>Website</span><b>vesopaepos.com</b></div>
+      <div><span>Company</span><b>Vesopa Software Ltd<br><span class="num" style="display:inline;letter-spacing:0;text-transform:none;font-size:8pt">No. 17362206</span></b></div>
+      <div class="wide"><span>Address</span><b>Baglan Innovation Centre, Central Avenue, Baglan, Port Talbot, SA12 7AX</b></div>
+    </address>
+  </div>
+
+  <footer class="foot"><b>VESOPA</b><span>Pricing and contact</span><span class="num">4 / 4</span></footer>
+</section>
+
+</main>
+<script>
+/* Screen only: shrink the A4 sheets to fit a narrow window. Print is unaffected. */
+(function () {
+  var A4 = 793.7; // 210mm in CSS px
+  function fit() {
+    var avail = document.documentElement.clientWidth - 32;
+    var z = avail < A4 ? Math.max(avail / A4, 0.3) : 1;
+    document.querySelectorAll('.page').forEach(function (p) { p.style.zoom = z === 1 ? '' : z; });
+  }
+  addEventListener('resize', fit);
+  addEventListener('beforeprint', function () { document.querySelectorAll('.page').forEach(function (p) { p.style.zoom = ''; }); });
+  addEventListener('afterprint', fit);
+  fit();
+})();
+</script>
+</body>
+</html>
