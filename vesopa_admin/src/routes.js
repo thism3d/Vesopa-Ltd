@@ -180,7 +180,10 @@ async function loadOverview(req) {
   }
 }
 
-router.get('/', signedIn, allow('licences.view'), async (req, res, next) => {
+// Somebody whose only role is Vesopa AI lands on it rather than a refusal.
+const aiOnly = (req, res, next) => (roles.can(req.me, 'licences.view') || !roles.can(req.me, 'insights.view') ? next() : res.redirect(303, '/ai'));
+
+router.get('/', signedIn, aiOnly, allow('licences.view'), async (req, res, next) => {
   try {
     const { o, error } = await loadOverview(req);
     const recent = await audit.recent({ limit: 12 }).catch(() => []);
@@ -190,6 +193,45 @@ router.get('/', signedIn, allow('licences.view'), async (req, res, next) => {
     const top = o ? [...o.venues].sort((a, b) => b.today.total_minor - a.today.total_minor).slice(0, 8) : [];
     page(req, res, 'overview', { title: 'Overview', o, error, recent, quiet, grace, owing, top, label: (k) => labelOf(k) });
   } catch (e) { next(e); }
+});
+
+// ---- Vesopa AI (owner, 2026-11-21) -------------------------------------------
+//
+// The whole business for the owner, and for the people the owner gives the
+// "Vesopa AI" role: every venue's takings, Vesopa's income, licences, devices
+// and sign-ups, worked out by the back office (vesopa_server/src/owner_ai.js).
+// Read-only. The page asks for its figures through these three routes, which
+// the back office answers only for this console's service key.
+
+router.get('/ai', signedIn, allow('insights.view'), (req, res) => {
+  page(req, res, 'ai', { title: 'Vesopa AI' });
+});
+
+function aiFail(res, e) {
+  const status = e.status && e.status < 500 ? e.status : 502;
+  res.status(status).json({ error: e.message || 'Vesopa AI did not answer.' });
+}
+
+router.get('/ai/api/briefing', signedIn, allow('insights.view'), async (req, res) => {
+  try { res.json(await epos.insightsBriefing(req.me.email)); } catch (e) { aiFail(res, e); }
+});
+
+router.post('/ai/api/ask', signedIn, allow('insights.view'), express.json({ limit: '16kb' }), csrf, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const body = {
+      question: typeof b.question === 'string' ? b.question.slice(0, 500) : undefined,
+      intent: typeof b.intent === 'string' ? b.intent.slice(0, 32) : undefined,
+      period: typeof b.period === 'string' ? b.period.slice(0, 32) : undefined,
+      previous: b.previous && typeof b.previous === 'object' ? { intent: String(b.previous.intent || '').slice(0, 32), period: String(b.previous.period || '').slice(0, 32) } : undefined,
+      words: b.words !== false,
+    };
+    res.json(await epos.insightsAsk(body, req.me.email));
+  } catch (e) { aiFail(res, e); }
+});
+
+router.get('/ai/api/records', signedIn, allow('insights.view'), async (req, res) => {
+  try { res.json(await epos.insightsRecords({ source: req.query.source, period: req.query.period }, req.me.email)); } catch (e) { aiFail(res, e); }
 });
 
 function labelOf(holdItem) {
