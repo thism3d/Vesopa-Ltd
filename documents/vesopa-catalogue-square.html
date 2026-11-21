@@ -8,17 +8,17 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Roboto:wght@400;500&display=swap">
 <style>
-/* Layout: four quiet 210 mm squares, one idea and one picture each,
-   18 mm margins, three colours (ink, green, white). */
+/* Layout: product-first. Each 210 mm square is centred: a two-part benefit
+   headline on top, one product picture on a soft glow, three short facts. */
 :root {
   --green: #a5c715;
   --green-text: #4a5c00;
   --ink: #1d1d1b;
+  --black: #0f0f0e;
   --paper: #ffffff;
-  --mist: #f3f5ee;
-  --muted: #55594f;
-  --on-ink-muted: #a9ada2;
-  --rule: #e3e6dc;
+  --mist: #f4f5f1;
+  --muted: #6b6f65;        /* secondary text on white and mist, 5.2:1 */
+  --on-black-muted: #9a9e93;  /* secondary text on black, 7:1 */
   --surround: #d9dcd3;
   --font-display: 'Sora', 'Segoe UI', system-ui, sans-serif;
   --font-body: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -43,50 +43,63 @@ body {
 }
 .page {
   width: 210mm; height: 210mm; flex: none; position: relative; overflow: hidden;
-  background: var(--paper);
+  background: var(--paper); text-align: center;
   box-shadow: 0 1px 3px rgba(29,29,27,.18), 0 12px 32px rgba(29,29,27,.14);
 }
-h1, h2 { font-family: var(--font-display); margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
+.page.black { background: var(--black); color: var(--paper); }
+.page.mist { background: var(--mist); }
+h1, h2 { font-family: var(--font-display); font-weight: 800; margin: 0; letter-spacing: -0.035em; line-height: 1.02; }
+h1 span, h2 span { display: block; }
+.black h1 .soft, .black h2 .soft { color: var(--green); }
+.page:not(.black) h2 .soft { color: var(--green-text); }
 p { margin: 0; }
-.eyebrow { font-family: var(--font-display); font-size: 7.5pt; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: var(--green-text); }
-.pno { position: absolute; right: 18mm; bottom: 14mm; font-size: 7.5pt; color: var(--muted); letter-spacing: .1em; }
+.head { position: absolute; left: 16mm; right: 16mm; top: 22mm; }
+.head h2 { font-size: 30pt; }
+.head .sub { margin: 4mm auto 0; max-width: 160mm; font-size: 10.5pt; color: var(--muted); }
+.black .head .sub { color: var(--on-black-muted); }
+.stage { position: absolute; left: 0; right: 0; }
+.glow { position: absolute; left: 50%; transform: translateX(-50%); border-radius: 50%; }
+.black .glow { background: radial-gradient(closest-side, rgba(165,199,21,.38), rgba(165,199,21,0)); }
+.page:not(.black) .glow { background: radial-gradient(closest-side, rgba(29,29,27,.16), rgba(29,29,27,0)); }
+svg.dev { position: absolute; display: block; height: auto; filter: drop-shadow(0 2.5mm 4mm rgba(0,0,0,.26)); }
+.facts { position: absolute; left: 16mm; right: 16mm; bottom: 15mm; display: flex; justify-content: center; gap: 10mm; font-size: 8.6pt; font-weight: 500; color: var(--muted); }
+.black .facts { color: var(--on-black-muted); }
+.facts span { display: inline-flex; align-items: center; gap: 2mm; }
+.facts svg { width: 4.2mm; height: 4.2mm; fill: none; stroke: var(--green-text); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.black .facts svg { stroke: var(--green); }
 
-/* Page 1: cover */
-.cover { background: var(--ink); color: var(--paper); }
-.cover .mark { position: absolute; left: 50%; top: 46mm; width: 84mm; transform: translateX(-50%); }
-.cover h1 { position: absolute; left: 0; right: 0; top: 122mm; text-align: center; font-weight: 800; font-size: 40pt; letter-spacing: .16em; padding-left: .16em; }
-.cover .tagline { position: absolute; left: 0; right: 0; top: 145mm; text-align: center; font-size: 12pt; color: var(--on-ink-muted); }
-.cover .web { position: absolute; left: 0; right: 0; bottom: 14mm; text-align: center; font-size: 8pt; letter-spacing: .2em; text-transform: uppercase; color: var(--green); font-weight: 500; }
+/* Page 1 */
+.brand { position: absolute; left: 0; right: 0; top: 15mm; display: flex; justify-content: center; align-items: center; gap: 2.6mm; }
+.brand svg { width: 9mm; height: auto; }
+.brand b { font-family: var(--font-display); font-weight: 800; font-size: 10pt; letter-spacing: .24em; }
+.p1 .head { top: 32mm; }
+.p1 h1 { font-size: 42pt; }
+.p1 .stage { top: 88mm; height: 112mm; }
+.p1 .glow { top: 6mm; width: 190mm; height: 110mm; }
+.p1 .till { left: 50%; top: 4mm; width: 118mm; transform: translateX(-50%); }
+.p1 .terminal { left: 25mm; top: 54mm; width: 25mm; }
+.p1 .phone { right: 29mm; top: 34mm; width: 34mm; }
 
-/* Page 2: services */
-.head { position: absolute; left: 18mm; right: 18mm; top: 20mm; }
-.head h2 { font-size: 24pt; line-height: 1.1; margin-top: 3mm; }
-.list { position: absolute; left: 18mm; right: 18mm; top: 60mm; display: grid; grid-template-columns: 1fr 1fr; column-gap: 12mm; }
-.item { display: flex; align-items: center; gap: 5mm; padding: 9mm 0; border-top: 1px solid var(--rule); }
-.item:nth-last-child(-n+2) { border-bottom: 1px solid var(--rule); }
-.item i { width: 15mm; height: 15mm; border-radius: 50%; background: var(--green); display: grid; place-items: center; flex: none; }
-.item i svg { width: 7.6mm; height: 7.6mm; fill: none; stroke: var(--ink); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-.item b { font-family: var(--font-display); font-weight: 600; font-size: 13pt; line-height: 1.2; }
+/* Page 2 */
+.p2 .stage { top: 74mm; height: 112mm; }
+.p2 .glow { bottom: 6mm; width: 150mm; height: 26mm; }
+.p2 .till { left: 50%; top: 0; width: 136mm; transform: translateX(-50%); }
 
-/* Page 3: the product */
-.product { background: var(--mist); }
-.product .head { text-align: center; }
-.product svg.till { position: absolute; left: 50%; top: 58mm; width: 150mm; height: auto; transform: translateX(-50%); filter: drop-shadow(0 3mm 5mm rgba(29,29,27,.18)); }
-.facts { position: absolute; left: 0; right: 0; bottom: 26mm; display: flex; justify-content: center; gap: 9mm; font-family: var(--font-display); font-weight: 600; font-size: 10pt; }
-.facts span { display: inline-flex; align-items: center; gap: 2.2mm; }
-.facts span::before { content: ""; width: 2.4mm; height: 2.4mm; border-radius: 50%; background: var(--green); }
+/* Page 3 */
+.p3 .stage { top: 72mm; height: 112mm; }
+.p3 .glow { bottom: 8mm; width: 120mm; height: 22mm; }
+.p3 .terminal { left: 58mm; top: 22mm; width: 43mm; }
+.p3 .phone { left: 106mm; top: 0; width: 48mm; }
 
-/* Page 4: trial and contact */
-.contact { background: var(--green); }
-.contact .head h2 { font-size: 28pt; }
-.contact .from { margin-top: 4mm; font-size: 11pt; }
-.qr { position: absolute; left: 18mm; bottom: 26mm; width: 56mm; background: var(--paper); border-radius: 4mm; padding: 4mm; }
+/* Page 4 */
+.p4 .head { top: 26mm; }
+.p4 .head h2 { font-size: 34pt; }
+.qr { position: absolute; left: 50%; top: 92mm; width: 50mm; transform: translateX(-50%); background: var(--paper); border-radius: 5mm; padding: 4mm; }
+.qr-glow { position: absolute; left: 50%; top: 78mm; width: 120mm; height: 86mm; transform: translateX(-50%); background: radial-gradient(closest-side, rgba(165,199,21,.34), rgba(165,199,21,0)); }
 .qr svg { display: block; width: 100%; height: auto; }
-.qr p { text-align: center; font-size: 7.5pt; font-weight: 500; margin-top: 2mm; }
-.reach { position: absolute; left: 88mm; right: 18mm; bottom: 26mm; list-style: none; margin: 0; padding: 0; display: grid; gap: 5mm; }
-.reach li span { display: block; font-size: 7pt; letter-spacing: .16em; text-transform: uppercase; }
-.reach li b { font-family: var(--font-display); font-weight: 600; font-size: 13pt; }
-.contact .pno { color: var(--ink); }
+.scan { position: absolute; left: 0; right: 0; top: 147mm; font-size: 8.6pt; color: var(--on-black-muted); }
+.reach { position: absolute; left: 16mm; right: 16mm; top: 160mm; display: flex; justify-content: center; gap: 9mm; font-family: var(--font-display); font-weight: 600; font-size: 10.5pt; }
+.also { position: absolute; left: 16mm; right: 16mm; bottom: 12mm; font-size: 7.6pt; color: var(--on-black-muted); }
 
 @media print {
   body { background: var(--paper); }
@@ -108,35 +121,18 @@ p { margin: 0; }
 </svg>
 <main class="sheets">
 
-<section class="page cover" aria-label="Page 1: Cover">
-  <svg class="mark" viewBox="0 0 46.35 33.09" role="img" aria-label="Vesopa logo" style="color:#ffffff"><use href="#vmark"/></svg>
-  <h1>VESOPA</h1>
-  <p class="tagline">Tills, apps and websites for busy venues.</p>
-  <p class="web">vesopaepos.com</p>
-</section>
-
-<section class="page" aria-label="Page 2: What we do">
+<section class="page black p1" aria-label="Page 1: Cover">
+  <div class="brand">
+    <svg viewBox="0 0 46.35 33.09" role="img" aria-label="Vesopa logo" style="color:#ffffff"><use href="#vmark"/></svg>
+    <b>VESOPA</b>
+  </div>
   <div class="head">
-    <p class="eyebrow">What we do</p>
-    <h2>Everything your venue runs on.</h2>
+    <h1><span>Serve faster.</span><span class="soft">Sell more.</span></h1>
+    <p class="sub">Tills, apps and websites for busy venues.</p>
   </div>
-  <div class="list">
-    <div class="item"><i aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg></i><b>EPOS tills</b></div>
-    <div class="item"><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 8.5a5 5 0 0 1 0 7M11.5 6a8.5 8.5 0 0 1 0 12M15 3.5a12 12 0 0 1 0 17"/></svg></i><b>Card payments with Dojo</b></div>
-    <div class="item"><i aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="12" rx="1.5"/><path d="M9 21h6M12 17v4M8 9v4M12 9v4M16 9v4"/></svg></i><b>Kitchen screens</b></div>
-    <div class="item"><i aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 14.5h4"/></svg></i><b>Loyalty and wallet cards</b></div>
-    <div class="item"><i aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/></svg></i><b>Custom apps</b></div>
-    <div class="item"><i aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/></svg></i><b>Websites and hosting</b></div>
-  </div>
-  <p class="pno">02</p>
-</section>
-
-<section class="page product" aria-label="Page 3: Vesopa EPOS">
-  <div class="head">
-    <p class="eyebrow">Vesopa EPOS</p>
-    <h2>One till for the whole venue.</h2>
-  </div>
-  <svg class="till" viewBox="0 0 300 236" role="img" aria-label="Illustration of the Vesopa EPOS till: a touch screen with the bill on the left and product buttons on the right">
+  <div class="stage">
+    <div class="glow" aria-hidden="true"></div>
+    <svg class="dev till" viewBox="0 0 300 236" role="img" aria-label="Illustration of the Vesopa EPOS till: a touch screen with the bill on the left and product buttons on the right">
         <rect x="118" y="186" width="64" height="34" fill="#2c2c29"/>
         <rect x="80" y="216" width="140" height="14" rx="7" fill="#3a3a36"/>
         <rect x="0" y="0" width="300" height="192" rx="12" fill="#0d0d0c" stroke="#4a4b44" stroke-width="1.5"/>
@@ -186,26 +182,159 @@ p { margin: 0; }
           <circle cx="160" cy="149" r="4" fill="#a5c715"/><circle cx="217" cy="149" r="4" fill="#a5c715"/><circle cx="274" cy="149" r="4"/>
         </g>
       </svg>
-  <div class="facts"><span>Works offline</span><span>Dojo payments</span><span>Live reports</span></div>
-  <p class="pno">03</p>
+    <svg class="dev terminal" viewBox="0 0 110 196" role="img" aria-label="Illustration of a card machine showing 'Tap or insert card'">
+        <rect x="4" y="2" width="102" height="192" rx="16" fill="#2c2c29" stroke="#4a4b44" stroke-width="1.5"/>
+        <rect x="14" y="14" width="82" height="70" rx="6" fill="#f3f5ee"/>
+        <svg x="40" y="22" width="30" height="30" viewBox="0 0 24 24" style="color:#4a5c00"><use href="#contactless"/></svg>
+        <text x="55" y="66" font-family="Sora, sans-serif" font-size="9" font-weight="700" fill="#1d1d1b" text-anchor="middle">Tap or insert</text>
+        <text x="55" y="77" font-family="Roboto, sans-serif" font-size="7" fill="#55594f" text-anchor="middle">card</text>
+        <g fill="#3a3a36">
+          <rect x="16" y="94" width="22" height="15" rx="4"/><rect x="44" y="94" width="22" height="15" rx="4"/><rect x="72" y="94" width="22" height="15" rx="4"/>
+          <rect x="16" y="114" width="22" height="15" rx="4"/><rect x="44" y="114" width="22" height="15" rx="4"/><rect x="72" y="114" width="22" height="15" rx="4"/>
+          <rect x="16" y="134" width="22" height="15" rx="4"/><rect x="44" y="134" width="22" height="15" rx="4"/><rect x="72" y="134" width="22" height="15" rx="4"/>
+        </g>
+        <rect x="16" y="154" width="22" height="15" rx="4" fill="#c0392b"/><rect x="44" y="154" width="22" height="15" rx="4" fill="#3a3a36"/><rect x="72" y="154" width="22" height="15" rx="4" fill="#a5c715"/>
+        <rect x="30" y="180" width="50" height="4" rx="2" fill="#111110"/>
+      </svg>
+    <svg class="dev phone" viewBox="0 0 120 240" role="img" aria-label="Illustration of a phone showing a members' wallet card with points and a QR code">
+        <rect x="2" y="2" width="116" height="236" rx="20" fill="#0d0d0c" stroke="#4a4b44" stroke-width="1.5"/>
+        <rect x="8" y="8" width="104" height="224" rx="15" fill="#ffffff"/>
+        <rect x="44" y="13" width="32" height="8" rx="4" fill="#0d0d0c"/>
+        <text x="16" y="38" font-family="Sora, sans-serif" font-size="9" font-weight="700" fill="#1d1d1b">Wallet</text>
+        <rect x="14" y="46" width="92" height="58" rx="7" fill="#1d1d1b"/>
+        <svg x="20" y="52" width="17" height="12" viewBox="0 0 46.35 33.09" style="color:#ffffff"><use href="#vmark"/></svg>
+        <text x="100" y="61" font-family="Roboto, sans-serif" font-size="6" font-weight="700" fill="#a5c715" text-anchor="end" letter-spacing=".6">MEMBER</text>
+        <text x="20" y="81" font-family="Roboto, sans-serif" font-size="6" fill="#c3c6bc">Points</text>
+        <text x="20" y="95" font-family="Sora, sans-serif" font-size="12" font-weight="700" fill="#ffffff">Your venue</text>
+        <rect x="27" y="114" width="66" height="66" rx="4" fill="#ffffff" stroke="#dfe3d6"/>
+        <svg x="31" y="118" width="58" height="58"><use href="#qr"/></svg>
+        <text x="60" y="194" font-family="Roboto, sans-serif" font-size="6.5" fill="#55594f" text-anchor="middle">Scan at the till</text>
+        <rect x="14" y="204" width="92" height="16" rx="8" fill="#a5c715"/>
+        <text x="60" y="214.5" font-family="Roboto, sans-serif" font-size="6.5" font-weight="700" fill="#1d1d1b" text-anchor="middle">Add to Wallet</text>
+      </svg>
+  </div>
 </section>
 
-<section class="page contact" aria-label="Page 4: Free trial and contact">
+<section class="page p2" aria-label="Page 2: Vesopa EPOS">
   <div class="head">
-    <p class="eyebrow" style="color:var(--ink)">Get started</p>
-    <h2>Try Vesopa free for 30 days.</h2>
-    <p class="from">Plans from £60 a month. Prices exclude VAT.</p>
+    <h2><span>Never stop selling.</span><span class="soft">Even offline.</span></h2>
+    <p class="sub">One till for the counter, the tables and the kitchen.</p>
   </div>
-  <div class="qr">
-    <svg viewBox="0 0 29 29" role="img" aria-label="QR code linking to vesopaepos.com/trial"><use href="#qr"/></svg>
-    <p>Scan to start</p>
+  <div class="stage">
+    <div class="glow" aria-hidden="true"></div>
+    <svg class="dev till" viewBox="0 0 300 236" role="img" aria-label="Illustration of the Vesopa EPOS till: a touch screen with the bill on the left and product buttons on the right">
+        <rect x="118" y="186" width="64" height="34" fill="#2c2c29"/>
+        <rect x="80" y="216" width="140" height="14" rx="7" fill="#3a3a36"/>
+        <rect x="0" y="0" width="300" height="192" rx="12" fill="#0d0d0c" stroke="#4a4b44" stroke-width="1.5"/>
+        <rect x="10" y="10" width="280" height="172" rx="5" fill="#f3f5ee"/>
+        <rect x="10" y="10" width="280" height="18" rx="5" fill="#1d1d1b"/>
+        <rect x="10" y="20" width="280" height="8" fill="#1d1d1b"/>
+        <svg x="16" y="13" width="17" height="12" viewBox="0 0 46.35 33.09" style="color:#ffffff"><use href="#vmark"/></svg>
+        <text x="38" y="22.5" font-family="Roboto, sans-serif" font-size="7" font-weight="700" fill="#ffffff">Table 12</text>
+        <text x="282" y="22.5" font-family="Roboto, sans-serif" font-size="7" fill="#c3c6bc" text-anchor="end">Bar · Counter</text>
+        <!-- bill -->
+        <rect x="16" y="34" width="96" height="142" rx="4" fill="#ffffff"/>
+        <g font-family="Roboto, sans-serif" font-size="7" fill="#1d1d1b">
+          <text x="22" y="47" font-weight="700">Bill</text>
+          <text x="22" y="62">Cheeseburger</text><rect x="92" y="57" width="14" height="5" rx="2" fill="#dfe3d6"/>
+          <text x="22" y="75">Fries</text><rect x="92" y="70" width="14" height="5" rx="2" fill="#dfe3d6"/>
+          <text x="22" y="88">Flat white</text><rect x="92" y="83" width="14" height="5" rx="2" fill="#dfe3d6"/>
+          <text x="22" y="101">Lemonade</text><rect x="92" y="96" width="14" height="5" rx="2" fill="#dfe3d6"/>
+          <text x="22" y="114" fill="#55594f">+ Extra cheese</text>
+        </g>
+        <line x1="22" y1="128" x2="106" y2="128" stroke="#dfe3d6"/>
+        <text x="22" y="141" font-family="Roboto, sans-serif" font-size="8" font-weight="700" fill="#1d1d1b">Total</text>
+        <rect x="80" y="135" width="26" height="7" rx="2" fill="#1d1d1b"/>
+        <rect x="22" y="150" width="84" height="20" rx="4" fill="#a5c715"/>
+        <text x="64" y="163.5" font-family="Sora, sans-serif" font-size="8.5" font-weight="700" fill="#1d1d1b" text-anchor="middle">Pay</text>
+        <!-- categories -->
+        <g font-family="Roboto, sans-serif" font-size="6.5" font-weight="700">
+          <rect x="118" y="34" width="40" height="14" rx="7" fill="#1d1d1b"/><text x="138" y="43.5" fill="#a5c715" text-anchor="middle">Food</text>
+          <rect x="162" y="34" width="40" height="14" rx="7" fill="#ffffff"/><text x="182" y="43.5" fill="#1d1d1b" text-anchor="middle">Drinks</text>
+          <rect x="206" y="34" width="40" height="14" rx="7" fill="#ffffff"/><text x="226" y="43.5" fill="#1d1d1b" text-anchor="middle">Desserts</text>
+          <rect x="250" y="34" width="34" height="14" rx="7" fill="#ffffff"/><text x="267" y="43.5" fill="#1d1d1b" text-anchor="middle">Offers</text>
+        </g>
+        <!-- product buttons -->
+        <g font-family="Roboto, sans-serif" font-size="6.6" font-weight="500" fill="#1d1d1b">
+          <rect x="118" y="54" width="52" height="38" rx="4" fill="#a5c715"/><text x="123" y="86">Burger</text>
+          <rect x="175" y="54" width="52" height="38" rx="4" fill="#ffffff"/><text x="180" y="86">Pizza</text>
+          <rect x="232" y="54" width="52" height="38" rx="4" fill="#ffffff"/><text x="237" y="86">Bowl</text>
+          <rect x="118" y="97" width="52" height="38" rx="4" fill="#ffffff"/><text x="123" y="129">Ribs</text>
+          <rect x="175" y="97" width="52" height="38" rx="4" fill="#d7e89a"/><text x="180" y="129">Wings</text>
+          <rect x="232" y="97" width="52" height="38" rx="4" fill="#ffffff"/><text x="237" y="129">Brunch</text>
+          <rect x="118" y="140" width="52" height="36" rx="4" fill="#ffffff"/><text x="123" y="170">Latte</text>
+          <rect x="175" y="140" width="52" height="36" rx="4" fill="#ffffff"/><text x="180" y="170">Cola</text>
+          <rect x="232" y="140" width="52" height="36" rx="4" fill="#1d1d1b"/><text x="237" y="170" fill="#ffffff">Sundae</text>
+        </g>
+        <g fill="#1d1d1b" opacity=".85">
+          <circle cx="160" cy="63" r="4"/><circle cx="217" cy="63" r="4" fill="#a5c715"/><circle cx="274" cy="63" r="4" fill="#a5c715"/>
+          <circle cx="160" cy="106" r="4" fill="#a5c715"/><circle cx="274" cy="106" r="4" fill="#a5c715"/>
+          <circle cx="160" cy="149" r="4" fill="#a5c715"/><circle cx="217" cy="149" r="4" fill="#a5c715"/><circle cx="274" cy="149" r="4"/>
+        </g>
+      </svg>
   </div>
-  <ul class="reach">
-    <li><span>Email</span><b>info@vesopa.com</b></li>
-    <li><span>Phone</span><b>+44 7501 928043</b></li>
-    <li><span>Web</span><b>vesopaepos.com</b></li>
-  </ul>
-  <p class="pno">04</p>
+  <div class="facts">
+    <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Works offline</span>
+    <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Kitchen screens</span>
+    <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Live reports</span>
+  </div>
+</section>
+
+<section class="page mist p3" aria-label="Page 3: Payments and loyalty">
+  <div class="head">
+    <h2><span>Get paid</span><span class="soft">the moment they tap.</span></h2>
+    <p class="sub">Dojo card machines linked to the till, and loyalty cards in your customers' wallets.</p>
+  </div>
+  <div class="stage">
+    <div class="glow" aria-hidden="true"></div>
+    <svg class="dev terminal" viewBox="0 0 110 196" role="img" aria-label="Illustration of a card machine showing 'Tap or insert card'">
+        <rect x="4" y="2" width="102" height="192" rx="16" fill="#2c2c29" stroke="#4a4b44" stroke-width="1.5"/>
+        <rect x="14" y="14" width="82" height="70" rx="6" fill="#f3f5ee"/>
+        <svg x="40" y="22" width="30" height="30" viewBox="0 0 24 24" style="color:#4a5c00"><use href="#contactless"/></svg>
+        <text x="55" y="66" font-family="Sora, sans-serif" font-size="9" font-weight="700" fill="#1d1d1b" text-anchor="middle">Tap or insert</text>
+        <text x="55" y="77" font-family="Roboto, sans-serif" font-size="7" fill="#55594f" text-anchor="middle">card</text>
+        <g fill="#3a3a36">
+          <rect x="16" y="94" width="22" height="15" rx="4"/><rect x="44" y="94" width="22" height="15" rx="4"/><rect x="72" y="94" width="22" height="15" rx="4"/>
+          <rect x="16" y="114" width="22" height="15" rx="4"/><rect x="44" y="114" width="22" height="15" rx="4"/><rect x="72" y="114" width="22" height="15" rx="4"/>
+          <rect x="16" y="134" width="22" height="15" rx="4"/><rect x="44" y="134" width="22" height="15" rx="4"/><rect x="72" y="134" width="22" height="15" rx="4"/>
+        </g>
+        <rect x="16" y="154" width="22" height="15" rx="4" fill="#c0392b"/><rect x="44" y="154" width="22" height="15" rx="4" fill="#3a3a36"/><rect x="72" y="154" width="22" height="15" rx="4" fill="#a5c715"/>
+        <rect x="30" y="180" width="50" height="4" rx="2" fill="#111110"/>
+      </svg>
+    <svg class="dev phone" viewBox="0 0 120 240" role="img" aria-label="Illustration of a phone showing a members' wallet card with points and a QR code">
+        <rect x="2" y="2" width="116" height="236" rx="20" fill="#0d0d0c" stroke="#4a4b44" stroke-width="1.5"/>
+        <rect x="8" y="8" width="104" height="224" rx="15" fill="#ffffff"/>
+        <rect x="44" y="13" width="32" height="8" rx="4" fill="#0d0d0c"/>
+        <text x="16" y="38" font-family="Sora, sans-serif" font-size="9" font-weight="700" fill="#1d1d1b">Wallet</text>
+        <rect x="14" y="46" width="92" height="58" rx="7" fill="#1d1d1b"/>
+        <svg x="20" y="52" width="17" height="12" viewBox="0 0 46.35 33.09" style="color:#ffffff"><use href="#vmark"/></svg>
+        <text x="100" y="61" font-family="Roboto, sans-serif" font-size="6" font-weight="700" fill="#a5c715" text-anchor="end" letter-spacing=".6">MEMBER</text>
+        <text x="20" y="81" font-family="Roboto, sans-serif" font-size="6" fill="#c3c6bc">Points</text>
+        <text x="20" y="95" font-family="Sora, sans-serif" font-size="12" font-weight="700" fill="#ffffff">Your venue</text>
+        <rect x="27" y="114" width="66" height="66" rx="4" fill="#ffffff" stroke="#dfe3d6"/>
+        <svg x="31" y="118" width="58" height="58"><use href="#qr"/></svg>
+        <text x="60" y="194" font-family="Roboto, sans-serif" font-size="6.5" fill="#55594f" text-anchor="middle">Scan at the till</text>
+        <rect x="14" y="204" width="92" height="16" rx="8" fill="#a5c715"/>
+        <text x="60" y="214.5" font-family="Roboto, sans-serif" font-size="6.5" font-weight="700" fill="#1d1d1b" text-anchor="middle">Add to Wallet</text>
+      </svg>
+  </div>
+  <div class="facts">
+    <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Card, Apple Pay, Google Pay</span>
+    <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Wallet loyalty cards</span>
+    <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Your own app</span>
+  </div>
+</section>
+
+<section class="page black p4" aria-label="Page 4: Free trial and contact">
+  <div class="head">
+    <h2><span>Try Vesopa free</span><span class="soft">for 30 days.</span></h2>
+    <p class="sub">Plans from £60 a month. Prices exclude VAT.</p>
+  </div>
+  <div class="qr-glow" aria-hidden="true"></div>
+  <div class="qr"><svg viewBox="0 0 29 29" role="img" aria-label="QR code linking to vesopaepos.com/trial"><use href="#qr"/></svg></div>
+  <p class="scan">Scan to start your free trial</p>
+  <div class="reach"><span>info@vesopa.com</span><span>+44 7501 928043</span><span>vesopaepos.com</span></div>
+  <p class="also">Also from Vesopa: custom apps, websites, domains and hosting.<br>Vesopa Software Ltd · Baglan Innovation Centre, Port Talbot</p>
 </section>
 
 </main>
