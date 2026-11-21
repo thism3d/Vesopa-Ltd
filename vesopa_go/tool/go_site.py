@@ -28,7 +28,7 @@ H = "export PATH=$PATH:/usr/local/hestia/bin; "
 # Every page of the site (each folder's index.html), then the files the pages need.
 PAGES = ["/"] + sorted(f"/{p.parent.relative_to(SITE).as_posix()}/" for p in SITE.glob("*/index.html") if p.parent.name != "preview") + [
     "/.well-known/apple-app-site-association", "/robots.txt", "/sitemap.xml",
-    "/ai/ai.js", "/ai/ai.css", "/js/signup.js", "/js/signup-config.js", "/style.css", "/css/premium.css",
+    "/js/signup.js", "/js/signup-config.js", "/style.css", "/css/premium.css",
     "/js/go.js", "/js/premium.js", "/js/extras.js", "/js/three.min.js", "/media/pay-iphone.mp4",
     "/img/og.jpg", "/img/shots/tv-02-kitchen.webp",
 ]
