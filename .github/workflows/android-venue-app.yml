@@ -19,6 +19,11 @@
 #                                 without ANDROID_KEY_PASSWORD the store password is
 #                                 used, as it is the same in a PKCS12 keystore
 #   PONTARDAWE_GOOGLE_SERVICES_JSON   PontardaweRFC\google-services.json, as it is
+#   FIREBASE_SERVICE_ACCOUNT_JSON     for every other venue: the Firebase Admin SDK
+#                                 key; the run registers the venue's package in the
+#                                 "vesopa" project and fetches its google-services.json
+#                                 (vesopa_loyalty/tool/firebase_android_app.py). Without
+#                                 it PLAY_SERVICE_ACCOUNT_JSON is tried.
 #   PLAY_SERVICE_ACCOUNT_JSON     a service account key with release rights in
 #                                 Play Console (the Firebase Admin one works when
 #                                 it has been invited there), as it is
@@ -39,7 +44,7 @@ on:
       mode:
         description: full = build and upload with the listing; listing = only the words and pictures; build = bundles only; halt = pause what is out on the tracks named in track
         type: choice
-        options: [full, listing, build, halt]
+        options: [full, listing, build, halt, status]
         default: full
       track:
         description: Play track (empty = play.json's); for halt, the tracks to pause, e.g. alpha,wear:beta
@@ -81,6 +86,7 @@ jobs:
           KA: ${{ secrets.ANDROID_KEY_ALIAS }}
           KP: ${{ secrets.ANDROID_KEY_PASSWORD }}
           GS: ${{ secrets.PONTARDAWE_GOOGLE_SERVICES_JSON }}
+          FB: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON || secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           case "$VENUE" in *[!A-Za-z0-9_-]*|'') echo "::error::Not a venue folder: $VENUE"; exit 1;; esac
           test -f "$VENUE/venue.json" || { echo "::error::$VENUE/venue.json not found"; exit 1; }
@@ -90,7 +96,8 @@ jobs:
             [ -n "$KS" ] || missing="$missing ANDROID_UPLOAD_KEYSTORE_B64"
             [ -n "$KSP" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
             [ -n "$KA" ] || missing="$missing ANDROID_KEY_ALIAS"
-            [ -n "$GS" ] || missing="$missing PONTARDAWE_GOOGLE_SERVICES_JSON"
+            if [ "$VENUE" = PontardaweRFC ]; then [ -n "$GS" ] || missing="$missing PONTARDAWE_GOOGLE_SERVICES_JSON"
+            else [ -n "$FB" ] || missing="$missing FIREBASE_SERVICE_ACCOUNT_JSON"; fi
           fi
           if [ -n "$missing" ]; then
             echo "::error::Not set in the 'App Store Connect API' environment:$missing (see the top of this file)."
@@ -102,9 +109,14 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/py"
           "$RUNNER_TEMP/py/bin/pip" install --quiet cryptography
 
+      - name: What each Play track holds (no build)
+        if: inputs.mode == 'status'
+        run: |
+          "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$VENUE" --status
+
       - name: Next build number Play has not seen
         id: num
-        if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
         env:
           BUILD_INPUT: ${{ inputs.build }}
         run: |
@@ -115,7 +127,13 @@ jobs:
             :
           elif [ "$MODE" = "build" ]; then
             # Bundles only: Play not answering is not a reason to stop.
-            echo "::warning::Play did not say which build numbers it has ($(tail -1 "$RUNNER_TEMP/next-build.err" 2>/dev/null)); using venue.json's $floor."
+            if [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+              # Never guess: a number Play already has wastes the whole build,
+              # and the website's APK would carry it (2026-11-19, Go 1.2.70).
+              echo "::error::Play did not say which build numbers it has ($(tail -1 "$RUNNER_TEMP/next-build.err" 2>/dev/null)). Run again in a few minutes, or give the build number."
+              exit 1
+            fi
+            echo "::warning::No Play key: using venue.json's build number $floor."
             n=$floor
           else
             cat "$RUNNER_TEMP/next-build.err" 2>/dev/null
@@ -137,13 +155,21 @@ jobs:
           echo "Building $version ($n); the watch bundle is versionCode $((1000000 + n))."
 
       - uses: actions/setup-java@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
         with:
           distribution: temurin
           java-version: '17'
 
+      # Gradle's downloads and build output, kept between runs (owner,
+      # 2026-11-19: "github workflows are taking too much time"). Written on
+      # main, read everywhere.
+      - uses: gradle/actions/setup-gradle@v4
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
       - uses: subosito/flutter-action@v2
-        if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
         with:
           channel: stable
           flutter-version: 3.47.2
@@ -151,18 +177,25 @@ jobs:
 
       # The NDK the app's build.gradle.kts names, so the release can pack the
       # native libraries' debug symbols.
+      - uses: actions/cache@v4
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        id: ndk
+        with:
+          path: /usr/local/lib/android/sdk/ndk/28.2.13676358
+          key: ndk-28.2.13676358
       - name: Android NDK
-        if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && steps.ndk.outputs.cache-hit != 'true'
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" > /dev/null
 
       - name: Upload key and Firebase file
-        if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
         env:
           KS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
           KSP: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KA: ${{ secrets.ANDROID_KEY_ALIAS }}
           KP: ${{ secrets.ANDROID_KEY_PASSWORD }}
           GS: ${{ secrets.PONTARDAWE_GOOGLE_SERVICES_JSON }}
+          FB: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON || secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           mkdir -p "$RUNNER_TEMP/keys"
           # A PKCS12 keystore (keytool's default since JDK 9) has one password.
@@ -178,26 +211,36 @@ jobs:
             echo "keyAlias=$KA"
             echo "keyPassword=$KP"
           } > vesopa_loyalty/android/key.properties
-          printf '%s' "$GS" > "$VENUE/google-services.json"
+          # Each venue's own Firebase file: Pontardawe's from its secret, any
+          # other venue's registered and fetched now (its package must be in it,
+          # or the Firebase Gradle plugin refuses to build).
+          if [ "$VENUE" = PontardaweRFC ]; then
+            printf '%s' "$GS" > "$VENUE/google-services.json"
+          else
+            printf '%s' "$FB" > "$RUNNER_TEMP/keys/firebase.json"
+            "$RUNNER_TEMP/py/bin/python" vesopa_loyalty/tool/firebase_android_app.py "$VENUE" --key "$RUNNER_TEMP/keys/firebase.json"
+            test -s "$VENUE/google-services.json" || { echo "::error::No google-services.json for $VENUE."; exit 1; }
+          fi
 
       - name: Make the venue's project
-        if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
         run: python3 vesopa_loyalty/tool/make_venue_app.py "$VENUE"
 
       - name: Phone bundle
-        if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
         working-directory: ${{ inputs.venue }}/build/app
         run: |
+          grep -q '^org.gradle.caching=' android/gradle.properties || echo 'org.gradle.caching=true' >> android/gradle.properties
           flutter pub get
           flutter build appbundle --release --dart-define-from-file=venue_defines.json
 
       - name: Wear OS bundle
-        if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
         working-directory: ${{ inputs.venue }}/build/app/android
         run: ./gradlew --no-daemon :wear:bundleRelease
 
       - name: Gather the bundles
-        if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
         run: |
           out="$RUNNER_TEMP/android-builds"
           mkdir -p "$out"
@@ -207,14 +250,14 @@ jobs:
           ls -la "$out"
 
       - uses: actions/upload-artifact@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'halt'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
         with:
           name: ${{ inputs.venue }}-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}
           path: ${{ runner.temp }}/android-builds/*.aab
           retention-days: 30
 
       - name: Upload to Google Play
-        if: inputs.mode != 'build'
+        if: inputs.mode != 'build' && inputs.mode != 'status'
         env:
           TRACK: ${{ inputs.track }}
           PART: ${{ inputs.part }}

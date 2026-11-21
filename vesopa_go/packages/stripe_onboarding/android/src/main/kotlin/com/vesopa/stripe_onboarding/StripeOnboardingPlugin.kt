@@ -111,10 +111,22 @@ class StripeOnboardingPlugin : FlutterPlugin, ActivityAware, MethodChannel.Metho
             return
         }
         StripeOnboarding.waitFor(result)
-        sheet.presentWithSetupIntent(
-            secret,
-            PaymentSheet.Configuration(call.argument<String>("merchantName") ?: "Vesopa Software Ltd"),
-        )
+        val name = call.argument<String>("merchantName") ?: "Vesopa Software Ltd"
+        val builder = PaymentSheet.Configuration.Builder(name)
+        // Google Pay beside the card and Link (owner, 2026-11-18). A test key
+        // pays in Google's test environment.
+        if (call.argument<Boolean>("wallets") != false) {
+            val test = (call.argument<String>("publishableKey") ?: "").startsWith("pk_test")
+            builder.googlePay(
+                PaymentSheet.GooglePayConfiguration(
+                    environment = if (test) PaymentSheet.GooglePayConfiguration.Environment.Test
+                    else PaymentSheet.GooglePayConfiguration.Environment.Production,
+                    countryCode = "GB",
+                    currencyCode = "GBP",
+                ),
+            )
+        }
+        sheet.presentWithSetupIntent(secret, builder.build())
     }
 
     private fun accountOnboarding(host: FragmentActivity, key: String?, call: MethodCall, result: MethodChannel.Result) {

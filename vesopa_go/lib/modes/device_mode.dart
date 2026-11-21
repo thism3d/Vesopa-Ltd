@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/api.dart';
 import '../data/models.dart' show VenueMode;
 import '../data/session.dart';
+import '../ui/tv.dart';
 
 enum DeviceMode {
   epos('EPOS', 'Take orders and payments at the counter and the tables.', Icons.point_of_sale_rounded),
@@ -26,6 +27,14 @@ enum DeviceMode {
   final String label;
   final String detail;
   final IconData icon;
+
+  /// What a television can be (owner, 2026-11-19: "keep only the Kitchen
+  /// and Customer display for Android TV"): a remote cannot ring up a sale or
+  /// take a card, and Google's TV review turns away phone-only screens.
+  bool get onTv => this == DeviceMode.kitchen || this == DeviceMode.display;
+
+  /// The modes this device offers: all of them, or on a TV only [onTv]'s.
+  static List<DeviceMode> get available => GoDevice.isTv ? values.where((m) => m.onTv).toList() : values;
 
   static DeviceMode? parse(String? v) => switch (v) {
         'epos' => DeviceMode.epos,
@@ -89,7 +98,7 @@ class DeviceModeController extends Notifier<DeviceModeState> {
     }
     // What it ran as last, at once, so a device that starts with no signal
     // opens straight in its mode; the back office's answer follows.
-    if (!state.loaded && mode != null) state = DeviceModeState(mode: mode, fixed: fixed, loaded: true);
+    if (!state.loaded && mode != null && (!GoDevice.isTv || mode.onTv)) state = DeviceModeState(mode: mode, fixed: fixed, loaded: true);
     try {
       final r = await ref.read(apiProvider).goMode();
       final server = DeviceMode.parse(r['mode'] as String?);
@@ -100,6 +109,12 @@ class DeviceModeController extends Notifier<DeviceModeState> {
       if (mode != null) await prefs?.setString(_key, mode.name);
     } on TapApiError {
       // Offline or an older back office: what this device chose last.
+    }
+    // A TV set to the till or a card terminal (by the back office, or before
+    // TVs were kept to these two) chooses again, between kitchen and display.
+    if (GoDevice.isTv && mode != null && !mode.onTv) {
+      mode = null;
+      fixed = false;
     }
     state = DeviceModeState(mode: mode, fixed: fixed, loaded: true);
     if (mode != null) _report(mode);

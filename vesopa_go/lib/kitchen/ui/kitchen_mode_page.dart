@@ -22,6 +22,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../ui/tv.dart';
 import '../../data/api.dart';
 import '../../data/session.dart';
 import '../../modes/mode_settings.dart';
@@ -36,6 +37,7 @@ import '../data/providers.dart';
 import '../data/screen_profile.dart';
 import '../data/ticket.dart';
 import '../kitchen_printer.dart';
+import '../../remote/go_remote.dart';
 
 const _amber = Color(0xFFFF9F0A);
 const _red = Color(0xFFFF453A);
@@ -55,15 +57,51 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
   String? _boardFor;
   final Set<String> _flash = {};
 
+  ScreenBeacon? _beacon;
+  bool _unlocked = false;
+
   @override
   void initState() {
     super.initState();
     WakelockPlus.enable().catchError((Object _) {});
     WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+    GoRemote.listen(_remoteKey);
+  // The phone's remote finds this screen, and its keys arrive here (lib/remote/go_remote.dart).
+    _beacon = ScreenBeacon(() {
+      final session = ref.read(tapProvider.notifier);
+      return ref.read(apiProvider).screenHello(
+            deviceId: session.deviceId,
+            name: session.terminalName,
+            mode: 'kitchen',
+            live: session.live,
+            tv: GoDevice.isTv,
+          );
+    })
+      ..start();
+  }
+
+  /// Settings or a refresh from Vesopa Go on a phone; the arrows, OK and Back
+  /// move round the board as the TV's own remote does.
+  bool _remoteKey(String key) {
+    if (!mounted) return false;
+    if (key == 'settings') {
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        _unlocked = true;
+        unawaited(_settings());
+      }
+      return true;
+    }
+    if (key == 'refresh') {
+      unawaited(ref.read(kitchenSessionProvider.notifier).refreshProfile());
+      return true;
+    }
+    return false;
   }
 
   @override
   void dispose() {
+    GoRemote.forget(_remoteKey);
+    _beacon?.stop();
     WakelockPlus.disable().catchError((Object _) {});
     super.dispose();
   }
@@ -336,7 +374,13 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
     if (picked != null) await ref.read(kitchenSessionProvider.notifier).chooseScreen(picked.id);
   }
 
-  Future<void> _settings() => showModeSettings(context, ref, extra: [
+  Future<void> _settings() {
+    final unlocked = _unlocked;
+    _unlocked = false;
+    return _openSettings(unlocked);
+  }
+
+  Future<void> _openSettings(bool unlocked) => showModeSettings(context, ref, unlocked: unlocked, extra: [
         Consumer(builder: (c, ref, _) {
           final s = ref.watch(kitchenSessionProvider).value ?? KitchenSession.empty;
           void go(VoidCallback then) {
@@ -455,7 +499,10 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
     final done = board.completed(profile);
     final orders = inbox.orders;
     final t = Theme.of(context).textTheme;
-    final phone = MediaQuery.sizeOf(context).shortestSide < 600;
+    // A 1080p TV is 960x540 points, as small as a phone across, but it hangs
+    // on a wall and has a remote, not a thumb: the wall screen's grid, never
+    // the phone's swipe list (Play's Android TV pictures, 2026-11-19).
+    final phone = MediaQuery.sizeOf(context).shortestSide < 600 && !GoDevice.isTv && !GoDevice.remote.value;
 
     Widget body;
     if (_problem != null && board.tickets.isEmpty) {
@@ -487,8 +534,10 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
         backgroundColor: const Color(0xFF0B0E0A),
         foregroundColor: Colors.white,
         titleSpacing: 16,
-        title: GestureDetector(
+        title: TvTap(
           onTap: _pickBoard,
+          radius: 10,
+          label: 'Choose the board',
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(profile.name, style: t.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
             Text(
@@ -973,9 +1022,11 @@ class _ClippedState extends State<_Clipped> {
           left: 0,
           right: 0,
           bottom: 0,
-          child: GestureDetector(
+          child: TvTap(
             key: const ValueKey('ticket-more'),
             onTap: widget.onOpen,
+            radius: 0,
+            label: 'See the whole ticket',
             child: Container(
               padding: const EdgeInsets.fromLTRB(14, 22, 14, 6),
               decoration: const BoxDecoration(
@@ -990,14 +1041,14 @@ class _ClippedState extends State<_Clipped> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                   decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(99)),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.unfold_more_rounded, size: 16, color: Colors.white),
-                    SizedBox(width: 4),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.unfold_more_rounded, size: 16, color: Colors.white),
+                    const SizedBox(width: 4),
                     Flexible(
-                      child: Text('More · tap to see all',
+                      child: Text(GoDevice.remote.value ? 'More · press OK to see all' : 'More · tap to see all',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
                     ),
                   ]),
                 ),

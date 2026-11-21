@@ -98,12 +98,18 @@ class StripeOnboarding {
     required String publishableKey,
     required String setupIntentClientSecret,
     String merchantName = 'Vesopa Software Ltd',
+    /// Apple Pay (iOS, in a build carrying the merchant entitlement) and
+    /// Google Pay (Android) beside the card and Link (owner, 2026-11-18).
+    bool wallets = true,
+    String applePayMerchantId = 'merchant.com.vesopa.go',
   }) async {
     try {
       return StripeFlowResult.parse(await _channel.invokeMethod<String>('collectCard', {
         'publishableKey': publishableKey,
         'clientSecret': setupIntentClientSecret,
         'merchantName': merchantName,
+        'wallets': wallets,
+        'applePayMerchantId': applePayMerchantId,
       }));
     } on PlatformException catch (e) {
       return StripeFlowResult(StripeFlowEnd.failed, e.message);

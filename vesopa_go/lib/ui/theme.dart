@@ -139,7 +139,9 @@ class Tp {
           minimumSize: const Size(64, target),
           backgroundColor: lime,
           foregroundColor: onLime,
-          textStyle: TextStyle(fontFamily: font, fontSize: 17, fontWeight: FontWeight.w800),
+          // The theme's lettering (Roboto, the venue's own), not a bare style
+          // that leaves the family to whatever the platform falls back to.
+          textStyle: base.textTheme.labelLarge?.copyWith(fontFamily: font, fontSize: 17, fontWeight: FontWeight.w800),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
@@ -148,7 +150,7 @@ class Tp {
           minimumSize: const Size(64, target),
           foregroundColor: scheme.onSurface,
           side: BorderSide(color: scheme.outlineVariant, width: 1.5),
-          textStyle: TextStyle(fontFamily: font, fontSize: 16, fontWeight: FontWeight.w700),
+          textStyle: base.textTheme.labelLarge?.copyWith(fontFamily: font, fontSize: 16, fontWeight: FontWeight.w700),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),

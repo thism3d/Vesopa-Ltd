@@ -16,6 +16,8 @@ import '../data/customer_display_control.dart';
 import '../data/fonts.dart';
 import '../data/gym.dart';
 import '../data/terminal_identity.dart';
+import '../data/terminal_number.dart';
+import 'terminal_picker.dart';
 import '../payments/go_terminal_provider.dart';
 import '../main.dart';
 import '../payments/teya_provider.dart';
@@ -193,6 +195,7 @@ class SettingsPage extends ConsumerWidget {
               // clocked in at. Defaults to the computer's own host name,
               // because that is already different on the two machines.
               const _TerminalNameRow(),
+              const _TerminalNumberRow(),
               const Divider(height: 1),
               // Names the environment as well as the URL: on a live till this
               // is the fastest way to confirm the sale you just took went to
@@ -3003,6 +3006,25 @@ class _FontsCardState extends ConsumerState<_FontsCard> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Which of the venue's terminals this is: what the X and Z are headed with.
+class _TerminalNumberRow extends ConsumerWidget {
+  const _TerminalNumberRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final number = ref.watch(terminalNumberProvider).value;
+    return _Row(
+      icon: Icons.tag,
+      label: 'Terminal number',
+      value: number == null ? 'Not chosen yet' : ref.watch(terminalTitleProvider),
+      trailing: TextButton(
+        onPressed: () => showTerminalPicker(context, ref),
+        child: Text(number == null ? 'Choose' : 'Change'),
       ),
     );
   }

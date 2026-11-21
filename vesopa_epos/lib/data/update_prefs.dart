@@ -101,6 +101,19 @@ const whatsNewByVersion = <String, List<String>>{
     'Each till has its own X and Z. Settings, Local network has a switch to add one report for all tills.',
     'A phone or tablet running Vesopa Go as a Card terminal can take this till\'s card payments (Settings, Card payments).',
   ],
+  '1.16.55': [
+    'A picked item on the bill is just highlighted: no "1 x selected", no pencil and no item box. Void and Cancel take items off.',
+    'Beside the totals: arrows to move down and up the bill, and Select all.',
+    'Functions, Discount: money off the highlighted items, or the whole bill when none are highlighted.',
+    'After signing in, the till asks which terminal it is, or replaces. Its sales, X and Z carry on under that terminal, and the X and Z show its number and name.',
+  ],
+  '1.16.56': [
+    'A bigger keyboard for every box, along the bottom of the screen like an iPad\'s, with .?123 and #+=. Pull a key down for the small character above it.',
+    'The box you are typing in moves up above the keyboard.',
+    'Undo, redo, cut, copy, paste and select all above the keys; A- and A+ for the key size; the keyboard button for Dock, Undock, Split or Floating.',
+    'Typing on a real keyboard puts the screen keyboard away; the keyboard button in the corner brings it back.',
+    'Prices, quantities and covers get a big round number pad.',
+  ],
 };
 
 /// The notes to show once after an update to [VesopaBrand.appVersion], or

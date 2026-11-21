@@ -11,10 +11,8 @@ import 'link_screen_page.dart';
 import '../../data/api.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
-import '../../payments/payment_service.dart';
 import '../../payments/stripe_tap.dart' show StripeTapToPay;
 import '../add_printers_tile.dart';
-import '../tap_to_pay_intro.dart';
 import '../tap_to_pay_mark.dart';
 import '../theme.dart';
 import '../../data/recent_venues.dart';
@@ -23,6 +21,7 @@ import 'connection_page.dart';
 import '../gateway_mark.dart';
 import '../app_version.dart';
 import 'onboarding.dart';
+import '../../remote/remote_page.dart';
 
 class MorePage extends ConsumerStatefulWidget {
   const MorePage({super.key});
@@ -79,18 +78,6 @@ class _MorePageState extends ConsumerState<MorePage> {
       messenger.showSnackBar(SnackBar(content: Text('Demo: refunded ${money(minor)}')));
       return;
     }
-    // A Dojo Pocket's payment goes back on the Pocket, not through the server.
-    final pay = ref.read(paymentsProvider);
-    if (r.paymentId.startsWith('pocket:') && pay is DojoTapToPay) {
-      try {
-        final ok = await pay.refundOnPocket(minor);
-        if (ok) notifier.refunded(r.paymentId, r.refundedMinor + minor);
-        messenger.showSnackBar(SnackBar(content: Text(ok ? 'Refunded ${money(minor)} to the card' : 'The Dojo app did not refund it.')));
-      } on PlatformException catch (e) {
-        messenger.showSnackBar(SnackBar(content: Text(e.message ?? 'The Dojo app did not refund it.')));
-      }
-      return;
-    }
     try {
       final res = await ref.read(apiProvider).refund(r.paymentId, amountMinor: minor, approvedBy: manager.name, reason: reason.text.trim());
       notifier.refunded(r.paymentId, (res['refunded_minor'] as num?)?.toInt() ?? r.refundedMinor + minor);
@@ -128,16 +115,24 @@ class _MorePageState extends ConsumerState<MorePage> {
       ),
       // A venue that signed up in Go or on go.vesopa.com: its identity,
       // business, bank and licence checks (onboarding.dart).
-      if (!s.demo && s.venue?.mode == VenueMode.standalone)
-        Card(
+      if (!s.demo && (s.venue?.mode == VenueMode.standalone || (ref.watch(onboardingGateProvider).value?['signed_up'] == true)))
+        Builder(builder: (context) {
+          // Steps left for later stay in sight (owner, 2026-11-18: "keep the
+          // state where it's not verified"): card payments stay limited.
+          final pending = ((ref.watch(onboardingGateProvider).value?['pending'] as List?) ?? const []).length;
+          return Card(
+          color: pending > 0 ? Tp.amber.withValues(alpha: 0.12) : null,
           child: ListTile(
-            leading: const Icon(Icons.verified_user_rounded),
+            leading: Icon(pending > 0 ? Icons.schedule_rounded : Icons.verified_user_rounded, color: pending > 0 ? Tp.amber : null),
             title: const Text('Account checks'),
-            subtitle: const Text('Your identity, business, bank and licence, for live card payments'),
+            subtitle: Text(pending > 0
+                ? '$pending check${pending == 1 ? '' : 's'} left for later. Card payments stay limited until they are done.'
+                : 'Your identity, business, bank and licence, for live card payments'),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const OnboardingPage())),
           ),
-        ),
+        );
+        }),
       const SizedBox(height: 12),
       _TapToPayCard(status: _tapStatus),
       if (!ref.watch(tapProvider.select((s) => s.demo))) const AddPrintersTile(),
@@ -159,6 +154,16 @@ class _MorePageState extends ConsumerState<MorePage> {
             subtitle: const Text('Scan the code a new screen shows to add it to this venue'),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () => connectScreen(context, ref),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.settings_remote_rounded),
+            title: const Text('Control a screen or TV'),
+            subtitle: const Text('Use this device as the remote for a kitchen TV or customer display'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ScreensRemotePage())),
           ),
         ),
       ],
@@ -278,56 +283,6 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
   bool get _iPhone => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   @override
-  void initState() {
-    super.initState();
-    final pay = ref.read(paymentsProvider);
-    if (pay is DojoTapToPay && _iPhone) {
-      pay.isLinked().then((v) {
-        if (mounted) setState(() => _linked = v);
-      });
-    }
-  }
-
-  Future<void> _setUp() async {
-    final pay = ref.read(paymentsProvider);
-    if (pay is! DojoTapToPay) return;
-    // The full-screen set-up: its timer while Dojo provisions the iPhone,
-    // then Apple's terms and Apple's guide (lib/ui/tap_to_pay_intro.dart).
-    setState(() => _busy = true);
-    await showTapToPayIntro(context, setUp: true);
-    final now = await pay.isLinked();
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _linked = now;
-      _note = now == true ? 'Ready. Customers can tap a card, phone or watch on the top of this iPhone.' : null;
-    });
-  }
-
-  Future<void> _guide() async {
-    final pay = ref.read(paymentsProvider);
-    if (pay is! DojoTapToPay) return;
-    final why = await pay.showGuide();
-    if (why != null && mounted) setState(() => _note = why);
-    // Apple (HIG, Educating merchants): at the end of the tutorial, a chance
-    // to accept the terms for whoever has not yet.
-    if (why == null && mounted && _linked != true) {
-      final go = await showDialog<bool>(
-        context: context,
-        builder: (c) => AlertDialog(
-          title: const Text('Set up Tap to Pay on iPhone?'),
-          content: const Text("A manager accepts Apple's Tap to Pay terms once, then any iPhone at the venue can take payments."),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Not now')),
-            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Set up')),
-          ],
-        ),
-      );
-      if (go == true && mounted) await _setUp();
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final tablet = MediaQuery.sizeOf(context).shortestSide >= 600;
@@ -335,7 +290,7 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
       return Card(
         child: ListTile(
           leading: Icon(Icons.contactless_rounded, color: context.goLimeInk),
-          title: const Text('Tap to Pay'),
+          title: const Text('Vesopa Tap to Pay'),
           subtitle: Text(_iPhone && ref.watch(cardGatewayProvider) != CardGateway.stripe
               ? 'Tap to Pay on iPhone works on iPhone only, not iPad. Use the card machine or QR Pay here.'
               : (widget.status ?? 'Checking…')),
@@ -364,24 +319,6 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
             style: t.bodyMedium,
           ),
           if (_note != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_note!, style: t.bodySmall?.copyWith(color: context.goMuted))),
-          if (ref.watch(paymentsProvider) is DojoTapToPay) ...[
-            const SizedBox(height: 12),
-          Wrap(spacing: 10, runSpacing: 10, children: [
-            // Always here (Apple 3.6): set up, or check it again, on the
-            // same full-screen set-up as the introduction.
-            FilledButton.icon(
-              key: const ValueKey('ttp-settings-setup'),
-              onPressed: _busy ? null : _setUp,
-              icon: const TapToPayMark(size: 20),
-              label: Text(_linked == true ? 'Check Tap to Pay on iPhone' : 'Set up Tap to Pay on iPhone'),
-            ),
-            OutlinedButton.icon(
-              onPressed: _guide,
-              icon: const Icon(Icons.school_rounded),
-              label: const Text('How to use Tap to Pay on iPhone'),
-            ),
-          ]),
-          ],
           // Stripe (2026-11-08): Apple's terms and this iPhone's set-up done here,
           // by a manager, before the first sale rather than in front of a customer.
           if (ref.watch(paymentsProvider) case final StripeTapToPay stripe when _iPhone) ...[

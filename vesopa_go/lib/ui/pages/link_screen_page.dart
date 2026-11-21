@@ -155,9 +155,9 @@ class _LinkScreenPageState extends ConsumerState<LinkScreenPage> {
       const SizedBox(height: 10),
       Text('Use a phone or tablet that is already signed in to your venue.', style: t.titleMedium?.copyWith(color: context.goMuted, height: 1.35)),
       const SizedBox(height: 22),
-      const _Step(1, 'Open Vesopa Go and go to More, Connect a screen.'),
-      const _Step(2, 'Scan this code with it.'),
-      const _Step(3, 'Choose what this screen is for.'),
+      const _Step(1, 'Point your phone\'s camera at this code. Vesopa Go opens by itself.'),
+      const _Step(2, 'Or in Vesopa Go: Settings, Connect a screen or TV, and scan it.'),
+      const _Step(3, 'Choose what this screen is for. It opens a few seconds later.'),
       const SizedBox(height: 18),
       Text('No phone to hand? Type the code on Terminals in the back office.', style: t.bodyMedium?.copyWith(color: context.goMuted)),
       if (_error != null) ...[
@@ -249,42 +249,101 @@ const linkModes = <(String, String, String, IconData)>[
 Future<void> connectScreen(BuildContext context, WidgetRef ref) async {
   final scanned = await scanCode(context, title: 'Connect a screen', hint: 'Scan the code on the new screen, or type it');
   if (scanned == null || !context.mounted) return;
-  final messenger = ScaffoldMessenger.of(context);
   final code = linkCodeFrom(scanned);
   if (code == null) {
-    messenger.showSnackBar(const SnackBar(content: Text('That is not a screen\'s code. It is eight letters and numbers.')));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('That is not a screen\'s code. It is eight letters and numbers.')));
     return;
   }
+  await connectScreenCode(context, ref, code);
+}
+
+/// A screen's code, scanned in the app or opened from its QR with the
+/// phone's camera (go.vesopa.com/link/?c=..., a universal link; owner,
+/// 2026-11-18): the screen's own name, what it is for, and a clear answer.
+Future<void> connectScreenCode(BuildContext context, WidgetRef ref, String code) async {
+  final api = ref.read(apiProvider);
+  Map<String, dynamic>? info;
+  String? problem;
+  try {
+    info = await api.linkInfo(code);
+  } on TapApiError catch (e) {
+    problem = e.message;
+  }
+  if (!context.mounted) return;
+  if (info == null) {
+    await _connectAnswer(context, ok: false, title: 'Could not connect', words: problem ?? 'That code is not on a screen now.');
+    return;
+  }
+  final name = '${info['name'] ?? 'Screen'}';
+  final tv = info['tv'] == true;
   final mode = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (sheet) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-            child: Text('What is screen ${spokenLinkCode(code)} for?', style: Theme.of(sheet).textTheme.titleLarge),
-          ),
-          for (final (key, label, detail, icon) in linkModes)
-            ListTile(
-              leading: Icon(icon),
-              title: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: Text(detail),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => Navigator.pop(sheet, key),
+    builder: (sheet) {
+      final t = Theme.of(sheet).textTheme;
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Row(children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(color: sheet.goLimeInk.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(16)),
+                  child: Icon(tv ? Icons.tv_rounded : Icons.tablet_mac_rounded, color: sheet.goLimeInk, size: 30),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Connect $name?', style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                    Text('${tv ? 'TV' : 'Screen'} · code ${spokenLinkCode(code)}', style: t.bodyMedium?.copyWith(color: sheet.goMuted)),
+                  ]),
+                ),
+              ]),
             ),
-        ]),
-      ),
-    ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+              child: Text('What is it for?', style: t.titleSmall?.copyWith(color: sheet.goMuted)),
+            ),
+            for (final (key, label, detail, icon) in linkModes)
+              // A TV is a kitchen screen or a customer display, nothing else.
+              if (!tv || key == 'kitchen' || key == 'display')
+                ListTile(
+                  leading: Icon(icon),
+                  title: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(detail),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.pop(sheet, key),
+                ),
+          ]),
+        ),
+      );
+    },
   );
-  if (mode == null) return;
+  if (mode == null || !context.mounted) return;
   try {
-    final r = await ref.read(apiProvider).linkApprove(code, mode: mode);
+    final r = await api.linkApprove(code, mode: mode, name: name);
     unawaited(HapticFeedback.mediumImpact());
-    messenger.showSnackBar(SnackBar(content: Text('Connected to ${r['venue'] ?? 'your venue'}. The screen opens in a few seconds.')));
+    if (!context.mounted) return;
+    final label = linkModes.firstWhere((m) => m.$1 == mode).$2.toLowerCase();
+    await _connectAnswer(context,
+        ok: true,
+        title: '$name is connected',
+        words: 'It opens as a $label for ${r['venue'] ?? 'your venue'} in a few seconds.');
   } on TapApiError catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    if (context.mounted) await _connectAnswer(context, ok: false, title: 'Could not connect $name', words: e.message);
   }
 }
+
+Future<void> _connectAnswer(BuildContext context, {required bool ok, required String title, required String words}) => showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        icon: Icon(ok ? Icons.check_circle_rounded : Icons.error_outline_rounded, size: 48, color: ok ? Tp.green : Tp.danger),
+        title: Text(title, textAlign: TextAlign.center),
+        content: Text(words, textAlign: TextAlign.center),
+        actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
+      ),
+    );

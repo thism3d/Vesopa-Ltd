@@ -91,6 +91,13 @@ public class StripeOnboardingPlugin: NSObject, FlutterPlugin, AccountOnboardingC
             var config = PaymentSheet.Configuration()
             config.merchantDisplayName = (args["merchantName"] as? String) ?? "Vesopa Software Ltd"
             config.allowsDelayedPaymentMethods = false
+            // Apple Pay, where this build carries the merchant entitlement
+            // (go-ios.yml sets VesopaApplePay) and the device can pay with it.
+            let wallets = (args["wallets"] as? Bool) ?? true
+            let built = (Bundle.main.object(forInfoDictionaryKey: "VesopaApplePay") as? Bool) ?? false
+            if wallets && built, let merchant = args["applePayMerchantId"] as? String, !merchant.isEmpty {
+                config.applePay = .init(merchantId: merchant, merchantCountryCode: "GB")
+            }
             let sheet = PaymentSheet(setupIntentClientSecret: secret, configuration: config)
             paymentSheet = sheet
             sheet.present(from: top) { [weak self] outcome in

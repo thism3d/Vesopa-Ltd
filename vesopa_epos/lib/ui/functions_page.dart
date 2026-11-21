@@ -6,7 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/staff_session.dart';
 import '../data/price_level_controller.dart';
 import '../main.dart';
+import '../data/local/database.dart' show OrderLine;
+import '../data/till_permissions.dart';
 import 'card_machine_page.dart';
+import 'discount_dialog.dart';
+import 'permission_gate.dart';
+import 'sale_page.dart' show selectedLinesProvider;
 import 'cash_drawer_sheets.dart';
 import 'clock_sheet.dart';
 import 'paid_out_sheet.dart';
@@ -39,6 +44,7 @@ class FunctionsPage extends ConsumerWidget {
     required this.onGoToReports,
     required this.onGoToReceipts,
     required this.onGoToTables,
+    this.onGoToSale,
   });
 
   /// The bill currently on the sale screen, so "Save to table" can park it.
@@ -46,6 +52,9 @@ class FunctionsPage extends ConsumerWidget {
   final VoidCallback onGoToReports;
   final VoidCallback onGoToReceipts;
   final VoidCallback onGoToTables;
+
+  /// Back to the bill, once a discount is on it.
+  final VoidCallback? onGoToSale;
 
   /// A till key is a fixed size, like a key on a keyboard.
   ///
@@ -82,6 +91,16 @@ class FunctionsPage extends ConsumerWidget {
           Pos.purple,
           'Recall a parked bill, transfer or split it.',
           onGoToTables,
+        ),
+        // Nicky, 2026-11-18: no item box on the bill. Highlight one or more
+        // items and press Discount; with none highlighted it is the bill.
+        _Function(
+          'Discount',
+          Icons.percent,
+          Pos.green,
+          'Money off the highlighted items, or off the whole bill when none '
+              'are highlighted. As a percentage or an amount.',
+          () => unawaited(_discount(context, ref)),
         ),
       ]),
       // Reachable whether or not anything is waiting. The badge on the bar
@@ -429,6 +448,86 @@ class FunctionsPage extends ConsumerWidget {
     final minor = await showFloatSheet(context, ref);
     if (minor == null || !context.mounted) return;
     PosMessenger.success(context, 'Float set to ${money(minor)}.');
+  }
+
+  /// Discount the highlighted lines, or the bill when none are highlighted.
+  ///
+  /// A percentage comes off every highlighted line at that rate; an amount is
+  /// shared across them by price, the pennies left over going to the last,
+  /// so the lines add up to exactly what the clerk keyed.
+  Future<void> _discount(BuildContext context, WidgetRef ref) async {
+    if (!await allowed(context, ref, TillPermission.discount)) return;
+    if (!context.mounted) return;
+    final repo = ref.read(orderRepositoryProvider);
+    final lines = await repo.watchLines(orderId).first;
+    if (!context.mounted) return;
+    if (lines.isEmpty) {
+      _toast(context, 'Nothing to discount — this bill is empty.');
+      return;
+    }
+    final picked = ref.read(selectedLinesProvider.notifier).forOrder(orderId);
+    final chosen = [
+      for (final l in lines)
+        if (picked.contains(l.id)) l,
+    ];
+    int gross(OrderLine l) => (l.unitPriceMinor * l.quantity).round();
+
+    if (chosen.isEmpty) {
+      final order = await repo.watchOrder(orderId).first;
+      if (!context.mounted) return;
+      final base = lines.fold<int>(0, (t, l) => t + gross(l));
+      final choice = await showDiscountDialog(
+        context,
+        subtotalMinor: base,
+        title: 'Discount the bill',
+        current: order.manualDiscountMinor > 0
+            ? DiscountChoice(
+                mode: DiscountMode.amount,
+                value: order.manualDiscountMinor / 100,
+                amountMinor: order.manualDiscountMinor,
+              )
+            : null,
+      );
+      if (choice == null || !context.mounted) return;
+      await repo.applyDiscount(orderId, choice.amountMinor);
+      if (!context.mounted) return;
+      _toast(context, choice.amountMinor > 0 ? '${choice.label} the bill.' : 'Discount taken off the bill.');
+      onGoToSale?.call();
+      return;
+    }
+
+    final base = chosen.fold<int>(0, (t, l) => t + gross(l));
+    final choice = await showDiscountDialog(
+      context,
+      subtotalMinor: base,
+      title: chosen.length == 1
+          ? 'Discount ${chosen.first.name}'
+          : 'Discount ${chosen.length} items',
+    );
+    if (choice == null || !context.mounted) return;
+    var left = choice.amountMinor.clamp(0, base);
+    for (var i = 0; i < chosen.length; i++) {
+      final l = chosen[i];
+      final int off;
+      if (choice.mode == DiscountMode.percent) {
+        off = (gross(l) * choice.value / 100).round().clamp(0, gross(l));
+      } else if (i == chosen.length - 1) {
+        off = left.clamp(0, gross(l));
+      } else {
+        off = base == 0 ? 0 : (choice.amountMinor * gross(l) / base).round().clamp(0, gross(l));
+      }
+      left -= off;
+      await repo.setLineDiscount(orderId, l.id, off);
+    }
+    ref.read(selectedLinesProvider.notifier).clear();
+    if (!context.mounted) return;
+    _toast(
+      context,
+      choice.amountMinor > 0
+          ? '${choice.label} ${chosen.length == 1 ? chosen.first.name : '${chosen.length} items'}.'
+          : 'Discount taken off.',
+    );
+    onGoToSale?.call();
   }
 
   Future<void> _saveToTable(BuildContext context, WidgetRef ref) async {

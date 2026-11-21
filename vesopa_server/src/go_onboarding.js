@@ -36,6 +36,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 
 const stripe = require('./stripe_client');
+const mailer = require('./mailer');
 const { TILL_COLUMNS, STANDARD_GROUPS } = require('./permissions');
 
 const LIMITS = { per_payment_minor: 25000, per_day_minor: 100000 };
@@ -58,6 +59,62 @@ const BUSINESS_TYPES = {
 };
 
 const IDENTITY_DONE = 'verified';
+
+/** Steps the owner may leave for later (owner, 2026-11-18): the venue stays capped. */
+const SKIPPABLE = ['identity', 'stripe'];
+
+/** Go devices a venue's 14-day trial opens (every Go mode: EPOS, Kitchen, Display, Card terminal). */
+const TRIAL_GO_SEATS = 5;
+
+/**
+ * Stripe's outstanding requirements, as the few things an owner recognises.
+ * Order matters: a person's ID document is "Photo ID", not "Owners".
+ */
+const CHECK_GROUPS = [
+  ['id', 'Photo ID', /document|verification|id_number|identity_document|selfie/],
+  ['people', 'Owners and directors', /person|representative|owner|director|executive|relationship|individual|dob|date_of_birth/],
+  ['bank', 'Bank account for payouts', /external_account|bank|payout|sort_code|iban/],
+  ['business', 'Business details', /business|company|registered|address|industry|mcc|url|website|product|tax|vat|structure|phone|name/],
+  ['terms', 'Payments terms', /terms|tos|acceptance/],
+];
+
+function stripeChecklist(account, readiness) {
+  const entries = (account && account.requirements && account.requirements.entries) || [];
+  const textOf = (e) => [
+    e.description, JSON.stringify(e.reference || {}),
+    (e.requested_reasons || []).map((r) => r.code).join(' '),
+  ].join(' ').toLowerCase();
+  const due = {};
+  let other = 0;
+  let stripeReviewing = 0;
+  for (const e of entries) {
+    if (e.awaiting_action_from === 'stripe') { stripeReviewing += 1; continue; }
+    const t = textOf(e);
+    const g = CHECK_GROUPS.find(([, , re]) => re.test(t));
+    if (g) due[g[0]] = (due[g[0]] || 0) + 1; else other += 1;
+  }
+  const rows = CHECK_GROUPS.map(([id, label]) => ({ id, label, done: !due[id], due: due[id] || 0 }));
+  rows.push({ id: 'cards', label: 'Card payments switched on', done: readiness.card_payments === 'active', due: 0 });
+  rows.push({ id: 'payouts', label: 'Payouts to your bank switched on', done: readiness.payouts === 'active', due: 0 });
+  return { rows, other_due: other, stripe_reviewing: stripeReviewing };
+}
+
+/**
+ * Stripe will not run Identity for Vesopa's account at all (its words end
+ * "For more information on Stripe Identity supported use-cases and
+ * locations, please see https://docs.stripe.com/identity/use-cases"). That is
+ * the account's state, not the owner's ID, so the sign-up does not stop
+ * there: the owner's ID is checked by Stripe in step 3, the business and bank
+ * checks, which ask the owner for their photo ID as Stripe needs it. Identity
+ * is asked again on every try, so it takes over the moment Stripe opens it.
+ */
+const IDENTITY_VIA_CONNECT = 'via_connect';
+const identityRefused = (e) => {
+  const m = String((e && e.message) || '');
+  return /identity\/use-cases/i.test(m)
+    || /(not|n't) (been )?(enabled|activated|approved|eligible|available)[^.]*identity/i.test(m)
+    || /identity[^.]*(not|n't) (been )?(enabled|activated|approved|eligible|available)/i.test(m);
+};
 const LICENCE_OK = new Set(['trialing', 'active']);
 
 class OnboardingError extends Error {
@@ -187,6 +244,47 @@ const defaultClient = {
   takenToday,
 };
 
+/** The welcome email: plain and HTML, in Vesopa's colours. */
+function welcomeEmail({ name, endText, later = [], capped }) {
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const lines = [
+    `Welcome to Vesopa Go, ${name}.`,
+    '',
+    `Your account is set up${endText ? ` and your 14 days free run until ${endText}` : ''}. After that it is £29 a month; cancel any time in the back office.`,
+    '',
+    'What is open now:',
+    '- Vesopa Go EPOS on your phones and tablets',
+    '- Kitchen screen and customer display on any screen or TV (Settings, Connect a screen or TV)',
+    '- Card terminal: take card payments sent from a till',
+    '',
+    ...(later.length ? [`Still to do: ${later.join(' and ')}. Open Vesopa Go, Account checks.`, ''] : []),
+    ...(capped ? ['Until Stripe has finished its checks, card payments are limited to £250 a payment and £1,000 a day.', ''] : []),
+    'Your menu, staff, reports and settings are in the back office: https://backoffice.vesopaepos.com',
+    '',
+    'Questions? Reply to this email or write to support@vesopa.com.',
+    '',
+    'Vesopa Software Ltd',
+  ];
+  const li = (t) => `<li style="margin:4px 0">${esc(t)}</li>`;
+  const html = `<!doctype html><html><body style="margin:0;background:#0B0E0A;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#F2F5EE">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0B0E0A;padding:32px 12px"><tr><td align="center">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" style="max-width:560px;background:#171B15;border-radius:20px;padding:32px">
+<tr><td>
+<div style="display:inline-block;background:#B6E62E;color:#0B0E0A;font-weight:800;border-radius:12px;padding:8px 14px;font-size:15px">Vesopa Go</div>
+<h1 style="font-size:26px;margin:22px 0 8px;color:#FFFFFF">You're all set, ${esc(name)} 🎉</h1>
+<p style="font-size:16px;line-height:1.5;color:#C9D1C2;margin:0 0 18px">Your account is set up${endText ? ` and your <b style="color:#B6E62E">14 days free</b> run until <b>${esc(endText)}</b>` : ''}. After that it is £29 a month; cancel any time in the back office.</p>
+<p style="font-size:15px;font-weight:700;margin:0 0 6px">What is open now</p>
+<ul style="font-size:15px;line-height:1.5;color:#C9D1C2;padding-left:20px;margin:0 0 18px">
+${li('Vesopa Go EPOS on your phones and tablets')}${li('Kitchen screen and customer display on any screen or TV (Settings, Connect a screen or TV)')}${li('Card terminal: take card payments sent from a till')}
+</ul>
+${later.length ? `<p style="font-size:15px;line-height:1.5;background:#2A2410;border-radius:12px;padding:12px 14px;color:#F5D36B;margin:0 0 14px">Still to do: ${esc(later.join(' and '))}. Open Vesopa Go, <b>Account checks</b>.</p>` : ''}
+${capped ? '<p style="font-size:14px;line-height:1.5;color:#9AA592;margin:0 0 18px">Until Stripe has finished its checks, card payments are limited to £250 a payment and £1,000 a day.</p>' : ''}
+<a href="https://backoffice.vesopaepos.com" style="display:inline-block;background:#B6E62E;color:#0B0E0A;text-decoration:none;font-weight:800;border-radius:14px;padding:14px 22px;font-size:16px">Open the back office</a>
+<p style="font-size:13px;color:#7D8776;margin:26px 0 0">Questions? Reply to this email or write to support@vesopa.com.<br>Vesopa Software Ltd · company number 17362206</p>
+</td></tr></table></td></tr></table></body></html>`;
+  return { text: lines.join('\n'), html };
+}
+
 // ---- The routes -------------------------------------------------------------------
 
 /**
@@ -201,6 +299,7 @@ const defaultClient = {
 function goOnboardingRoutes({
   pool, secret, stripeSettings, createVenue, verifyIdToken, goClient,
   client = {}, stripeClient = stripe, fetchImpl = fetch, broadcast = () => {},
+  sendWelcome = (m) => (mailer.mailEnabled() ? mailer.sendMail(m) : Promise.resolve(console.warn(`[go_onboarding] mail off: welcome for ${m.to} not sent`))),
 }) {
   client = { ...defaultClient, ...client };
   const sc = { ...stripe, ...stripeClient };
@@ -224,11 +323,17 @@ function goOnboardingRoutes({
         environment VARCHAR(12) NULL,
         source VARCHAR(12) NULL,
         owner_pin_set TINYINT(1) NOT NULL DEFAULT 0,
+        identity_env VARCHAR(12) NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`)
       // A table made before the owner's PIN (2026-11-17) gets the column.
       .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN owner_pin_set TINYINT(1) NOT NULL DEFAULT 0').catch(() => {}))
+      .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN identity_env VARCHAR(12) NULL').catch(() => {}))
+      // Steps left for later, the trial's Go seats and the welcome email (2026-11-18).
+      .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN skipped VARCHAR(64) NULL').catch(() => {}))
+      .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN trial_seats TINYINT(1) NOT NULL DEFAULT 0').catch(() => {}))
+      .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN welcome_sent TINYINT(1) NOT NULL DEFAULT 0').catch(() => {}))
       .catch((e) => { ready = null; throw e; });
     return ready;
   }
@@ -252,6 +357,20 @@ function goOnboardingRoutes({
   /** Which Stripe (sandbox or live) this venue's sign-up runs in. */
   const envOf = (row, stripeRow) => (stripeRow && stripeRow.environment) || (row && row.environment) || sc.environment();
   const optsOf = (env) => ({ key: sc.keyFor(env) });
+
+  /**
+   * The owner's identity is checked on Vesopa's live Stripe account, where
+   * Identity's native SDKs and Synthetic Identity Protection are switched on
+   * (owner, 2026-11-17: "use the live SDK as there synthetic identity is
+   * enabled"), whichever mode the venue's payments are in. A real document
+   * and selfie are needed. GO_IDENTITY_ENV=sandbox in .env sends checks to
+   * the sandbox instead; without live keys on the server they stay there.
+   */
+  const identityEnv = () => {
+    const wanted = String(process.env.GO_IDENTITY_ENV || 'live').toLowerCase();
+    return wanted === 'live' && sc.configuredFor('live') ? 'live' : null;
+  };
+  const identityEnvOf = (row, fallback) => (row && row.identity_env) || identityEnv() || fallback;
 
   // ---- Who is asking ----
 
@@ -293,8 +412,8 @@ function goOnboardingRoutes({
     if (refresh && stripeRow && stripeRow.account_id) {
       stripeRow = await stripeSettings.refresh(office, stripeRow).catch(() => stripeRow);
     }
-    if (refresh && row && row.identity_session && row.identity_status !== IDENTITY_DONE) {
-      const s = await client.retrieveIdentitySession(row.identity_session, optsOf(env)).catch(() => null);
+    if (refresh && row && row.identity_session && row.identity_status !== IDENTITY_DONE && row.identity_status !== IDENTITY_VIA_CONNECT) {
+      const s = await client.retrieveIdentitySession(row.identity_session, optsOf(identityEnvOf(row, env))).catch(() => null);
       if (s) {
         await save(office, identityFields(s));
         row = await rowFor(office);
@@ -307,30 +426,115 @@ function goOnboardingRoutes({
         row = await rowFor(office);
       }
     }
-    return view(row, stripeRow);
+    // Stripe's requirements as a checklist the owner can read, beside step 3.
+    let checklist = null;
+    if (refresh && stripeRow && stripeRow.account_id && sc.retrieveAccount && stripeRow.account_id !== sc.PLATFORM) {
+      const acct = await sc.retrieveAccount(stripeRow.account_id, optsOf(env)).catch(() => null);
+      if (acct) checklist = stripeChecklist(acct, sc.readiness(acct));
+    }
+    if (row) {
+      await trialSeats(office, row);
+      row = await rowFor(office);
+    }
+    const v = view(row, stripeRow);
+    v.checklist = checklist;
+    if (row && v.complete && !Number(row.welcome_sent)) await welcome(office, row, v);
+    return v;
+  }
+
+  /**
+   * The trial opens Vesopa Go for the venue (owner, 2026-11-18: "As it's a
+   * trial enabled feature can we not enable the EPOS, display, kitchen"). Go
+   * is opt-in (licences.js), so without a row the venue has no Go seats.
+   * Written once the licence is set up; a limit a person typed (`override`)
+   * or a bigger one is never lowered. A licence that has ended takes the
+   * trial's seats back.
+   */
+  async function trialSeats(office, row) {
+    const on = LICENCE_OK.has(row.licence_status);
+    const ended = ['canceled', 'unpaid', 'incomplete_expired'].includes(row.licence_status);
+    if (on === Boolean(Number(row.trial_seats)) && !ended) return;
+    try {
+      const [[had]] = await pool.query('SELECT * FROM bo_licence_limits WHERE office = ? AND kind = ?', [office, 'go']);
+      if (on) {
+        const status = row.licence_status === 'active' ? 'active' : 'trialing';
+        if (!had) {
+          await pool.query(
+            `INSERT INTO bo_licence_limits (office, kind, seats, source, status, ends_at, updated_by)
+             VALUES (?, 'go', ?, 'trial', ?, ?, 'go sign-up')`,
+            [office, TRIAL_GO_SEATS, status, row.trial_end || null]);
+        } else if (had.source !== 'override' && Number(had.seats) < TRIAL_GO_SEATS) {
+          await pool.query(
+            `UPDATE bo_licence_limits SET seats = ?, source = 'trial', status = ?, ends_at = ?, updated_by = 'go sign-up'
+              WHERE office = ? AND kind = 'go'`,
+            [TRIAL_GO_SEATS, status, row.trial_end || null, office]);
+        }
+        await save(office, { trial_seats: 1 });
+      } else if (ended && Number(row.trial_seats)) {
+        if (had && had.source === 'trial') {
+          await pool.query(
+            `UPDATE bo_licence_limits SET seats = 0, status = ?, updated_by = 'go sign-up' WHERE office = ? AND kind = 'go'`,
+            [row.licence_status, office]);
+        }
+        await save(office, { trial_seats: 0 });
+      }
+    } catch (e) {
+      // A licence table this server has not got must never stop a sign-up.
+      if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      console.warn('[go_onboarding] trial seats not written:', e.message);
+    }
+  }
+
+  /** "You're set up": once, when every step is done or left for later. */
+  async function welcome(office, row, v) {
+    await save(office, { welcome_sent: 1 });
+    try {
+      const [[venue]] = await pool.query('SELECT name FROM offices WHERE contact_email = ?', [office]);
+      const name = (venue && venue.name) || row.legal_name || 'your venue';
+      const ends = row.trial_end ? new Date(row.trial_end) : null;
+      const endText = ends && !Number.isNaN(ends.getTime())
+        ? ends.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : null;
+      const later = (v.skipped || []).map((s) => ({ identity: 'verify your identity', stripe: "finish Stripe's business and bank checks" }[s])).filter(Boolean);
+      const mail = welcomeEmail({ name, endText, later, capped: v.mode !== 'live' });
+      await sendWelcome({ to: office, subject: `Welcome to Vesopa Go, ${name}`, ...mail });
+    } catch (e) {
+      console.warn('[go_onboarding] welcome email not sent:', e.message);
+    }
   }
 
   function view(row, stripeRow) {
     const r = row || {};
     const s = stripeRow || {};
+    const skipped = String(r.skipped || '').split(',').filter((x) => SKIPPABLE.includes(x));
     const card = s.card_payments || 'inactive';
     const payouts = s.payouts || 'inactive';
     const steps = {
       business: Boolean(r.business_type && r.legal_name && r.expected_monthly_minor && r.average_sale_minor),
       identity: r.identity_status || 'not_started',
+      // 'via_connect': Stripe checks the owner's ID in step 3 instead.
       stripe: !s.account_id ? 'not_started'
         : card === 'active' && payouts === 'active' && !Number(s.requirements_due) ? 'complete'
           : card === 'active' ? 'more_needed' : 'in_review',
       bank: payouts === 'active' ? 'verified' : 'not_verified',
       licence: r.licence_status || 'not_started',
     };
-    const verified = steps.business && steps.identity === IDENTITY_DONE && steps.stripe === 'complete'
+    const identityOk = steps.identity === IDENTITY_DONE
+      || (steps.identity === IDENTITY_VIA_CONNECT && steps.stripe === 'complete');
+    const verified = steps.business && identityOk && steps.stripe === 'complete'
       && steps.bank === 'verified' && LICENCE_OK.has(steps.licence);
     const mode = card !== 'active' ? 'test' : verified ? 'live' : 'capped';
+    const identityWaits = steps.identity !== IDENTITY_DONE && steps.identity !== 'processing' && steps.identity !== IDENTITY_VIA_CONNECT;
+    const stripeWaits = steps.stripe === 'not_started' || steps.stripe === 'more_needed' || (steps.stripe === 'in_review' && Number(s.requirements_due));
+    // A skipped step is passed over; it stays "not done" and the venue stays capped.
     const next = !steps.business ? 'business'
-      : steps.identity !== IDENTITY_DONE && steps.identity !== 'processing' ? 'identity'
-        : steps.stripe === 'not_started' || steps.stripe === 'more_needed' || (steps.stripe === 'in_review' && Number(s.requirements_due)) ? 'stripe'
+      : identityWaits && !skipped.includes('identity') ? 'identity'
+        : stripeWaits && !skipped.includes('stripe') ? 'stripe'
           : !LICENCE_OK.has(steps.licence) ? 'licence' : null;
+    // What still needs the owner after sign-up, for Go's banner.
+    const pending = [
+      ...(identityWaits ? ['identity'] : []),
+      ...(stripeWaits ? ['stripe'] : []),
+    ];
     // Nothing left for the owner to do (Stripe may still be reviewing): then
     // the owner's manager PIN, and only after that Go's EPOS and the other
     // modes (owner, 2026-11-17).
@@ -342,6 +546,8 @@ function goOnboardingRoutes({
       ready_to_use: complete && Boolean(Number(r.owner_pin_set)),
       steps,
       next,
+      skipped,
+      pending,
       mode,
       verified,
       limits: mode === 'live' ? null : LIMITS,
@@ -351,7 +557,7 @@ function goOnboardingRoutes({
         expected_monthly_minor: r.expected_monthly_minor || null,
         average_sale_minor: r.average_sale_minor || null,
       },
-      identity_error: r.identity_status === 'requires_input' ? r.identity_error || 'Stripe could not check that ID. Try again with a clear photo.' : null,
+      identity_error: r.identity_status === 'requires_input' ? r.identity_error || 'Your ID could not be checked. Try again with a clear photo.' : null,
       requirements_due: Number(s.requirements_due) || 0,
       licence: {
         status: r.licence_status || null,
@@ -433,19 +639,32 @@ function goOnboardingRoutes({
       const row = await rowFor(req.office);
       if (!row || !row.business_type) throw new OnboardingError(409, 'Tell us about the business first.');
       if (row.identity_status === IDENTITY_DONE) throw new OnboardingError(409, 'Your identity is already verified.');
-      const env = envOf(row, await stripeSettings.settingsFor(req.office));
+      // Starting a step left for later takes it off the list (2026-11-18).
+      if (String(row.skipped || '').split(',').includes('identity')) {
+        await save(req.office, { skipped: String(row.skipped).split(',').filter((x) => x && x !== 'identity').join(',') || null });
+      }
+      const env = identityEnv() || envOf(row, await stripeSettings.settingsFor(req.office));
       const opts = optsOf(env);
-      // A session waiting for its first try is used again rather than starting over.
+      // A session waiting for its first try is used again rather than starting
+      // over, if it was made in the same Stripe mode.
       let s = null;
-      if (row.identity_session && (row.identity_status === 'requires_input' || !row.identity_status)) {
+      if (row.identity_session && (row.identity_env || null) === env
+        && (row.identity_status === 'requires_input' || !row.identity_status)) {
         s = await client.retrieveIdentitySession(row.identity_session, opts).catch(() => null);
         if (s && (s.status !== 'requires_input' || s.last_error)) s = null;
       }
       if (!s) {
         const returnUrl = /^https:\/\//.test(String((req.body || {}).return_url || '')) ? req.body.return_url : null;
-        s = await client.createIdentitySession({ office: req.office, email: req.office, returnUrl }, opts);
+        try {
+          s = await client.createIdentitySession({ office: req.office, email: req.office, returnUrl }, opts);
+        } catch (e) {
+          if (!(e instanceof stripe.StripeError) || !identityRefused(e)) throw e;
+          console.warn(`[go_onboarding] Stripe refused Identity on the ${env} account; ${req.office} is checked in step 3:`, e.message);
+          await save(req.office, { identity_session: null, identity_status: IDENTITY_VIA_CONNECT, identity_error: null, identity_env: env });
+          return res.status(200).json({ via_connect: true, ...(await status(req.office)) });
+        }
       }
-      await save(req.office, identityFields(s));
+      await save(req.office, { ...identityFields(s), identity_env: env });
       const answer = {
         id: s.id,
         client_secret: s.client_secret,
@@ -466,6 +685,9 @@ function goOnboardingRoutes({
     try {
       const row = await rowFor(req.office);
       if (!row || !row.business_type) throw new OnboardingError(409, 'Tell us about the business first.');
+      if (String(row.skipped || '').split(',').includes('stripe')) {
+        await save(req.office, { skipped: String(row.skipped).split(',').filter((x) => x && x !== 'stripe').join(',') || null });
+      }
       let stripeRow = await stripeSettings.settingsFor(req.office);
       if (stripeRow && stripeRow.account_id === sc.PLATFORM) {
         throw new OnboardingError(409, 'This venue takes payments into Vesopa\'s own Stripe account; there is nothing to verify.');
@@ -529,6 +751,32 @@ function goOnboardingRoutes({
   }
 
   // ---- 5. The licence ----
+
+  // ---- Leaving a step for later ----
+
+  router.post('/go/onboarding/skip', who, express.json(), async (req, res, next) => {
+    try {
+      const step = String((req.body || {}).step || '');
+      if (!SKIPPABLE.includes(step)) throw new OnboardingError(400, 'That step cannot be left for later.');
+      const row = await rowFor(req.office);
+      if (!row || !row.business_type) throw new OnboardingError(409, 'Tell us about the business first.');
+      const list = new Set(String(row.skipped || '').split(',').filter(Boolean));
+      list.add(step);
+      await save(req.office, { skipped: [...list].join(',') });
+      res.json(await status(req.office));
+    } catch (e) { fail(res, e, next); }
+  });
+
+  router.post('/go/onboarding/unskip', who, express.json(), async (req, res, next) => {
+    try {
+      const step = String((req.body || {}).step || '');
+      const row = await rowFor(req.office);
+      if (!row) throw new OnboardingError(409, 'Tell us about the business first.');
+      const list = String(row.skipped || '').split(',').filter((x) => x && x !== step);
+      await save(req.office, { skipped: list.join(',') || null });
+      res.json(await status(req.office));
+    } catch (e) { fail(res, e, next); }
+  });
 
   router.post('/go/onboarding/licence', who, async (req, res, next) => {
     try {
@@ -693,7 +941,7 @@ function goOnboardingRoutes({
       const office = obj.metadata && obj.metadata.office;
       if (!office || (obj.metadata && obj.metadata.purpose !== 'vesopa_go_owner')) return;
       const row = await rowFor(office);
-      if (!row || (row.identity_session && row.identity_session !== obj.id)) return;
+      if (!row || row.identity_session !== obj.id) return;
       await save(office, identityFields(obj));
       broadcast({ type: 'go-onboarding' }, { office });
       return;
@@ -747,4 +995,4 @@ function goOnboardingRoutes({
   return router;
 }
 
-module.exports = { goOnboardingRoutes, LIMITS, LICENCE, BUSINESS_TYPES, OnboardingError, defaultClient };
+module.exports = { welcomeEmail, stripeChecklist, goOnboardingRoutes, LIMITS, LICENCE, BUSINESS_TYPES, OnboardingError, defaultClient };

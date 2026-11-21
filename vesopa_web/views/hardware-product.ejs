@@ -81,11 +81,7 @@
     </div>
   </div>
 </section>
-<script type="application/ld+json"><%- JSON.stringify({
-  '@context': 'https://schema.org', '@type': 'Product', name: p.name, sku: p.sku, image: photos.map(function (s) { return SITE_URL + s; }),
-  description: p.headline, brand: { '@type': 'Brand', name: 'Vesopa' },
-  offers: { '@type': 'Offer', priceCurrency: 'GBP', price: (p.price * 1.2).toFixed(2), availability: 'https://schema.org/' + (p.stock === 'in' ? 'InStock' : 'PreOrder'), url: SITE_URL + '/hardware/' + p.slug },
-}).replace(/</g, '\\u003c') %></script>
+<script type="application/ld+json"><%- JSON.stringify(hardware.productLd(p, SITE_URL)).replace(/</g, '\\u003c') %></script>
 <script>
 (function () {
   var gal = document.querySelector('[data-pp-gal]');

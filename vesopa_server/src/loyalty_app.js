@@ -59,6 +59,8 @@ const { loyaltyDeletionRoutes } = require('./privacy_provider');
 const { appPath, appUrl, RESERVED, NOT_FOUND, LOYALTY_HOST } = require('./loyalty_host');
 const loyaltyEmail = require('./loyalty_email');
 const gate = require('./loyalty_members_only');
+const Social = require('./loyalty_social');
+const GoogleState = require('./wallet_google_state');
 const venueLooks = require('./venue_looks');
 const { memberWebRoutes } = require('./member_web');
 
@@ -1215,10 +1217,43 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       const base = LOYALTY_HOST
         ? `https://${LOYALTY_HOST}`
         : String(process.env.BACKOFFICE_URL || '').replace(/\/+$/, '');
+      // Google Wallet: the linked account and whether the card is saved
+      // (wallet_google_state.js). Missing on a failure: the app then shows
+      // the button as before.
+      const google = await GoogleState.status(pool, req.office, req.customerId).catch(() => null);
       res.set('Cache-Control', 'no-store').json({
         apple: `${base}/wallet/c/${token}?apple=1`,
         google: `${base}/wallet/s/${token}`,
+        ...(google ? { google_linked: google.linked, google_email: google.email, google_saved: google.saved } : {}),
       });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Link the member's Google account before Add to Google Wallet (owner,
+   * 2026-11-20). The app sends the ID token from Google's own sign-in sheet;
+   * it is checked against Google's keys and this club's Google clients.
+   */
+  router.post('/loyalty/v1/me/google', requireCustomer, json, async (req, res, next) => {
+    try {
+      const claims = await Social.verify('google', String((req.body || {}).id_token || ''));
+      if (!claims || !claims.sub) return res.status(401).json({ error: 'Google did not confirm your account. Please try again.' });
+      await GoogleState.link(pool, req.office, req.customerId, {
+        sub: claims.sub,
+        email: claims.email_verified === false ? null : claims.email,
+      });
+      res.json({ ok: true, google_linked: true, google_email: claims.email || null });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete('/loyalty/v1/me/google', requireCustomer, async (req, res, next) => {
+    try {
+      await GoogleState.unlink(pool, req.office, req.customerId);
+      res.json({ ok: true, google_linked: false });
     } catch (e) {
       next(e);
     }

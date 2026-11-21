@@ -65,6 +65,68 @@ const LOOKS = {
     // Drawn by vesopa_loyalty/tool/make_venue_art.py into public/.
     art: '/assets/venues/pontardawe-rfc/',
   },
+  'loughor-rfc': {
+    // Loughor RFC, the Blues (owner, 2026-11-18/19): royal blue and gold from
+    // the club's own crest (LoughorRFC/brand), set like Pontardawe's.
+    club: '#1238A8', deep: '#071A52', glow: '#2F62E0', font: 'montserrat',
+    // The Wallet card's labels: the crest's gold.
+    label: '#F5C518',
+    legal: {
+      name: 'Loughor RFC (1882) Limited',
+      number: '13489973',
+      office: 'Villa Field, Belgrave Road, Loughor, Swansea, SA4 6RF',
+      terms: 'https://loughorrfc.site/ordering-terms',
+      privacy: 'https://loughorrfc.site/privacy',
+      refunds: 'https://loughorrfc.site/ordering-terms#refunds',
+      contact: 'https://loughorrfc.site/contact',
+    },
+    menu: {
+      page: '#060B1F', card: '#0D1533', ink: '#EEF2FF', inkSoft: '#C3CCEA',
+      photo: '/assets/venues/loughor-rfc/wallet-hero.png',
+      logo: '/assets/venues/loughor-rfc/crest.png',
+    },
+    name: 'Loughor RFC',
+    website: 'https://loughorrfc.site', phone: '01792 894109', email: 'info@loughorrfc.site',
+    // The apps' public tests (owner, 2026-11-19): TestFlight's public link and
+    // Google Play's open testing, until they are in the stores.
+    ios_app: 'https://testflight.apple.com/join/tegkU2kN',
+    android_app: 'https://play.google.com/apps/testing/com.vesopaepos.loughorrfc',
+    web: 'node',
+    art: '/assets/venues/loughor-rfc/',
+    // The club's Google Wallet passes (owner, 2026-11-19). Class ids read as
+    // the club's own; links to loughorrfc.com (loughorrfc.site is only for
+    // testing) and vesopaepos.com; the ground for Google Maps (club.json);
+    // Smart Tap for "hold near reader"; Google's save/delete callbacks to
+    // the back office (wallet.js). Read by wallet_google.js buildPass.
+    google: {
+      classIds: { loyalty: 'com.loughorrfc.loyalty', customer: 'com.loughorrfc.customers' },
+      links: [
+        { uri: 'https://loughorrfc.com', description: 'Loughor RFC', id: 'club' },
+        { uri: 'https://vesopaepos.com', description: 'Vesopa EPOS', id: 'vesopa' },
+      ],
+      homepage: { uri: 'https://loughorrfc.com', description: 'Loughor RFC' },
+      locations: [{ latitude: 51.6627, longitude: -4.0655 }],
+      wordmark: 'https://backoffice.vesopaepos.com/assets/venues/loughor-rfc/wallet-wordmark.png?v=2',
+      images: [{
+        uri: 'https://backoffice.vesopaepos.com/assets/venues/loughor-rfc/wallet-banner.png?v=2',
+        description: "Loughor RFC, Villa Field, est. 1882: members' card",
+      }],
+      texts: [
+        ['The club', 'Loughor RFC, the Blues. Rugby at Villa Field, Belgrave Road, Loughor, since 1882.'],
+        ['Using your card', 'Show the QR code at the bar, or hold your phone near the reader where the bar has one.'],
+        ['Points', 'Your points balance shows on the front of the card and updates after each visit.'],
+        ['Contact', '01792 894109 · info@loughorrfc.site'],
+      ],
+      messages: [
+        { id: 'welcome', header: 'Welcome to Loughor RFC', body: 'Thanks for joining. Show this card at the bar; your points balance updates here after each visit.' },
+      ],
+      // As Pontardawe RFC's card: points on the face, the tier beside them.
+      loyalty: { accountNameLabel: 'Member', accountIdLabel: 'Card number', rewardsTierLabel: 'Tier', rewardsTier: 'Member' },
+      discoverable: { signup: 'https://member.loughorrfc.site/', signin: 'https://member.loughorrfc.site/', state: 'TRUSTED_TESTERS' },
+      callbackUrl: 'https://backoffice.vesopaepos.com/wallet/google/callback',
+      smartTap: true,
+    },
+  },
 };
 
 const HEX = /^#[0-9a-fA-F]{6}$/;

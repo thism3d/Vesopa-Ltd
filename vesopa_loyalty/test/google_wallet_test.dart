@@ -1,4 +1,4 @@
-// Add to Google Wallet on Android, as Add to Apple Wallet on an iPhone.
+// Add to Google Wallet on Android, iPhone and iPad (Google Wallet is on iOS too).
 
 import 'dart:convert';
 
@@ -25,8 +25,16 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('nothing on an iPhone, which has Apple Wallet instead', (tester) async {
+  testWidgets('on an iPhone or iPad too, beside Apple Wallet (owner, 2026-11-19)', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: GoogleWalletButton(onPressed: () {}))));
+    expect(find.byType(Image), findsOneWidget);
+    expect(GoogleWallet.available, isTrue);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('nothing on the desktop', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: GoogleWalletButton(onPressed: () {}))));
     expect(find.byType(Image), findsNothing);
     debugDefaultTargetPlatformOverride = null;
@@ -50,6 +58,35 @@ void main() {
       () => api({'apple': 'https://loyalty.example/wallet/c/x?apple=1'}).googleWalletLink(),
       throwsA(isA<ApiError>().having((e) => e.message, 'message', contains('not offering Google Wallet'))),
     );
+  });
+
+  test('the card shows "Added to Google Wallet" once Google says it is saved; linking sends Google\'s token (owner, 2026-11-20)', () async {
+    final sent = <String>[];
+    var saved = false;
+    final api = LoyaltyApi(
+      base: 'https://loyalty.example',
+      slug: 'club',
+      client: MockClient((req) async {
+        sent.add('${req.method} ${req.url.path}');
+        if (req.method == 'POST') {
+          expect(jsonDecode(req.body), {'id_token': 'google-id-token'});
+          return http.Response(jsonEncode({'ok': true, 'google_linked': true, 'google_email': 'member@gmail.com'}), 200, headers: {'content-type': 'application/json'});
+        }
+        return http.Response(
+          jsonEncode({'google': 'https://loyalty.example/wallet/s/x', 'google_linked': saved, 'google_email': null, 'google_saved': saved}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    )..token = 't';
+
+    var st = await api.googleWalletStatus();
+    expect((st.linked, st.saved), (false, false));
+    expect(await api.linkGoogle('google-id-token'), 'member@gmail.com');
+    saved = true;
+    st = await api.googleWalletStatus();
+    expect((st.linked, st.saved), (true, true));
+    expect(sent, ['GET /loyalty/v1/me/wallet', 'POST /loyalty/v1/me/google', 'GET /loyalty/v1/me/wallet']);
   });
 
   test('the button is offered only when the club\'s server can issue the card', () {

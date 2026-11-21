@@ -16,9 +16,18 @@ import 'package:flutter/services.dart';
 
 import '../ui/pages/scan_sheet.dart';
 import '../ui/theme.dart';
+import '../ui/tv.dart';
 import 'staff_card.dart';
 
 const _useCamera = '\u0000camera';
+
+/// What a typing reader sent, trimmed, if it looks like a card: at least four
+/// characters, no spaces inside.
+@visibleForTesting
+String? readerCode(String typed) {
+  final t = typed.trim();
+  return t.length >= 4 && !t.contains(RegExp(r'\s')) ? t : null;
+}
 
 /// Reads one card. Answers with its id (NFC), its code (camera) or what was
 /// typed; null when the clerk closed the sheet.
@@ -37,7 +46,7 @@ Future<String?> readCard(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => _CardReadSheet(title: title, hint: hint, camera: camera, typing: typing),
+    builder: (_) => _CardReadSheet(title: title, hint: hint, camera: camera && GoDevice.hasCamera, typing: typing),
   );
   if (answer != _useCamera) return answer;
   if (!context.mounted) return null;
@@ -63,10 +72,39 @@ class _CardReadSheetState extends State<_CardReadSheet> with SingleTickerProvide
   var _state = _Reading.starting;
   bool _closed = false;
 
+  // A reader that types what it reads, over USB or Bluetooth, as a barcode
+  // scanner does: Google Wallet Smart Tap and Apple Wallet NFC readers hand
+  // the till the pass's card number this way (owner, 2026-11-19: "hold near
+  // reader" for the club's Wallet cards). A quick burst of characters ending
+  // in Enter is a card.
+  final _burst = StringBuffer();
+  DateTime _lastKey = DateTime.fromMillisecondsSinceEpoch(0);
+
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_readerKey);
     unawaited(_listen());
+  }
+
+  bool _readerKey(KeyEvent event) {
+    if (event is! KeyDownEvent || _closed) return false;
+    final now = DateTime.now();
+    if (now.difference(_lastKey) > const Duration(milliseconds: 400)) _burst.clear();
+    _lastKey = now;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+      final code = readerCode(_burst.toString());
+      _burst.clear();
+      if (code == null) return false;
+      setState(() => _state = _Reading.read);
+      unawaited(HapticFeedback.mediumImpact());
+      _finish(code);
+      return true;
+    }
+    final c = event.character;
+    if (c != null && c.length == 1 && c.codeUnitAt(0) >= 0x20) _burst.write(c);
+    return false;
   }
 
   @override
@@ -106,6 +144,7 @@ class _CardReadSheetState extends State<_CardReadSheet> with SingleTickerProvide
   @override
   void dispose() {
     _closed = true;
+    HardwareKeyboard.instance.removeHandler(_readerKey);
     unawaited(StaffCardReader.cancel());
     _pulse.dispose();
     _typed.dispose();

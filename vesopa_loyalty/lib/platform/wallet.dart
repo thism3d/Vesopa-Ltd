@@ -119,16 +119,18 @@ class _AppleWalletButtonState extends State<AppleWalletButton> {
 }
 
 
-/// Add to Google Wallet, on Android.
+/// Add to Google Wallet, on Android, iPhone and iPad.
 ///
 /// The card is the server's: LoyaltyApi.googleWalletLink is a page that signs
 /// the member's card at Google and forwards to Google Wallet's own save page,
-/// which Android hands to the Google Wallet app. Once saved, the card updates
-/// itself from the server, like the Apple one.
+/// which Android hands to the Google Wallet app and an iPhone or iPad opens in
+/// Google Wallet (owner, 2026-11-19: Google Wallet is on iOS now). Once saved,
+/// the card updates itself from the server, like the Apple one.
 class GoogleWallet {
   GoogleWallet._();
 
-  static bool get available => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  static bool get available =>
+      !kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
 }
 
 /// Google's own "Add to Google Wallet" button, as its brand guidelines ask:

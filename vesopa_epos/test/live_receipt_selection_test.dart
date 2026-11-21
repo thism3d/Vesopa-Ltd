@@ -7,9 +7,9 @@ import 'package:vesopa_epos/ui/widgets/live_receipt.dart';
 /// How a clerk picks lines out of the bill.
 ///
 /// The rules agreed with the operator: tapping a row selects it, tapping it
-/// again puts it back, and the item box is reached from a pencil that only
-/// exists on a selected row. No long press anywhere — a hidden gesture has to
-/// be taught to every new member of staff.
+/// again puts it back. A picked row is only highlighted: no tick, no
+/// "1 × selected", no pencil and no item box (Nicky, 2026-11-18). ↓ ↑ and
+/// select all sit beside the totals. No long press anywhere.
 void main() {
   final totals = PricingEngine(promotions: const []).price(const [
     PricedLine(
@@ -33,7 +33,7 @@ void main() {
   Widget harness({
     required Set<String> selected,
     void Function(PricedLine)? onTap,
-    void Function(PricedLine)? onEdit,
+    void Function(Set<String>)? onSelect,
   }) =>
       MaterialApp(
         theme: buildPosTheme(Brightness.light),
@@ -45,7 +45,7 @@ void main() {
               totals: totals,
               selectedLineIds: selected,
               onTapLine: onTap,
-              onEditLine: onEdit,
+              onSelectLines: onSelect,
             ),
           ),
         ),
@@ -80,44 +80,57 @@ void main() {
     expect(tapped, ['l1']);
   });
 
-  testWidgets('the pencil only appears on a selected row', (tester) async {
-    await tester.pumpWidget(harness(selected: const {}, onEdit: (_) {}));
-    expect(find.byIcon(Icons.edit), findsNothing);
-
-    await tester.pumpWidget(harness(selected: const {'l1'}, onEdit: (_) {}));
+  testWidgets('a picked row is only highlighted', (tester) async {
+    await tester.pumpWidget(harness(selected: const {'l1', 'l2'}));
     await tester.pump();
-    expect(find.byIcon(Icons.edit), findsOneWidget);
-  });
-
-  testWidgets('one pencil per selected row, not one per line', (tester) async {
-    await tester.pumpWidget(
-      harness(selected: const {'l1', 'l2'}, onEdit: (_) {}),
-    );
-    expect(find.byIcon(Icons.edit), findsNWidgets(2));
-  });
-
-  testWidgets('tapping the pencil opens the box for that line', (tester) async {
-    final edited = <String>[];
-    final tapped = <String>[];
-    await tester.pumpWidget(harness(
-      selected: const {'l2'},
-      onTap: (l) => tapped.add(l.id),
-      onEdit: (l) => edited.add(l.id),
-    ));
-
-    await tester.tap(find.byIcon(Icons.edit));
-    await tester.pump();
-
-    expect(edited, ['l2']);
-    // The pencil must not also toggle the row underneath it — the clerk would
-    // open the box and lose the selection in the same gesture.
-    expect(tapped, isEmpty);
-  });
-
-  testWidgets('no pencil when the screen offers no editing', (tester) async {
-    // The payment screen passes no onEditLine once money has been taken.
-    await tester.pumpWidget(harness(selected: const {'l1'}));
     expect(find.byIcon(Icons.edit), findsNothing);
+    expect(find.byIcon(Icons.check_circle), findsNothing);
+    expect(find.textContaining('selected'), findsNothing);
+    // The quantity stays where it always is.
+    expect(find.text('2'), findsOneWidget);
+  });
+
+  testWidgets('no arrows when the screen does not pick lines', (tester) async {
+    await tester.pumpWidget(harness(selected: const {}));
+    expect(find.byIcon(Icons.arrow_downward_rounded), findsNothing);
+  });
+
+  testWidgets('down picks the first item, then the next', (tester) async {
+    final picks = <Set<String>>[];
+    await tester.pumpWidget(harness(selected: const {}, onSelect: picks.add));
+    await tester.tap(find.byIcon(Icons.arrow_downward_rounded));
+    expect(picks.last, {'l1'});
+
+    await tester.pumpWidget(harness(selected: const {'l1'}, onSelect: picks.add));
+    await tester.tap(find.byIcon(Icons.arrow_downward_rounded));
+    expect(picks.last, {'l2'});
+
+    // At the bottom it stays on the last item.
+    await tester.pumpWidget(harness(selected: const {'l2'}, onSelect: picks.add));
+    await tester.tap(find.byIcon(Icons.arrow_downward_rounded));
+    expect(picks.last, {'l2'});
+  });
+
+  testWidgets('up picks the last item, then the one before', (tester) async {
+    final picks = <Set<String>>[];
+    await tester.pumpWidget(harness(selected: const {}, onSelect: picks.add));
+    await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
+    expect(picks.last, {'l2'});
+
+    await tester.pumpWidget(harness(selected: const {'l2'}, onSelect: picks.add));
+    await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
+    expect(picks.last, {'l1'});
+  });
+
+  testWidgets('select all picks every item, and again puts them back', (tester) async {
+    final picks = <Set<String>>[];
+    await tester.pumpWidget(harness(selected: const {'l1'}, onSelect: picks.add));
+    await tester.tap(find.byIcon(Icons.checklist_rounded));
+    expect(picks.last, {'l1', 'l2'});
+
+    await tester.pumpWidget(harness(selected: const {'l1', 'l2'}, onSelect: picks.add));
+    await tester.tap(find.byIcon(Icons.remove_done_rounded));
+    expect(picks.last, isEmpty);
   });
 
   testWidgets('holding a row never opens the box', (tester) async {
@@ -126,17 +139,14 @@ void main() {
     // tap, so it selects like any other tap and cannot reach the item box.
     // That is the point — there is no gesture a clerk has to be told about.
     final tapped = <String>[];
-    final edited = <String>[];
     await tester.pumpWidget(harness(
       selected: const {},
       onTap: (l) => tapped.add(l.id),
-      onEdit: (l) => edited.add(l.id),
     ));
 
     await tester.longPress(find.text('Flat white'));
     await tester.pump();
 
-    expect(edited, isEmpty, reason: 'holding must not open the box');
     expect(tapped, ['l1'], reason: 'a slow tap is still a tap');
   });
 }

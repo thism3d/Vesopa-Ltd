@@ -25,7 +25,7 @@ on:
       mode:
         description: full = build and upload with the listing; listing = only the words and pictures; build = bundle only
         type: choice
-        options: [full, listing, build, promote]
+        options: [full, listing, build, promote, status]
         default: full
       track:
         description: Play track (empty = play.json's, internal)
@@ -38,7 +38,14 @@ on:
       install_page:
         description: Also put this build's APK on go.vesopa.com/install (the website installer)
         type: boolean
-        default: false
+        # On by default (owner, 2026-11-17: "go.vesopa.com/install why not
+        # transferring to the website?"): every release reaches the installer.
+        default: true
+      part:
+        description: Which bundles go to Play (tv = only the Android TV bundle onto tv:<track>, no phone release, listing or installer)
+        type: choice
+        options: [all, tv]
+        default: all
       promote_code:
         description: With mode promote, the version code already in Play to move onto the track (no build)
         required: false
@@ -64,6 +71,11 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/py"
           "$RUNNER_TEMP/py/bin/pip" install --quiet cryptography
 
+      - name: What each Play track holds (no build)
+        if: inputs.mode == 'status'
+        run: |
+          "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$APP" --status
+
       - name: Promote a build already in Play (no build)
         if: inputs.mode == 'promote'
         env:
@@ -75,7 +87,7 @@ jobs:
 
       - name: Next build number Play has not seen
         id: num
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         env:
           BUILD_INPUT: ${{ inputs.build }}
         run: |
@@ -85,7 +97,13 @@ jobs:
           elif [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ] && n=$("$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$APP" --next-build 2> "$RUNNER_TEMP/next-build.err"); then
             :
           else
-            echo "::warning::Play did not say which build numbers it has ($(tail -1 "$RUNNER_TEMP/next-build.err" 2>/dev/null)); using venue.json's $floor."
+            if [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+              # Never guess: a number Play already has wastes the whole build,
+              # and the website's APK would carry it (2026-11-19, Go 1.2.70).
+              echo "::error::Play did not say which build numbers it has ($(tail -1 "$RUNNER_TEMP/next-build.err" 2>/dev/null)). Run again in a few minutes, or give the build number."
+              exit 1
+            fi
+            echo "::warning::No Play key: using venue.json's build number $floor."
             n=$floor
           fi
           case "$n" in ''|*[!0-9]*) echo "::error::Could not work out the build number ($n)"; exit 1;; esac
@@ -113,20 +131,28 @@ jobs:
           echo "### Vesopa Go $version ($n)" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-java@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         with:
           distribution: temurin
           java-version: '17'
 
+      # Gradle's downloads and build output, kept between runs (owner,
+      # 2026-11-19: "github workflows are taking too much time"). Written on
+      # main, read everywhere.
+      - uses: gradle/actions/setup-gradle@v4
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
       - uses: subosito/flutter-action@v2
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         with:
           channel: stable
           flutter-version: 3.47.8
           cache: true
 
       - name: Upload key
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         env:
           KS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
           KSP: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -147,12 +173,14 @@ jobs:
           } > "$APP/android/key.properties"
 
       - name: Bundle
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         working-directory: vesopa_go
         run: |
           # GitHub's machine has 16 GB: R8 needs more than the office PC's 3 GB
           # once Stripe's sign-up libraries are in (2026-11-17, out of heap).
           sed -i 's/-Xmx3G/-Xmx6G/' android/gradle.properties
+          # Reuse what an earlier run compiled (setup-gradle keeps it).
+          grep -q '^org.gradle.caching=' android/gradle.properties || echo 'org.gradle.caching=true' >> android/gradle.properties
           flutter pub get
           flutter build appbundle --release \
             --build-name="${{ steps.num.outputs.version }}" --build-number="${{ steps.num.outputs.build }}"
@@ -169,16 +197,30 @@ jobs:
           mkdir -p "$apk"
           cp build/app/outputs/flutter-apk/app-release.apk "$apk/VesopaGo-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}.apk"
           ls -la "$apk"
+          # Android TV's own track (owner, 2026-11-19: dedicated tracks) takes
+          # only a bundle that requires the TV's leanback feature, as the Wear
+          # OS track takes a watch-only one: the same app with it required,
+          # numbered 2,000,000 + the build (tool/play_upload.py TV_OFFSET).
+          m=android/app/src/main/AndroidManifest.xml
+          if grep -q 'android.software.leanback" android:required="false"' "$m"; then
+            cp "$m" "$RUNNER_TEMP/manifest.phone"
+            sed -i 's#android.software.leanback" android:required="false"#android.software.leanback" android:required="true"#' "$m"
+            flutter build appbundle --release \
+              --build-name="${{ steps.num.outputs.version }}" --build-number="$((2000000 + ${{ steps.num.outputs.build }}))"
+            cp build/app/outputs/bundle/release/app-release.aab "$out/$APP-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}-tv.aab"
+            cp "$RUNNER_TEMP/manifest.phone" "$m"
+            ls -la "$out"
+          fi
 
       - uses: actions/upload-artifact@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         with:
           name: vesopa-go-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}
           path: ${{ runner.temp }}/android-builds/*.aab
           retention-days: 30
 
       - uses: actions/upload-artifact@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         with:
           name: vesopa-go-apk
           path: ${{ runner.temp }}/android-apk/*.apk
@@ -187,7 +229,7 @@ jobs:
       # The same APK on go.vesopa.com/install, the website installer
       # (vesopa_go/tool/publish_install.py, over SSH as go-site.yml does it).
       - name: go.vesopa.com/install
-        if: inputs.install_page && inputs.mode != 'listing' && inputs.mode != 'promote'
+        if: inputs.install_page && inputs.part != 'tv' && inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
         env:
           VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
         run: |
@@ -200,7 +242,7 @@ jobs:
           rm -rf "$RUNNER_TEMP/ssh"
 
       - name: Upload to Google Play
-        if: inputs.mode != 'build' && inputs.mode != 'promote'
+        if: inputs.mode != 'build' && inputs.mode != 'promote' && inputs.mode != 'status'
         env:
           TRACK: ${{ inputs.track }}
         run: |
@@ -209,12 +251,38 @@ jobs:
           if [ "$MODE" = "listing" ]; then set -- "$@" --listing; fi
           [ -n "$TRACK" ] && set -- "$@" --track "$TRACK"
           ok=0
+          if [ "${{ inputs.part }}" = "tv" ]; then
+            # Only the Android TV release (owner, 2026-11-19): the phone
+            # tracks and the listing are left as they are.
+            exec "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@" --only tv
+          fi
           if [ "$MODE" = "full" ]; then
-            "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@" --only phone || ok=1
+            # The phone bundle and, where there is one, the TV's, each its own edit.
+            "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@" --only apps || ok=1
           fi
           # The listing on its own, so a refused bundle does not stop it.
           "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$APP" --listing || ok=1
           exit $ok
+
+      # go.vesopa.com/.well-known/assetlinks.json: lets a screen's QR open Go
+      # itself on Android (vesopa_go/tool/assetlinks.py), for the upload key and
+      # Play's app-signing key.
+      - name: App links (assetlinks.json)
+        if: inputs.mode != 'listing' && inputs.mode != 'promote' && inputs.mode != 'status'
+        continue-on-error: true
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+          KSP: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KA: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          [ -n "$VESOPA_SSH_PASSWORD" ] || { echo "::warning::VESOPA_SSH_PASSWORD is not set: assetlinks.json not published"; exit 0; }
+          sha=$(keytool -list -v -keystore "$RUNNER_TEMP/keys/upload.jks" -storepass "$KSP" -alias "$KA" | awk '/SHA256:/{print $2; exit}')
+          mkdir -p ~/.ssh "$RUNNER_TEMP/ssh"
+          printf 'Host *\n  StrictHostKeyChecking accept-new\n  ConnectTimeout 20\n  ServerAliveInterval 30\n  ControlMaster auto\n  ControlPath %s/cm-%%r@%%h\n  ControlPersist 30m\n' "$RUNNER_TEMP/ssh" > ~/.ssh/config
+          printf '#!/bin/sh\nprintf "%%s\n" "$VESOPA_SSH_PASSWORD"\n' > "$RUNNER_TEMP/ssh/askpass"; chmod 700 "$RUNNER_TEMP/ssh/askpass"
+          export SSH_ASKPASS="$RUNNER_TEMP/ssh/askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=':0'
+          "$RUNNER_TEMP/py/bin/python" vesopa_go/tool/assetlinks.py --upload "$sha" --version-code "${{ steps.num.outputs.build }}"
+          rm -rf "$RUNNER_TEMP/ssh"
 
       - name: Remove the keys
         if: always()

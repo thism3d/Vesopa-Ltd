@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The members' card by NFC (CardHceService.kt): only the Vesopa card id,
+     never a payment id, and only while the device is unlocked. -->
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/nfc_card_description"
+    android:requireDeviceUnlock="true">
+    <aid-group android:category="other" android:description="@string/nfc_card_description">
+        <aid-filter android:name="F05645534F504101"/>
+    </aid-group>
+</host-apdu-service>

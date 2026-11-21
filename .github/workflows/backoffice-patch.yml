@@ -33,18 +33,23 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Which server app
+        description: Which server app (website = vesopaepos.com, files under vesopa_web)
         type: choice
-        options: [staging, live]
+        options: [staging, live, website]
         default: staging
       files:
-        description: Files under vesopa_server to copy, space-separated (empty = settings only)
+        description: Files under vesopa_server (vesopa_web for website) to copy, space-separated (empty = settings only)
         required: false
         default: src/loyalty_app.js
       settings:
         description: Also set in the server's .env
         type: choice
         options: [none, google-wallet, apns-pontardawe, both]
+        default: none
+      run:
+        description: After the deploy, run one of the server's set-up tools (back office targets only)
+        type: choice
+        options: [none, kitchen-display-adverts]
         default: none
       confirm:
         description: Type deploy to change the live server
@@ -73,6 +78,7 @@ jobs:
       TARGET: ${{ inputs.target }}
       FILES: ${{ inputs.files }}
       SETTINGS: ${{ inputs.settings }}
+      RUN_TOOL: ${{ inputs.run }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,15 +89,21 @@ jobs:
           CONFIRM: ${{ inputs.confirm }}
           SSHPW: ${{ secrets.VESOPA_SSH_PASSWORD }}
         run: |
-          if [ "$TARGET" = live ] && [ "$CONFIRM" != deploy ]; then
+          if [ "$TARGET" != staging ] && [ "$CONFIRM" != deploy ]; then
             echo "::error::The live server needs 'deploy' typed in the confirm box."; exit 1
           fi
           [ -n "$SSHPW" ] || { echo "::error::VESOPA_SSH_PASSWORD is not set in the 'App Store Connect API' environment."; exit 1; }
+          src=vesopa_server
           case "$TARGET" in
             live)    domain=backoffice.vesopaepos.com ;;
             staging) domain=staging.backoffice.vesopaepos.com ;;
+            # The public website (owner, 2026-11-19: vesopaepos.com's product
+            # listings and indexing), on the same box since the move off the
+            # old AWS one (tool/migrate_old_box.py): pm2 "vesopaepos.com".
+            website) domain=vesopaepos.com; src=vesopa_web ;;
           esac
           {
+            echo "SRC=$src"
             echo "DOMAIN=$domain"
             echo "PM2_APP=$domain"
             echo "REMOTE_APP=/home/$APP_USER/web/$domain/private/nodeapp"
@@ -113,20 +125,27 @@ jobs:
           ssh -n "$SERVER" "test -d '$REMOTE_APP'" || { echo "::error::$REMOTE_APP not found on the server"; exit 1; }
           : > "$RUNNER_TEMP/to-copy"
           for f in $FILES; do
-            case "$f" in *..*|/*) echo "::error::Not a path inside vesopa_server: $f"; exit 1;; esac
-            local_path="vesopa_server/$f"
+            case "$f" in *..*|/*) echo "::error::Not a path inside $SRC: $f"; exit 1;; esac
+            local_path="$SRC/$f"
             [ -f "$local_path" ] || { echo "::error::$local_path is not in the repository"; exit 1; }
             new=$(git rev-parse "HEAD:$local_path")
             last=$(git log -1 --format=%H -- "$local_path")
-            before=$(git rev-parse "$last^:$local_path" 2>/dev/null || echo none)
-            remote=$(ssh -n "$SERVER" "cat '$REMOTE_APP/$f' 2>/dev/null" | git hash-object --stdin)
+            before=$(git rev-parse --verify --quiet "$last^:$local_path" || echo none)
+            exists=$(ssh -n "$SERVER" "test -e '$REMOTE_APP/$f' && echo yes || echo no")
+            if [ "$exists" = no ] && [ "$before" = none ]; then
+              # A file new in git that the server does not have yet.
+              echo "$f: new, will be added"
+              echo "$f" >> "$RUNNER_TEMP/to-copy"
+              continue
+            fi
+            remote=$( { ssh -n "$SERVER" "cat '$REMOTE_APP/$f' 2>/dev/null" || true; } | git hash-object --stdin)
             if [ "$remote" = "$new" ]; then
               echo "$f: already the new version, left as it is"
             elif [ "$remote" = "$before" ]; then
               echo "$f: the version before ${last:0:8}, will be replaced"
               echo "$f" >> "$RUNNER_TEMP/to-copy"
             else
-              known=$(git log --format=%H -- "$local_path" | while read c; do [ "$(git rev-parse "$c:$local_path" 2>/dev/null)" = "$remote" ] && { echo "${c:0:8}"; break; }; done)
+              known=$(git log --format=%H -- "$local_path" | while read c; do [ "$(git rev-parse "$c:$local_path" 2>/dev/null)" = "$remote" ] && { echo "${c:0:8}"; break; }; done || true)
               echo "::error::$f on the server is not the version this change was made from (it matches ${known:-no version in git, so it was edited on the server}). Nothing was changed; deploy it with deploy.sh from the build PC instead."
               exit 1
             fi
@@ -152,14 +171,14 @@ jobs:
           R "cp -p '$app/.env' '$app/.env.bak-$ts'"
           while read -r f; do
             [ -n "$f" ] || continue
-            R "cp -p '$app/$f' '$app/$f.bak-$ts'"
+            R "if [ -e '$app/$f' ]; then cp -p '$app/$f' '$app/$f.bak-$ts'; fi"
           done < "$RUNNER_TEMP/to-copy"
           rollback() {
             echo "::error::Restoring the backups ($ts)."
             R "cp -p '$app/.env.bak-$ts' '$app/.env'" || true
             while read -r f; do
               [ -n "$f" ] || continue
-              R "cp -p '$app/$f.bak-$ts' '$app/$f'" || true
+              R "if [ -e '$app/$f.bak-$ts' ]; then cp -p '$app/$f.bak-$ts' '$app/$f'; else rm -f '$app/$f'; fi" || true
             done < "$RUNNER_TEMP/to-copy"
             restart || true
             exit 1
@@ -168,7 +187,8 @@ jobs:
 
           while read -r f; do
             [ -n "$f" ] || continue
-            ssh "$SERVER" "cat > '$app/$f.new' && chown $APP_USER:$APP_USER '$app/$f.new' && mv '$app/$f.new' '$app/$f'" < "vesopa_server/$f"
+            R "mkdir -p \"\$(dirname '$app/$f')\" && chown $APP_USER:$APP_USER \"\$(dirname '$app/$f')\""
+            ssh "$SERVER" "cat > '$app/$f.new' && chown $APP_USER:$APP_USER '$app/$f.new' && mv '$app/$f.new' '$app/$f'" < "$SRC/$f"
             echo "copied $f"
           done < "$RUNNER_TEMP/to-copy"
 
@@ -211,6 +231,17 @@ jobs:
           [ "${ok:-}" = 1 ] || { echo "::error::https://$DOMAIN/health did not answer after the restart"; false; }
           trap - ERR
           echo "Healthy: https://$DOMAIN/health"
+
+          # One of the server's own set-up tools, from a fixed list (never a
+          # free command): as the app's user, with the app's .env.
+          case "$RUN_TOOL" in
+            none|'') ;;
+            kitchen-display-adverts)
+              [ "$SRC" = vesopa_server ] || { echo "::error::$RUN_TOOL is a back office tool"; exit 1; }
+              R "su - $APP_USER -c 'cd $app && node tool/kitchen-display-adverts.js'"
+              ;;
+            *) echo "::error::Unknown tool $RUN_TOOL"; exit 1 ;;
+          esac
           echo "### Back office patch ($TARGET)" >> "$GITHUB_STEP_SUMMARY"
           echo "Backups on the server end in .bak-$ts" >> "$GITHUB_STEP_SUMMARY"
           if [ "$TARGET" = live ]; then

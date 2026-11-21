@@ -232,9 +232,38 @@ def load_venue(name):
     return venue_dir, v, store
 
 
-def find_app(c, bundle_id):
+def find_app(c, bundle_id, apple_id=None):
+    """The app record for the bundle id; failing that, the one with the venue's
+    Apple ID (venue.json "app_store_id", from App Store Connect, App
+    Information), if this key can see it."""
     apps = c.get("/v1/apps", **{"filter[bundleId]": bundle_id}).get("data", [])
-    return apps[0] if apps else None
+    if apps:
+        return apps[0]
+    if apple_id:
+        try:
+            app = c.get(f"/v1/apps/{apple_id}").get("data")
+        except AppleError as e:
+            note(f"  (Apple ID {apple_id}: {e.detail()})")
+            return None
+        if app and app["attributes"].get("bundleId") == bundle_id:
+            return app
+        if app:
+            note(f"  Apple ID {apple_id} is {app['attributes'].get('bundleId')}, not {bundle_id}")
+    return None
+
+
+def similar(c, v):
+    """The apps this key can see whose name is like the venue's, with their
+    bundle ids: an app made by hand under another bundle id shows up here."""
+    word = v["name"].split()[0].lower()
+    try:
+        seen = c.all("/v1/apps", **{"fields[apps]": "name,bundleId,sku", "limit": "200"})
+    except AppleError as e:
+        note(f"  (could not list the apps: {e.detail()})")
+        return
+    near = [a for a in seen if word in str(a["attributes"].get("name", "")).lower()]
+    note(f"  {len(seen)} app(s) visible to this key; named like \"{v['name']}\": "
+         + (", ".join(f"{a['attributes'].get('name')} = {a['attributes'].get('bundleId')}" for a in near) or "none"))
 
 
 # ---- status -------------------------------------------------------------------
@@ -244,9 +273,10 @@ def cmd_status(venue_name):
     """What App Store Connect has for the app, changing nothing."""
     _, v, _ = load_venue(venue_name)
     c = Client()
-    app = find_app(c, v["app_id"])
+    app = find_app(c, v["app_id"], v.get("app_store_id"))
     if not app:
         note(f"No app record for {v['app_id']}.")
+        similar(c, v)
         return
     a = app["attributes"]
     note(f"App: {a.get('name')}  Apple ID {app['id']}  bundle {a.get('bundleId')}  SKU {a.get('sku')}  "
@@ -283,7 +313,17 @@ def cmd_status(venue_name):
             note("  builds: none uploaded yet")
         for b in found[:10]:
             ba = b["attributes"]
-            note(f"  build {ba.get('version')}: {ba.get('processingState')}, uploaded {ba.get('uploadedDate')}, expired {ba.get('expired')}")
+            # Whether outside testers can have it: Apple's Beta App Review.
+            review = ""
+            try:
+                sub = c.get(f"/v1/builds/{b['id']}/betaAppReviewSubmission").get("data")
+                review = f", beta review {sub['attributes'].get('betaReviewState')}" if sub else ", beta review not sent"
+                detail = c.get(f"/v1/builds/{b['id']}/buildBetaDetail").get("data")
+                if detail:
+                    review += f", external {detail['attributes'].get('externalBuildState')}"
+            except AppleError:
+                pass
+            note(f"  build {ba.get('version')}: {ba.get('processingState')}, uploaded {ba.get('uploadedDate')}, expired {ba.get('expired')}{review}")
 
     def groups():
         for g in c.all(f"/v1/apps/{app['id']}/betaGroups"):
@@ -356,7 +396,7 @@ def cmd_prepare(venue_name):
     # profile made in `signing` then carries the team's pass types.
     ensure_capability(c, phone, "WALLET")
 
-    app = find_app(c, app_id)
+    app = find_app(c, app_id, v.get("app_store_id"))
     out = os.environ.get("GITHUB_OUTPUT")
     if not app:
         msg = (
@@ -1183,7 +1223,7 @@ def cmd_store(venue_name):
     if not store:
         raise SystemExit(f"{venue_dir / 'store' / 'app_store.json'} is missing.")
     c = Client()
-    app = find_app(c, v["app_id"])
+    app = find_app(c, v["app_id"], v.get("app_store_id"))
     if not app:
         raise SystemExit(f"No app record for {v['app_id']}: run `prepare` first.")
     locale = store.get("locale", "en-GB")
@@ -1317,7 +1357,7 @@ def cmd_withdraw(venue_name):
     version and fill again. Nothing is deleted."""
     venue_dir, v, store = load_venue(venue_name)
     c = Client()
-    app = find_app(c, v["app_id"])
+    app = find_app(c, v["app_id"], v.get("app_store_id"))
     if not app:
         raise SystemExit(f"No app record for {v['app_id']}.")
     state, sub = open_review_submission(c, app["id"])
@@ -1343,7 +1383,7 @@ def cmd_submit(venue_name, release=None, build_number=None):
     version, set how it releases, and submit it to Apple."""
     venue_dir, v, store = load_venue(venue_name)
     c = Client()
-    app = find_app(c, v["app_id"])
+    app = find_app(c, v["app_id"], v.get("app_store_id"))
     if not app:
         raise SystemExit(f"No app record for {v['app_id']}: run `prepare`/`store` first.")
 
@@ -1449,7 +1489,7 @@ def wait_for_build(c, app_id, version, number, minutes=45):
 def cmd_testflight(venue_name, number):
     venue_dir, v, store = load_venue(venue_name)
     c = Client()
-    app = find_app(c, v["app_id"])
+    app = find_app(c, v["app_id"], v.get("app_store_id"))
     if not app:
         raise SystemExit(f"No app record for {v['app_id']}.")
     tf = store.get("testflight", {})
@@ -1521,6 +1561,33 @@ def cmd_testflight(venue_name, number):
     except AppleError as e:
         external = []
         todo(f"TestFlight external groups: {e.detail()}")
+    # A public link anyone can join from the club's websites (owner,
+    # 2026-11-19: "add testflight link ... to the main website and the
+    # members' site"): an external group with its link switched on, made
+    # once. The link opens TestFlight once Beta App Review has passed a build.
+    if v.get("testflight_public", True):
+        try:
+            open_group = next((g for g in external if g["attributes"].get("publicLinkEnabled")), None)
+            if open_group is None and external:
+                g = external[0]
+                c.patch(f"/v1/betaGroups/{g['id']}", {"data": {"type": "betaGroups", "id": g["id"], "attributes": {
+                    "publicLinkEnabled": True, "publicLinkLimitEnabled": False}}})
+                open_group = c.get(f"/v1/betaGroups/{g['id']}")["data"]
+            if open_group is None:
+                made = c.post("/v1/betaGroups", {"data": {
+                    "type": "betaGroups",
+                    "attributes": {"name": "Members (public link)", "publicLinkEnabled": True, "publicLinkLimitEnabled": False},
+                    "relationships": {"app": {"data": {"type": "apps", "id": app["id"]}}},
+                }})
+                open_group = made["data"]
+                external.append(open_group)
+                note(f"  external TestFlight group \"Members (public link)\" made")
+            link = open_group["attributes"].get("publicLink")
+            if link:
+                note(f"  TestFlight public link: {link}")
+                print(f"TESTFLIGHT_PUBLIC_LINK={link}")
+        except AppleError as e:
+            todo(f"TestFlight public link: {e.detail()}")
     for g in external:
         try:
             c.post(f"/v1/betaGroups/{g['id']}/relationships/builds",

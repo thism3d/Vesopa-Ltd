@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../theme.dart';
+import '../tv.dart';
 
 Future<String?> scanCode(BuildContext context, {required String title, String hint = ''}) =>
     showModalBottomSheet<String>(
@@ -52,7 +53,8 @@ class _ScanSheetState extends State<_ScanSheet> {
           Text(widget.title, style: t.titleLarge),
           if (widget.hint.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(widget.hint, style: t.bodyMedium)),
           const SizedBox(height: 14),
-          ClipRRect(
+          // No camera (a TV, a stick, a box): the number only.
+          if (GoDevice.hasCamera) ClipRRect(
             borderRadius: BorderRadius.circular(Tp.radius),
             child: SizedBox(
               height: 300,
@@ -69,10 +71,11 @@ class _ScanSheetState extends State<_ScanSheet> {
           const SizedBox(height: 12),
           TextField(
             controller: _typed,
+            autofocus: !GoDevice.hasCamera,
             textInputAction: TextInputAction.done,
             onSubmitted: _finish,
             decoration: InputDecoration(
-              labelText: 'Or type the number',
+              labelText: GoDevice.hasCamera ? 'Or type the number' : 'Type the number',
               suffixIcon: IconButton(icon: const Icon(Icons.arrow_forward_rounded), onPressed: () => _finish(_typed.text)),
             ),
           ),

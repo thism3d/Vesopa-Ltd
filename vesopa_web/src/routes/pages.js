@@ -242,6 +242,9 @@ router.get('/sitemap.xml', async (_req, res, next) => {
     for (const post of posts) {
       pages.push([`/blog/${post.slug}`, '0.6', new Date(post.lastmod).toISOString().slice(0, 10)]);
     }
+    // Each tag's own page (/blog/tag/<slug>), which replaced /blog?tag=.
+    const { liveTags } = require('./blog-pages');
+    for (const slug of Object.keys(await liveTags())) pages.push([`/blog/tag/${encodeURIComponent(slug)}`, '0.4']);
   } catch (e) {
     // A sitemap missing the blog beats a 500 on /sitemap.xml.
     console.error('[sitemap] could not list posts:', e.message);

@@ -272,7 +272,73 @@ function goesWith(skus, limit = 3) {
   return out.filter(Boolean).slice(0, limit);
 }
 
+/** A product's weight from its specs ("3.5 kg", "..., 249 g"), as schema.org has it; null if unknown. */
+function weightOf(p) {
+  const row = (p.specs || []).find(([k]) => /weight/i.test(k));
+  const m = row && String(row[1]).match(/([0-9]+(?:\.[0-9]+)?)\s*(kg|g)\b/i);
+  if (!m) return null;
+  return { '@type': 'QuantitativeValue', value: Number(m[1]), unitCode: m[2].toLowerCase() === 'kg' ? 'KGM' : 'GRM' };
+}
+
+/*
+ * THE PRODUCT AS GOOGLE READS IT (owner, 2026-11-19: Search Console's
+ * merchant listings missing shippingDetails and hasMerchantReturnPolicy, and
+ * Merchant Center's "Missing shipping weight"). Delivery as the checkout
+ * charges it (priceCart): free in the UK for what is already here, else
+ * DELIVERY's standard and express, VAT included as the price is. Returns as
+ * /refund says: unused hardware within 14 days of delivery. The shipping
+ * cost on each offer is the product's own, so Merchant Center needs no
+ * weight-based rate for it; the weight is given where the supplier states it.
+ * No rating or review is written until real customers have left some: a
+ * made-up one is against Google's rules.
+ */
+function productLd(p, site) {
+  const day = (min, max) => ({ '@type': 'QuantitativeValue', minValue: min, maxValue: max, unitCode: 'DAY' });
+  const weight = weightOf(p);
+  const ship = (minor, handling, transit) => ({
+    '@type': 'OfferShippingDetails',
+    shippingRate: { '@type': 'MonetaryAmount', value: Number(((minor * (1 + VAT_RATE)) / 100).toFixed(2)), currency: 'GBP' },
+    shippingDestination: { '@type': 'DefinedRegion', addressCountry: 'GB' },
+    deliveryTime: { '@type': 'ShippingDeliveryTime', handlingTime: day(...handling), transitTime: day(...transit) },
+    ...(weight ? { weight } : {}),
+  });
+  const shippingDetails = p.stock === 'in'
+    ? [ship(0, [0, 1], [1, 3])]
+    : [ship(DELIVERY.standard.minor, [1, 3], [10, 15]), ship(DELIVERY.express.minor, [1, 3], [2, 4])];
+  const photos = [p.img, ...(p.gallery || [])].filter((v, i, a) => v && a.indexOf(v) === i);
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: p.name,
+    sku: p.sku,
+    mpn: p.sku,
+    image: photos.map((s) => site + s),
+    description: p.headline,
+    brand: { '@type': 'Brand', name: 'Vesopa' },
+    ...(weight ? { weight } : {}),
+    offers: {
+      '@type': 'Offer',
+      priceCurrency: 'GBP',
+      price: (p.price * (1 + VAT_RATE)).toFixed(2),
+      itemCondition: 'https://schema.org/NewCondition',
+      availability: 'https://schema.org/' + (p.stock === 'in' ? 'InStock' : 'PreOrder'),
+      url: `${site}/hardware/${p.slug}`,
+      seller: { '@type': 'Organization', name: 'Vesopa Software Ltd' },
+      shippingDetails,
+      hasMerchantReturnPolicy: {
+        '@type': 'MerchantReturnPolicy',
+        applicableCountry: 'GB',
+        returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
+        merchantReturnDays: 14,
+        returnMethod: 'https://schema.org/ReturnByMail',
+        merchantReturnLink: `${site}/refund`,
+      },
+    },
+  };
+}
+
 module.exports = {
+  productLd, weightOf,
   small, PRODUCTS, CATEGORIES, DELIVERY, VAT_RATE, gbp, bySku, bySlug, parseCart, cartString, priceCart, goesWith,
   TEASER: ['POS-1566', 'KDS-181', 'OCPP-80A', 'OCBS-T2182D', 'POS-K01', 'OCPP-80D'],
 };

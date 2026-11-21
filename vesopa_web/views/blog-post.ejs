@@ -84,7 +84,7 @@
 <% if (post.tags) { %>
     <p class="bl-tags">
 <% post.tags.split(',').map(t => t.trim()).filter(Boolean).forEach(function (t) { %>
-      <a class="bl-chip" href="/blog?tag=<%= encodeURIComponent(t) %>">#<%= t %></a>
+      <a class="bl-chip" href="/blog/tag/<%= encodeURIComponent(tagSlug(t)) %>">#<%= t %></a>
 <% }); %>
     </p>
 <% } %>

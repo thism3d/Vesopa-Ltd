@@ -30,6 +30,20 @@ const app = express();
 // proxy — the form rate limiter depends on that being true.
 app.set('trust proxy', 1);
 
+/*
+ * One address for every page: www.vesopaepos.com moves to vesopaepos.com
+ * (owner, 2026-11-19: Search Console had https://www.vesopaepos.com/ as an
+ * "Alternate page with proper canonical"). A 301, so links and rankings move
+ * with it; GET and HEAD only, so a form posted to the old name still works.
+ */
+app.use((req, res, next) => {
+  const host = String(req.headers.host || '').toLowerCase();
+  if (host.startsWith('www.') && (req.method === 'GET' || req.method === 'HEAD')) {
+    return res.redirect(301, `https://${host.slice(4)}${req.originalUrl}`);
+  }
+  return next();
+});
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '..', 'views'));
 

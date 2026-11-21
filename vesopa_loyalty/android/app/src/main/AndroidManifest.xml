@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- NFC card emulation where the device has it; never required. -->
+    <uses-feature android:name="android.hardware.nfc.hce" android:required="false"/>
+
     <!-- INTERNET IS NOT IN FLUTTER'S TEMPLATE FOR RELEASE. The debug and
          profile manifests carry it for hot reload, so a debug build talks to
          the back office and a release build, silently, cannot: every request
@@ -56,6 +59,21 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="@string/push_channel_id"/>
+
+        <!-- The members' card by NFC: hold near the club's reader (CardHceService.kt).
+             Enabled per venue by @bool/nfc_card. -->
+        <service
+            android:name=".CardHceService"
+            android:exported="true"
+            android:enabled="@bool/nfc_card"
+            android:permission="android.permission.BIND_NFC_SERVICE">
+            <intent-filter>
+                <action android:name="android.nfc.cardemulation.action.HOST_APDU_SERVICE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.nfc.cardemulation.host_apdu_service"
+                android:resource="@xml/card_apdu_service"/>
+        </service>
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

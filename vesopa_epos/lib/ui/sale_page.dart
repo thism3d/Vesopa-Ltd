@@ -36,7 +36,6 @@ import 'product_lookup_sheet.dart';
 import 'refund_page.dart';
 import 'widgets/customer_card.dart';
 import 'widgets/live_receipt.dart';
-import 'widgets/line_editor.dart';
 import '../data/screens.dart';
 import '../data/till_settings.dart' show BackStrip;
 import 'widgets/on_screen_keyboard.dart';
@@ -179,6 +178,10 @@ class SelectedLines extends Notifier<LineSelection> {
           : {...current, lineId},
     );
   }
+
+  /// Exactly these lines: the bill's ↓ ↑ and select all.
+  void set(String orderId, Set<String> ids) =>
+      state = (orderId: ids.isEmpty ? null : orderId, ids: {...ids});
 
   void clear() => state = (orderId: null, ids: const {});
 }
@@ -915,24 +918,16 @@ class SalePage extends ConsumerWidget {
                                     onTapLine: (l) => ref
                                         .read(selectedLinesProvider.notifier)
                                         .toggle(orderId, l.id),
-                                    // The item box, opened from the pencil that
-                                    // appears on a selected row. A visible
-                                    // control rather than a long press: a hidden
-                                    // gesture has to be taught to every new
-                                    // member of staff, and costs half a second
-                                    // every time it is used.
-                                    onEditLine: (l) {
-                                      final line = lines.firstWhere(
-                                        (x) => x.id == l.id,
-                                        orElse: () => lines.first,
-                                      );
-                                      showLineEditor(
-                                        context,
-                                        ref,
-                                        orderId: orderId,
-                                        line: line,
-                                      );
-                                    },
+                                    // No item box from the bill (Nicky,
+                                    // 2026-11-18): a picked line is just
+                                    // highlighted. Void and Cancel take items
+                                    // off, the strip below sets the quantity,
+                                    // and Discount in Functions discounts the
+                                    // picked lines. ↓ ↑ and select all sit
+                                    // beside the totals, as on the old till.
+                                    onSelectLines: (ids) => ref
+                                        .read(selectedLinesProvider.notifier)
+                                        .set(orderId, ids),
                                     // Exactly one line picked: offer its quantity
                                     // right above Subtotal. With several picked
                                     // there is no single quantity to show, so the
@@ -967,8 +962,7 @@ class SalePage extends ConsumerWidget {
                           ),
                   ),
                   // What Void is about to take off, and the way back out of a
-                  // selection. Without this there is no visible way to deselect,
-                  // because tapping a picked line opens the editor.
+                  // selection.
                   if (selectedLines.isNotEmpty)
                     _SelectionBar(
                       count: selectedLines.length,
@@ -2057,10 +2051,10 @@ class _FieldDialogState extends State<_FieldDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.title),
-      // Wide enough for the keyboard to lay out at a usable key size, and
-      // scrollable so it survives the shortest till anybody runs this on.
+      // The keyboard is docked below (keyboard_dock.dart) and the dialog
+      // moves up above it; scrollable for the shortest till.
       content: SizedBox(
-        width: KeyboardSize.dialogWidth(context, widget.mode == PosKeyboardMode.text ? 660 : 380),
+        width: KeyboardSize.dialogWidth(context, widget.mode == PosKeyboardMode.text ? 540 : 380),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -2085,7 +2079,6 @@ class _FieldDialogState extends State<_FieldDialog> {
                 // keyboard over the top of the one below.
                 keyboardType: TextInputType.none,
               ),
-              const SizedBox(height: 12),
               OnScreenKeyboard(
                 controller: widget.controller,
                 mode: widget.mode,
@@ -2869,7 +2862,7 @@ class _SelectionBar extends StatelessWidget {
 }
 
 /// The full bill, as a sheet. Tap a line to pick it out for Void; tap it again
-/// to edit it.
+/// to put it back.
 Future<void> _showBasketSheet(
   BuildContext context, {
   required WidgetRef ref,
@@ -2957,23 +2950,12 @@ Future<void> _showBasketSheet(
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  // Same rule as the desktop bill: first tap
-                                  // picks the line out for Void, tapping it
-                                  // again opens the editor.
-                                  onTap: () {
-                                    if (!picked) {
-                                      ref
-                                          .read(selectedLinesProvider.notifier)
-                                          .toggle(orderId, line.id);
-                                      return;
-                                    }
-                                    showLineEditor(
-                                      context,
-                                      ref,
-                                      orderId: orderId,
-                                      line: line,
-                                    );
-                                  },
+                                  // Same rule as the desktop bill: a tap
+                                  // picks the line out, a second tap puts it
+                                  // back. No item box (Nicky, 2026-11-18).
+                                  onTap: () => ref
+                                      .read(selectedLinesProvider.notifier)
+                                      .toggle(orderId, line.id),
                                 );
                               },
                             );

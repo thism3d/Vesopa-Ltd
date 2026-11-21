@@ -91,17 +91,20 @@ class Play:
             data = json.dumps(body).encode()
         req = urllib.request.Request(url, data=data, method=method,
                                      headers={"Authorization": f"Bearer {self.token}", "Content-Type": ctype})
-        try:
-            with urllib.request.urlopen(req, timeout=600) as r:
-                raw = r.read()
-                return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode(errors="replace")
+        # Google's 503 "The service is currently unavailable" and 429 pass in
+        # a moment (2026-11-19: one cost Go 1.2.70 its build number): try
+        # again, up to four times, before giving up.
+        for wait in (5, 15, 30, 60, None):
             try:
-                detail = json.loads(detail)["error"]["message"]
-            except (ValueError, KeyError, TypeError):
-                pass
-            raise PlayError(f"{e.code}: {detail}") from None
+                with urllib.request.urlopen(req, timeout=600) as r:
+                    raw = r.read()
+                    return json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as e:
+                if e.code in (429, 500, 502, 503, 504) and wait is not None:
+                    print(f"   ({e.code} from Google Play; trying again in {wait}s)", file=sys.stderr)
+                    time.sleep(wait)
+                    continue
+                raise_play(e)
 
     def edit(self):
         return self.call("POST", f"{API}/{self.package}/edits", {})["id"]
@@ -116,6 +119,16 @@ class Play:
                 raise
             self.call("POST", f"{API}/{self.package}/edits/{edit}:commit?changesNotSentForReview=true")
             print("   committed; send the changes for review in Play Console > Publishing overview")
+
+
+def raise_play(e):
+    """A Play API refusal as a PlayError with Google's own message."""
+    detail = e.read().decode(errors="replace")
+    try:
+        detail = json.loads(detail)["error"]["message"]
+    except (ValueError, KeyError, TypeError):
+        pass
+    raise PlayError(f"{e.code}: {detail}") from None
 
 
 class PlayError(Exception):
@@ -146,6 +159,10 @@ def release(play, edit, aab: pathlib.Path, track, name, notes, lang):
         play.call("PUT", f"{API}/{play.package}/edits/{edit}/tracks/{track}", {"track": track, "releases": [rel]})
         print("   (the app is still a draft in Play, so the release is a draft: roll it out in Play Console)")
     print(f"   version code {code} on the {track} track")
+
+
+
+
 
 
 def listing(play, edit, store: pathlib.Path, p):
@@ -179,6 +196,7 @@ def listing(play, edit, store: pathlib.Path, p):
 
 
 WEAR_OFFSET = 1_000_000  # the watch bundle's versionCode is the build number plus this
+TV_OFFSET = 2_000_000  # and the TV-only bundle's (go-android.yml)
 
 
 def next_build(play, floor: int) -> int:
@@ -189,7 +207,7 @@ def next_build(play, floor: int) -> int:
         seen = [int(b["versionCode"]) for b in play.call("GET", f"{API}/{play.package}/edits/{edit}/bundles").get("bundles", [])]
     finally:
         play.call("DELETE", f"{API}/{play.package}/edits/{edit}")
-    builds = [c - WEAR_OFFSET if c >= WEAR_OFFSET else c for c in seen]
+    builds = [c % WEAR_OFFSET for c in seen]
     return max([floor - 1, *builds]) + 1
 
 
@@ -249,6 +267,38 @@ def main():
     play = Play(token, p["package"])
     if option("--halt"):
         sys.exit(halt(play, option("--halt").split(",")))
+    # --status: every track and what is on it, read only (owner, 2026-11-19:
+    # "I did not get the updates": which release is live, a draft, or halted).
+    if "--status" in sys.argv:
+        edit = play.edit()
+        reach = {}
+        try:
+            tracks = play.call("GET", f"{API}/{play.package}/edits/{edit}/tracks").get("tracks", [])
+            # Where each testing track is offered: a form factor's own track
+            # (wear:beta) has its own countries, and with none it is published
+            # nowhere (owner, 2026-11-20: Wear OS open testing "not published").
+            for t in tracks:
+                if not t.get("releases"):
+                    continue
+                try:
+                    # A track's name may have spaces ("wear:Closed testing - Alpha").
+                    a = play.call("GET", f"{API}/{play.package}/edits/{edit}/countryAvailability/{urllib.parse.quote(t['track'], safe=':')}")
+                    n = len(a.get("countries", []))
+                    reach[t["track"]] = f"{n} countries" + (" + rest of world" if a.get("restOfWorld") else "") if (n or a.get("restOfWorld")) else "NO COUNTRIES (published nowhere)"
+                except Exception as e:  # noqa: BLE001 - a readout; never stops the run
+                    reach[t["track"]] = f"countries unknown ({str(e)[:60]})"
+        finally:
+            play.call("DELETE", f"{API}/{play.package}/edits/{edit}")
+        print(f"{p['title']} ({p['package']}): what each track holds")
+        for t in sorted(tracks, key=lambda x: x["track"]):
+            rels = t.get("releases", [])
+            if not rels:
+                continue
+            for r in rels:
+                frac = f" {round(100 * float(r['userFraction']))}% of users" if r.get("userFraction") else ""
+                print(f"  {t['track']:<22} {r.get('name', '?'):<16} {r.get('status', '?'):<11}{frac}  codes {', '.join(r.get('versionCodes', []))}  [{reach.get(t['track'], '?')}]")
+        print("  (completed = sent to Google; a new app's first release stays a draft until it is rolled out in Play Console)")
+        return
     if "--next-build" in sys.argv:
         print(next_build(play, int(v["build"])))
         return
@@ -280,19 +330,52 @@ def main():
         stem = f"{venue_dir.name}-{v['version']}-{v['build']}"
         name = f"{v['version']} ({v['build']})"
         parts = [(builds / f"{stem}.aab", track, "Phone and tablet", "phone"),
-                 (builds / f"{stem}-wear.aab", f"wear:{track}", "Wear OS", "wear")]
+                 (builds / f"{stem}-wear.aab", f"wear:{track}", "Wear OS", "wear"),
+                 # Vesopa Go's TV-only bundle (go-android.yml), for Play's
+                 # dedicated Android TV track; a venue app has none.
+                 (builds / f"{stem}-tv.aab", f"tv:{track}", "Android TV", "tv")]
         for aab, t, label, part in parts:
             # --only apps: the phone and the watch bundles, without the listing.
             if only and only != part and only != "apps":
+                continue
+            # Only the bundles this app has: Go has no watch, a venue app no TV.
+            if not aab.is_file() and (part == "tv" or (part == "wear" and not v.get("watch_app_id"))):
                 continue
             print(f"{label}:")
             if not aab.is_file():
                 print(f"   ! {aab} is missing: run {venue_dir.name}\\build-android.cmd first")
                 failed = True
                 continue
+            if part in ("wear", "tv"):
+                # Play gives a new Wear OS form factor internal, open (beta)
+                # and production tracks but no closed one: a closed-testing
+                # phone release puts its watch on Wear OS internal testing,
+                # which is private too (Loughor RFC, 2026-11-19).
+                try:
+                    look = play.edit()
+                    have = {x["track"] for x in play.call("GET", f"{API}/{play.package}/edits/{look}/tracks").get("tracks", [])}
+                    play.call("DELETE", f"{API}/{play.package}/edits/{look}")
+                    inner = f"{part}:internal"
+                    if t not in have and inner in have and track not in ("beta", "production"):
+                        print(f"   (no {t} track in Play: this goes on {inner}, {label} internal testing)")
+                        t = inner
+                except PlayError:
+                    pass
             try:
-                edit = play.edit()
-                release(play, edit, aab, t, name, p["release_notes"], p["language"])
+                # Another run using Play at the same time (Club site reads the
+                # signing key) ends this one's edit: "This edit has expired" or
+                # "has been deleted" (Loughor RFC 1.0.0 (7), 2026-11-20). The
+                # upload is started again, once, in a fresh edit.
+                for attempt in (1, 2):
+                    try:
+                        edit = play.edit()
+                        release(play, edit, aab, t, name, p["release_notes"], p["language"])
+                        break
+                    except PlayError as e:
+                        gone = "edit has expired" in str(e).lower() or "edit has been deleted" in str(e).lower()
+                        if attempt == 2 or not gone:
+                            raise
+                        print("   (Play ended the edit while uploading: starting it again)")
                 try:
                     play.commit(edit)
                 except PlayError as e:
@@ -321,7 +404,7 @@ def main():
                     print("     A Wear OS testing track is made in Play Console > Test and release > Testing >"
                           " Closed testing > Create track, form factor Wear OS; or give --track one Play has.")
 
-    if only in ("phone", "wear", "apps"):
+    if only in ("phone", "wear", "tv", "apps"):
         sys.exit(1 if failed else 0)
     print("Store listing:")
     try:

@@ -35,6 +35,10 @@ void main() {
   test('a Teya venue pays on its card machine, whatever the device would choose', () {
     final config = TapConfig.fromJson(const {'teya': {'enabled': true, 'default_terminal_id': 'trm_1'}});
     expect(cardVia(const LiteSettings(cardVia: 'tap'), config), 'machine');
-    expect(cardVia(const LiteSettings(cardVia: 'tap'), TapConfig.fromJson(const {})), 'tap');
+    // Tap to Pay on the device is Vesopa Tap to Pay (2026-11-18): a Stripe
+    // venue may choose it; Dojo's Tap to Pay is gone, so a Dojo venue pays on
+    // its machine.
+    expect(cardVia(const LiteSettings(cardVia: 'tap'), TapConfig.fromJson(const {'tap_provider': 'stripe'})), 'tap');
+    expect(cardVia(const LiteSettings(cardVia: 'tap'), TapConfig.fromJson(const {})), 'machine');
   });
 }

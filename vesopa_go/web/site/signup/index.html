@@ -40,6 +40,37 @@
   button.btn{border:0;cursor:pointer;font:inherit}
   button.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
   button.btn[disabled]{opacity:.55;cursor:default}
+  .su-progress{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:22px 0 4px}
+  .su-progress .seg{text-decoration:none;color:inherit}
+  .su-progress .seg.cur small{color:var(--text);font-weight:800}
+  .su-navs{display:flex;justify-content:space-between;margin:6px 2px 14px}
+  .su-nav{font-weight:700;text-decoration:none;color:var(--lime-ink,var(--lime))}
+  .su-nav.next{margin-left:auto}
+  .su-progress .seg span{display:block;height:7px;border-radius:99px;background:var(--line);transition:background .4s}
+  .su-progress .seg.done span{background:var(--lime)}
+  .su-progress .seg.waiting span{background:#F5B301}
+  .su-progress .seg.problem span{background:#E5484D}
+  .su-progress small{display:block;text-align:center;margin-top:6px;color:var(--muted);font-size:.78em;font-weight:600}
+  .su-count{text-align:center;color:var(--muted);font-size:.85em;margin:0 0 12px}
+  .su-check{list-style:none;padding:0;margin:12px 0 0;border:1px solid var(--line);border-radius:14px}
+  .su-check li{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line)}
+  .su-check li:first-child{border-top:0}
+  .su-check i{width:22px;height:22px;border-radius:50%;border:2px solid var(--muted);display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:13px;flex:none}
+  .su-check li.ok i{background:#2E9E5B;border-color:#2E9E5B;color:#fff}
+  .su-check em{margin-left:auto;font-style:normal;color:#C98F00;font-weight:700;font-size:.85em}
+  .su-done{position:relative;overflow:hidden;text-align:center;border-radius:20px;padding:30px 20px;margin:18px 0;background:var(--card);border:2px solid var(--lime)}
+  .su-done .tick{width:96px;height:96px;margin:0 auto 12px;border-radius:50%;background:var(--lime);color:var(--on-lime);font-size:56px;font-weight:900;line-height:96px;animation:pop .8s cubic-bezier(.2,1.6,.4,1)}
+  .su-done h2{margin:6px 0}
+  .su-done .open{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:14px 0}
+  .su-done .open span{border:1px solid var(--line);border-radius:12px;padding:8px 14px;font-weight:700}
+  .su-done .later{background:rgba(245,179,1,.14);border-radius:12px;padding:10px 12px}
+  .su-done .burst i{position:absolute;top:-12px;width:8px;height:14px;border-radius:2px;background:var(--lime);opacity:0;animation:fall 2.6s ease-in forwards}
+  .su-done .burst i:nth-child(3n){background:#F5B301}.su-done .burst i:nth-child(4n){background:#fff}
+  .su-done .burst i:nth-child(1){left:37%;animation-delay:0.35s}.su-done .burst i:nth-child(2){left:74%;animation-delay:0.20s}.su-done .burst i:nth-child(3){left:11%;animation-delay:0.05s}.su-done .burst i:nth-child(4){left:48%;animation-delay:0.40s}.su-done .burst i:nth-child(5){left:85%;animation-delay:0.25s}.su-done .burst i:nth-child(6){left:22%;animation-delay:0.10s}.su-done .burst i:nth-child(7){left:59%;animation-delay:0.45s}.su-done .burst i:nth-child(8){left:96%;animation-delay:0.30s}.su-done .burst i:nth-child(9){left:33%;animation-delay:0.15s}.su-done .burst i:nth-child(10){left:70%;animation-delay:0.00s}.su-done .burst i:nth-child(11){left:7%;animation-delay:0.35s}.su-done .burst i:nth-child(12){left:44%;animation-delay:0.20s}.su-done .burst i:nth-child(13){left:81%;animation-delay:0.05s}.su-done .burst i:nth-child(14){left:18%;animation-delay:0.40s}.su-done .burst i:nth-child(15){left:55%;animation-delay:0.25s}.su-done .burst i:nth-child(16){left:92%;animation-delay:0.10s}.su-done .burst i:nth-child(17){left:29%;animation-delay:0.45s}.su-done .burst i:nth-child(18){left:66%;animation-delay:0.30s}.su-done .burst i:nth-child(19){left:3%;animation-delay:0.15s}.su-done .burst i:nth-child(20){left:40%;animation-delay:0.00s}.su-done .burst i:nth-child(21){left:77%;animation-delay:0.35s}.su-done .burst i:nth-child(22){left:14%;animation-delay:0.20s}.su-done .burst i:nth-child(23){left:51%;animation-delay:0.05s}.su-done .burst i:nth-child(24){left:88%;animation-delay:0.40s}.su-done .burst i:nth-child(25){left:25%;animation-delay:0.25s}.su-done .burst i:nth-child(26){left:62%;animation-delay:0.10s}.su-done .burst i:nth-child(27){left:99%;animation-delay:0.45s}
+  .su-past{margin:10px 0}.su-past summary{cursor:pointer;font-weight:700;padding:8px 0}
+  @keyframes pop{0%{transform:scale(0)}100%{transform:scale(1)}}
+  @keyframes fall{0%{opacity:1;transform:translateY(0) rotate(0)}100%{opacity:0;transform:translateY(420px) rotate(540deg)}}
+  @media (prefers-reduced-motion: reduce){.su-done .tick{animation:none}.su-done .burst{display:none}}
 </style>
 </head>
 <body>
@@ -50,7 +81,7 @@
 
 <main class="doc">
   <h1>Sign up for Vesopa Go</h1>
-  <p class="lead">Take orders and card payments on your phones, with your sales, staff and menu in the Vesopa back office. <strong>14 days free</strong>, then £29 a month. Card payments are processed by <strong>Stripe</strong>.</p>
+  <p class="lead">Take orders and card payments on your phones, with your sales, staff and menu in the Vesopa back office. <strong>14 days free</strong>, then £29 a month.</p>
   <p class="small">You'll need about ten minutes, your passport, driving licence or ID card, a phone or computer with a camera, and your business's bank details.</p>
 
   <div id="app" aria-live="polite"><p>Loading…</p></div>
@@ -69,6 +100,6 @@
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://connect-js.stripe.com/v1.0/connect.js" async></script>
 <script src="/js/signup-config.js?v=2"></script>
-<script src="/js/signup.js?v=1"></script>
+<script src="/js/signup.js?v=4"></script>
 </body>
 </html>

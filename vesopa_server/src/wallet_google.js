@@ -337,8 +337,15 @@ function buildPass({ kind, config, office, brand = {}, subject = {} }) {
   if (!KINDS[kind]) throw new WalletError(`Unknown pass kind "${kind}"`, 400);
   const { issuerId, reviewStatus } = config;
 
-  const classId = `${issuerId}.${idSuffix(office, kind)}`;
-  const objectId = `${issuerId}.${idSuffix(office, kind, subject.id)}`;
+  // A venue's own Google Wallet profile (venue_looks.js `google`, set on the
+  // brand by wallet.js applyLook): its own class ids, modules, links, place,
+  // callbacks and Smart Tap. A venue without one is built exactly as before.
+  const g = brand.google || {};
+  const own = g.classIds && g.classIds[kind];
+  const classId = own ? `${issuerId}.${own}` : `${issuerId}.${idSuffix(office, kind)}`;
+  const objectId = own
+    ? `${issuerId}.${own}.${idSuffix(subject.id)}`
+    : `${issuerId}.${idSuffix(office, kind, subject.id)}`;
 
   const issuerName = brand.issuer_name || brand.program_name || 'Vesopa';
   const programName = brand.program_name || issuerName;
@@ -360,7 +367,36 @@ function buildPass({ kind, config, office, brand = {}, subject = {} }) {
   if (brand.support_phone) {
     links.push({ uri: `tel:${brand.support_phone}`, description: 'Call us', id: 'phone' });
   }
+  if (g.links) {
+    // The venue's own links in place of the receipt's website (owner,
+    // 2026-11-19: the club's site and vesopaepos.com); the phone stays.
+    links.splice(0, links.length, ...g.links.map((l, i) => ({ uri: l.uri, description: l.description, id: l.id || `link${i}` })),
+      ...links.filter((l) => l.id === 'phone'));
+  }
   const linksModuleData = links.length ? { uris: links } : undefined;
+
+  // What the venue's profile adds to a class of either kind.
+  const smartTap = g.smartTap && !brand.no_smart_tap;
+  const classExtras = {
+    multipleDevicesAndHoldersAllowedStatus: 'MULTIPLE_HOLDERS',
+    imageModulesData: g.images
+      ? g.images.map((im, i) => ({ id: `image${i}`, mainImage: image(im.uri, im.description) }))
+      : undefined,
+    messages: g.messages
+      ? g.messages.map((m, i) => ({ id: m.id || `message${i}`, header: m.header, body: m.body, messageType: 'TEXT' }))
+      : undefined,
+    // Google's save and delete calls (wallet.js POST /wallet/google/callback).
+    // updateRequestUrl is deprecated by Google and not sent.
+    callbackOptions: g.callbackUrl ? { url: g.callbackUrl } : undefined,
+    // Hold near reader: a Smart Tap reader set up with the redemption
+    // issuer's collector ID reads the object's smartTapRedemptionValue, the
+    // same code the QR carries, and types it into the till like a scan.
+    enableSmartTap: smartTap ? true : undefined,
+    redemptionIssuers: smartTap ? [String(g.redemptionIssuer || issuerId)] : undefined,
+  };
+  const classTexts = (terms) => textModules([...(g.texts || []), ['Terms', terms]]);
+  const tapValue = smartTap ? String(subject.card_number || subject.id || '') || undefined : undefined;
+  const wordmark = image(g.wordmark, `${issuerName}`);
 
   if (kind === 'loyalty') {
     return {
@@ -375,9 +411,29 @@ function buildPass({ kind, config, office, brand = {}, subject = {} }) {
         hexBackgroundColor,
         reviewStatus,
         countryCode: 'GB',
-        multipleDevicesAndHoldersAllowedStatus: 'MULTIPLE_HOLDERS',
+        ...classExtras,
+        wideProgramLogo: wordmark,
+        homepageUri: g.homepage ? { uri: g.homepage.uri, description: g.homepage.description } : undefined,
+        locations: g.locations || undefined,
+        accountNameLabel: g.loyalty && g.loyalty.accountNameLabel,
+        accountIdLabel: g.loyalty && g.loyalty.accountIdLabel,
+        rewardsTierLabel: g.loyalty && g.loyalty.rewardsTierLabel,
+        rewardsTier: g.loyalty && g.loyalty.rewardsTier,
+        // Found in the Google Wallet app by searching for the club, with
+        // sign-up and sign-in on the members' site.
+        discoverableProgram: g.discoverable
+          ? {
+              merchantSignupInfo: {
+                signupWebsite: { uri: g.discoverable.signup, description: 'Join' },
+                // Only where the signup page takes Google's POST of them.
+                signupSharedDatas: g.discoverable.share || undefined,
+              },
+              merchantSigninInfo: { signinWebsite: { uri: g.discoverable.signin || g.discoverable.signup } },
+              state: g.discoverable.state || 'TRUSTED_TESTERS',
+            }
+          : undefined,
         linksModuleData,
-        textModulesData: textModules([['Terms', terms]]),
+        textModulesData: classTexts(terms),
       },
       object: {
         id: objectId,
@@ -386,6 +442,8 @@ function buildPass({ kind, config, office, brand = {}, subject = {} }) {
         accountId: String(subject.card_number || subject.id || ''),
         accountName: String(subject.name || ''),
         barcode: barcode(subject.card_number || subject.id, subject.card_number),
+        smartTapRedemptionValue: tapValue,
+        locations: g.locations || undefined,
         // The two numbers on the face of a loyalty card. `loyaltyPoints` is the
         // headline; `secondaryLoyaltyPoints` is the tier, which Google has no
         // field for and which is far too useful to leave off the card.
@@ -516,6 +574,8 @@ function buildPass({ kind, config, office, brand = {}, subject = {} }) {
       id: classId,
       issuerName,
       reviewStatus,
+      ...classExtras,
+      textModulesData: g.texts ? classTexts(terms) : undefined,
       linksModuleData,
     },
     object: {
@@ -528,9 +588,11 @@ function buildPass({ kind, config, office, brand = {}, subject = {} }) {
       header: text(subject.name || (isStaff ? 'Staff' : 'Member')),
       subheader: text(isStaff ? subject.role || 'Staff' : programName),
       logo,
+      wideLogo: wordmark,
       heroImage: hero,
       hexBackgroundColor: hexBackgroundColor || (isStaff ? '#1f2937' : '#0f5132'),
       barcode: barcode(subject.card_number || subject.id, subject.card_number),
+      smartTapRedemptionValue: tapValue,
       textModulesData: isStaff
         ? textModules([
             ['Staff', subject.name],
@@ -675,6 +737,9 @@ function makeTokenSource(config, fetchImpl = fetch) {
  * `fetchImpl` is injectable so the whole of this can be driven in a test
  * without an issuer account; nothing else in here knows the difference.
  */
+/** Class fields a venue's profile adds that Google may refuse until set up. */
+const OPTIONAL_CLASS_FIELDS = ['enableSmartTap', 'redemptionIssuers', 'discoverableProgram', 'callbackOptions'];
+
 function makeClient(config, fetchImpl = fetch) {
   const accessToken = makeTokenSource(config, fetchImpl);
 
@@ -719,11 +784,49 @@ function makeClient(config, fetchImpl = fetch) {
      */
     async upsertClass(kind, klass) {
       const { classResource } = KINDS[kind];
+      const put = async (k) => {
+        try {
+          return await call('PUT', `/${classResource}/${encodeURIComponent(k.id)}`, k);
+        } catch (e) {
+          if (e.googleStatus !== 404) throw e;
+          return call('POST', `/${classResource}`, k);
+        }
+      };
       try {
-        return await call('PUT', `/${classResource}/${encodeURIComponent(klass.id)}`, klass);
+        return await put(klass);
       } catch (e) {
-        if (e.googleStatus !== 404) throw e;
-        return call('POST', `/${classResource}`, klass);
+        // Smart Tap, discovery and callbacks are extras a venue's profile
+        // asks for; one Google will not take yet (Smart Tap before the
+        // issuer has a collector key) must not stop the card being issued.
+        const extras = OPTIONAL_CLASS_FIELDS.filter((f) => klass[f] !== undefined);
+        if (e.googleStatus !== 400 || !extras.length) throw e;
+        const plain = { ...klass };
+        for (const f of extras) delete plain[f];
+        let saved = await put(plain);
+        // Then each extra on its own, so one Google refuses (it says only
+        // "invalid argument") does not take the others with it. Smart Tap's
+        // two fields go together.
+        const groups = [];
+        for (const f of extras) {
+          if (f === 'redemptionIssuers' && extras.includes('enableSmartTap')) continue;
+          groups.push(f === 'enableSmartTap' && extras.includes('redemptionIssuers') ? [f, 'redemptionIssuers'] : [f]);
+        }
+        const kept = {};
+        const dropped = [];
+        let because = e.message;
+        for (const group of groups) {
+          const attempt = { ...plain, ...kept };
+          for (const f of group) attempt[f] = klass[f];
+          try {
+            saved = await put(attempt);
+            for (const f of group) kept[f] = klass[f];
+          } catch (err) {
+            if (err.googleStatus !== 400) throw err;
+            dropped.push(...group);
+            because = err.message;
+          }
+        }
+        return dropped.length ? { ...saved, droppedFields: dropped, droppedBecause: because } : saved;
       }
     },
 
@@ -734,11 +837,21 @@ function makeClient(config, fetchImpl = fetch) {
      */
     async upsertObject(kind, object) {
       const { objectResource } = KINDS[kind];
+      const send = async (o) => {
+        try {
+          return await call('PATCH', `/${objectResource}/${encodeURIComponent(o.id)}`, o);
+        } catch (e) {
+          if (e.googleStatus !== 404) throw e;
+          return call('POST', `/${objectResource}`, o);
+        }
+      };
       try {
-        return await call('PATCH', `/${objectResource}/${encodeURIComponent(object.id)}`, object);
+        return await send(object);
       } catch (e) {
-        if (e.googleStatus !== 404) throw e;
-        return call('POST', `/${objectResource}`, object);
+        // As for the class: the Smart Tap value never stops a card.
+        if (e.googleStatus !== 400 || object.smartTapRedemptionValue === undefined) throw e;
+        const { smartTapRedemptionValue, ...plain } = object; // eslint-disable-line no-unused-vars
+        return send(plain);
       }
     },
 
@@ -762,7 +875,80 @@ function makeClient(config, fetchImpl = fetch) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Google's callbacks: a pass saved or deleted (class callbackOptions.url).
+// Signed with ECv2SigningOnly, as Google Pay tokens are: Google's root key
+// signs an intermediate key, which signs the message for this issuer.
+// https://developers.google.com/wallet/generic/use-cases/use-callbacks-for-saves-and-deletions
+// ---------------------------------------------------------------------------
+
+const CALLBACK_SENDER = 'GooglePayPasses';
+const CALLBACK_PROTOCOL = 'ECv2SigningOnly';
+const CALLBACK_KEYS_URL = 'https://pay.google.com/gp/m/issuer/keys';
+
+/** Each part as its 4-byte little-endian length and its UTF-8 bytes. */
+function lengthPrefixed(...parts) {
+  return Buffer.concat(parts.flatMap((p) => {
+    const bytes = Buffer.from(String(p), 'utf8');
+    const len = Buffer.alloc(4);
+    len.writeUInt32LE(bytes.length);
+    return [len, bytes];
+  }));
+}
+
+function ecVerify(keyB64, data, sigB64) {
+  try {
+    const key = require('crypto').createPublicKey({ key: Buffer.from(String(keyB64), 'base64'), format: 'der', type: 'spki' });
+    return require('crypto').verify('sha256', data, { key, dsaEncoding: 'der' }, Buffer.from(String(sigB64), 'base64'));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The message inside one callback, once Google's signatures check out, as
+ * { classId, objectId, expTimeMillis, eventType: 'save' | 'del', nonce }.
+ * `rootKeys` is the "keys" list from CALLBACK_KEYS_URL. Throws a WalletError
+ * (400) for anything not signed by Google for this issuer, or out of date.
+ */
+function verifyCallback(body, { issuerId, rootKeys, now = Date.now() }) {
+  const bad = (why) => new WalletError(`Wallet callback refused: ${why}`, 400);
+  let token;
+  try {
+    token = typeof body === 'string' ? JSON.parse(body) : body;
+  } catch {
+    throw bad('not JSON');
+  }
+  if (!token || token.protocolVersion !== CALLBACK_PROTOCOL) throw bad('not ECv2SigningOnly');
+  const ik = token.intermediateSigningKey || {};
+  const roots = (rootKeys || []).filter((k) => k.protocolVersion === CALLBACK_PROTOCOL
+    && (!k.keyExpiration || Number(k.keyExpiration) > now));
+  const keyData = lengthPrefixed(CALLBACK_SENDER, CALLBACK_PROTOCOL, ik.signedKey || '');
+  const byGoogle = (ik.signatures || []).some((sig) => roots.some((r) => ecVerify(r.keyValue, keyData, sig)));
+  if (!byGoogle) throw bad('intermediate key not signed by Google');
+  let signedKey;
+  try {
+    signedKey = JSON.parse(ik.signedKey);
+  } catch {
+    throw bad('intermediate key unreadable');
+  }
+  if (!(Number(signedKey.keyExpiration) > now)) throw bad('intermediate key expired');
+  const msgData = lengthPrefixed(CALLBACK_SENDER, String(issuerId), CALLBACK_PROTOCOL, token.signedMessage || '');
+  if (!ecVerify(signedKey.keyValue, msgData, token.signature)) throw bad('message not signed for this issuer');
+  let message;
+  try {
+    message = JSON.parse(token.signedMessage);
+  } catch {
+    throw bad('message unreadable');
+  }
+  if (message.expTimeMillis && Number(message.expTimeMillis) < now) throw bad('message expired');
+  return message;
+}
+
 module.exports = {
+  CALLBACK_KEYS_URL,
+  verifyCallback,
+  lengthPrefixed,
   PASS_TYPES,
   CARD_ORDER,
   byCardOrder,

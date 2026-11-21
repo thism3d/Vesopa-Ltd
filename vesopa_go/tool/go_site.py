@@ -24,7 +24,7 @@ SITE = REPO / "vesopa_go" / "web" / "site"
 HOST = "root@34.63.118.67"
 DOMAIN = "go.vesopa.com"
 H = "export PATH=$PATH:/usr/local/hestia/bin; "
-PAGES = ["/", "/get-started/", "/signup/", "/js/signup.js", "/js/signup-config.js", "/privacy/", "/terms/", "/support/", "/style.css", "/js/go.js", "/js/three.min.js", "/media/pay-iphone.mp4", "/img/og.jpg"]
+PAGES = ["/", "/.well-known/apple-app-site-association", "/link/", "/get-started/", "/signup/", "/js/signup.js", "/js/signup-config.js", "/privacy/", "/terms/", "/support/", "/style.css", "/js/go.js", "/js/three.min.js", "/media/pay-iphone.mp4", "/img/og.jpg"]
 # --local: from the office PC through paramiko rather than the runner's ssh.
 LOCAL = "--local" in sys.argv
 

@@ -523,6 +523,8 @@ app.use(deviceRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use(require('./go_modes').goModeRoutes({ pool, secret: JWT_SECRET, auth: requireAuth(JWT_SECRET) }));
 // Vesopa Go as a card terminal for the venue's tills (src/go_terminal.js).
 app.use(require('./go_terminal').goTerminalRoutes({ secret: JWT_SECRET }));
+// Vesopa Go as the remote for the venue's TVs (src/go_remote.js).
+app.use(require('./go_remote').goRemoteRoutes({ secret: JWT_SECRET, broadcast }));
 // Pictures and films for customer displays, uploaded here (src/display_adverts.js).
 app.use(require('./display_adverts').displayAdvertRoutes({ pool, secret: JWT_SECRET, auth: requireAuth(JWT_SECRET) }));
 // DeepSeek's suggested layout for a till screen, for the back office and Go (src/layout_ai.js).

@@ -2,6 +2,7 @@
 /// the device's own settings.
 library;
 
+import '../../ui/tv.dart' show GoDevice;
 import '../../payments/go_terminal.dart' show GoTerminalChoice;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -120,7 +121,11 @@ String cardVia(LiteSettings settings, TapConfig config, {bool tablet = false}) {
   // machines. A Stripe venue chooses like a Dojo one, its reader standing in
   // for the card machine (owner, 2026-11-07).
   if (GoTerminalChoice.current != null) return 'machine';
-  if (config.teya.enabled && config.tapProvider != 'stripe') return 'machine';
+  // Tap to Pay on this device is Vesopa Tap to Pay (Stripe underneath) on a
+  // phone; never on a TV, and Dojo's and Teya's are gone or theirs alone
+  // (owner, 2026-11-18). iPad keeps it for the demo.
+  if (GoDevice.isTv) return 'machine';
+  if (config.tapProvider != 'stripe') return 'machine';
   if (settings.cardVia == 'tap' || settings.cardVia == 'machine') return settings.cardVia;
   if (tablet && defaultTargetPlatform == TargetPlatform.iOS) return 'machine';
   final venue = defaultTargetPlatform == TargetPlatform.iOS ? config.go.cardIos : config.go.cardAndroid;

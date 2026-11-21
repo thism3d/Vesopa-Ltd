@@ -38,7 +38,6 @@ class LiveReceipt extends StatelessWidget {
     this.covers,
     this.clerkName,
     this.onTapLine,
-    this.onEditLine,
     this.selectedLineIds = const {},
     // Off by default now. The venue name and address are the top of a printed
     // receipt, not of the check a clerk is ringing into: the person holding the
@@ -48,6 +47,7 @@ class LiveReceipt extends StatelessWidget {
     this.showHeader = false,
     this.emptyMessage = 'No items yet',
     this.aboveTotals,
+    this.onSelectLines,
   });
 
   final BasketTotals totals;
@@ -72,12 +72,11 @@ class LiveReceipt extends StatelessWidget {
   /// Picks a line out, or puts it back — tapping is symmetric.
   final void Function(PricedLine line)? onTapLine;
 
-  /// Opens the item box for a line. Surfaced as a pencil on the selected row.
-  final void Function(PricedLine line)? onEditLine;
-
   /// Lines the clerk has picked out, by line id. A selected line is what Void
   /// acts on, so it has to be unmistakable at a glance on a busy counter —
-  /// hence a filled band and a tick, not a faint tint.
+  /// hence a filled band with a lime edge, not a faint tint. Nothing else
+  /// changes on the row: no tick, no "1 × selected", no pencil (Nicky,
+  /// 2026-11-18: "just highlight the item instead").
   final Set<String> selectedLineIds;
 
   final bool showHeader;
@@ -87,6 +86,12 @@ class LiveReceipt extends StatelessWidget {
   /// stepper for a single picked line here, so the control sits with the money
   /// it is about to change rather than in a dialog somewhere else.
   final Widget? aboveTotals;
+
+  /// Replaces the picked lines. Given, the bill draws ↓ ↑ and select all at
+  /// the right of the totals, where the old till had them (Nicky,
+  /// 2026-11-18): ↓ picks the next item, ↑ the one before, and select all
+  /// picks every item, or puts them all back when they already are.
+  final void Function(Set<String> ids)? onSelectLines;
 
   /// How many items should be readable at once without scrolling.
   ///
@@ -251,7 +256,6 @@ class LiveReceipt extends StatelessWidget {
                                 body: body,
                                 small: small,
                                 onTap: onTapLine,
-                                onEdit: onEditLine,
                                 selected: selectedLineIds.contains(line.id),
                               ),
                           ],
@@ -261,12 +265,52 @@ class LiveReceipt extends StatelessWidget {
 
               ?aboveTotals,
 
-              _Totals(
-                totals: totals,
-                tender: tender,
-                body: body,
-                small: small,
-              ),
+              if (onSelectLines == null)
+                _Totals(
+                  totals: totals,
+                  tender: tender,
+                  body: body,
+                  small: small,
+                )
+              else
+                Container(
+                  color: PayPalette.of(context).rowAlt,
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _Totals(
+                            totals: totals,
+                            tender: tender,
+                            body: body,
+                            small: small,
+                          ),
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              top: BorderSide(
+                                color: PayPalette.of(context).panelLine,
+                              ),
+                            ),
+                          ),
+                          padding: const EdgeInsets.fromLTRB(0, 8, 8, 8),
+                          alignment: Alignment.center,
+                          child: _BillNav(
+                            order: [
+                              for (final r in _roundsOfBill())
+                                for (final l in r.lines)
+                                  if (l.parentLineId == null) l.id,
+                            ],
+                            selected: selectedLineIds,
+                            onSelect: onSelectLines!,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           );
         },
@@ -287,6 +331,120 @@ class LiveReceipt extends StatelessWidget {
           parentOf: (l) => l.parentLineId,
         ),
       );
+}
+
+/// ↓ ↑ and select all, beside the totals.
+class _BillNav extends StatelessWidget {
+  const _BillNav({
+    required this.order,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  /// The items as they are drawn, top to bottom (an item's extras ride
+  /// with it, so they are not stops of their own).
+  final List<String> order;
+  final Set<String> selected;
+  final void Function(Set<String> ids) onSelect;
+
+  void _step(int by) {
+    if (order.isEmpty) return;
+    final at = [
+      for (var i = 0; i < order.length; i++)
+        if (selected.contains(order[i])) i,
+    ];
+    final int next;
+    if (at.isEmpty) {
+      next = by > 0 ? 0 : order.length - 1;
+    } else {
+      next = (by > 0 ? at.last + 1 : at.first - 1).clamp(0, order.length - 1);
+    }
+    onSelect({order[next]});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final all = order.isNotEmpty && order.every(selected.contains);
+    final on = order.isNotEmpty;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _NavKey(
+              icon: Icons.arrow_downward_rounded,
+              tooltip: 'Next item',
+              onTap: on ? () => _step(1) : null,
+            ),
+            const SizedBox(width: 6),
+            _NavKey(
+              icon: Icons.arrow_upward_rounded,
+              tooltip: 'Previous item',
+              onTap: on ? () => _step(-1) : null,
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        _NavKey(
+          icon: all ? Icons.remove_done_rounded : Icons.checklist_rounded,
+          tooltip: all ? 'Select none' : 'Select all',
+          wide: true,
+          active: all,
+          onTap: on ? () => onSelect(all ? <String>{} : order.toSet()) : null,
+        ),
+      ],
+    );
+  }
+}
+
+class _NavKey extends StatelessWidget {
+  const _NavKey({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.wide = false,
+    this.active = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+  final bool wide;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final on = onTap != null;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: active
+            ? scheme.primary
+            : scheme.surfaceContainerHighest.withValues(alpha: on ? 1 : 0.5),
+        borderRadius: BorderRadius.circular(9),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(9),
+          onTap: onTap,
+          child: SizedBox(
+            // Thumb-sized on a counter: 48 high, as the till's other keys.
+            width: wide ? 102 : 48,
+            height: 44,
+            child: Icon(
+              icon,
+              size: 24,
+              color: active
+                  ? scheme.onPrimary
+                  : on
+                      ? scheme.onSurface
+                      : scheme.onSurface.withValues(alpha: 0.35),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// `Sam · 19:42` above the items that person put on the bill.
@@ -402,13 +560,12 @@ class _Context extends StatelessWidget {
 
 /// One item, with whatever needs explaining underneath it: the unit price on a
 /// multiple, a kitchen note, and the offer that reduced it.
-class _LineRow extends StatelessWidget {
+class _LineRow extends StatefulWidget {
   const _LineRow({
     required this.line,
     this.body,
     this.small,
     this.onTap,
-    this.onEdit,
     this.selected = false,
   });
 
@@ -421,20 +578,52 @@ class _LineRow extends StatelessWidget {
   /// only thing anyone tries.
   final void Function(PricedLine line)? onTap;
 
-  /// Opens the item box. Reached from a pencil that appears on the row once it
-  /// is selected — deliberately a visible control rather than a long press,
-  /// because a hidden gesture has to be taught to every new member of staff and
-  /// costs half a second every time it is used.
-  final void Function(PricedLine line)? onEdit;
-
   final bool selected;
+
+  @override
+  State<_LineRow> createState() => _LineRowState();
+}
+
+class _LineRowState extends State<_LineRow> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.selected) _reveal();
+  }
+
+  @override
+  void didUpdateWidget(_LineRow old) {
+    super.didUpdateWidget(old);
+    if (widget.selected && !old.selected) _reveal();
+  }
+
+  /// A line the ↓ ↑ keys picked may be below the fold: bring it into view,
+  /// without moving a bill whose picked line is already on screen.
+  void _reveal() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || Scrollable.maybeOf(context) == null) return;
+      const d = Duration(milliseconds: 140);
+      await Scrollable.ensureVisible(context,
+          duration: d,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+      if (!mounted) return;
+      await Scrollable.ensureVisible(context,
+          duration: d,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final line = widget.line;
+    final body = widget.body;
+    final small = widget.small;
+    final selected = widget.selected;
+    final onTap = widget.onTap;
 
     return InkWell(
-      onTap: onTap == null ? null : () => onTap!(line),
+      onTap: onTap == null ? null : () => onTap(line),
       child: Container(
         // Selection is drawn as a filled band with a lime edge rather than a
         // tint: the clerk is about to void this line, and "which row is picked"
@@ -470,10 +659,12 @@ class _LineRow extends StatelessWidget {
               children: [
                 SizedBox(
                   width: 28,
-                  child: selected
-                      ? Icon(Icons.check_circle,
-                          size: 15, color: scheme.primary)
-                      : Text(_qty(line.quantity), style: body),
+                  child: Text(
+                    _qty(line.quantity),
+                    style: selected
+                        ? body?.copyWith(fontWeight: FontWeight.w700)
+                        : body,
+                  ),
                 ),
                 Expanded(
                   child: Text(
@@ -489,43 +680,8 @@ class _LineRow extends StatelessWidget {
                   style: body?.copyWith(fontWeight: FontWeight.w600),
                 ),
 
-                // The door to the item box, and only shown on the row it acts
-                // on. Sized to 40px square — a receipt row is narrow, but this
-                // still has to be hittable with a thumb on a busy counter.
-                if (selected && onEdit != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: Material(
-                      color: scheme.primary,
-                      borderRadius: BorderRadius.circular(7),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(7),
-                        onTap: () => onEdit!(line),
-                        child: Tooltip(
-                          message: 'Quantity, discount, note',
-                          child: SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: Icon(
-                              Icons.edit,
-                              size: 18,
-                              color: scheme.onPrimary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
-
-            // The quantity moves out of the gutter when a tick takes its place,
-            // so a selected "3x Latte" still shows it is three.
-            if (selected)
-              Padding(
-                padding: const EdgeInsets.only(left: 28),
-                child: Text('${_qty(line.quantity)} × selected', style: small),
-              ),
 
             // Unit price, when it is not obvious from a single item.
             if (line.quantity != 1)

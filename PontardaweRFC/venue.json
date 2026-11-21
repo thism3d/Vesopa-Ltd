@@ -30,5 +30,9 @@
     "vesopa.com",
     "pontardawerfc.com"
   ],
-  "firebase_auth_domain": "member.pontardawerfc.com"
+  "firebase_auth_domain": "member.pontardawerfc.com",
+  "app_links": [
+    "member.pontardawerfc.com",
+    "pontardawerfc.com/app"
+  ]
 }

@@ -396,8 +396,6 @@ class _PayPageState extends ConsumerState<PayPage> {
       ));
     } else {
       if (outcome.result == PayResult.declined) GoSounds.play(ref.read(tapProvider).config.go, GoSound.declined);
-      final pay = ref.read(paymentsProvider);
-      if (pay is DojoTapToPay) unawaited(pay.notifyIfAway(outcome, money(_cardAmount + _tip)));
       // The same screen turns into its result, with what can be done next.
       setState(() {
         _busy = false;

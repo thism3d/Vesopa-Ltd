@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vesopa_epos/ui/widgets/on_screen_keyboard.dart' show KeyboardInsets;
 import 'package:vesopa_epos/data/local/database.dart';
 import 'package:vesopa_epos/ui/price_override_dialog.dart';
 import 'package:vesopa_epos/ui/product_lookup_sheet.dart';
@@ -40,6 +41,7 @@ Future<Product?> openLookup(WidgetTester tester, LookupMode mode) async {
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp(
+        builder: (context, child) => KeyboardInsets(child: child!),
         home: Scaffold(
           body: Consumer(
             builder: (context, ref, _) => TextButton(
@@ -121,6 +123,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            builder: (context, child) => KeyboardInsets(child: child!),
             home: Scaffold(
               body: Consumer(
                 builder: (context, ref, _) => TextButton(
@@ -163,6 +166,7 @@ void main() {
       int? result;
       await tester.pumpWidget(
         MaterialApp(
+          builder: (context, child) => KeyboardInsets(child: child!),
           home: Scaffold(
             body: Builder(
               builder: (context) => TextButton(
@@ -219,6 +223,7 @@ void main() {
       int? result;
       await tester.pumpWidget(
         MaterialApp(
+          builder: (context, child) => KeyboardInsets(child: child!),
           home: Scaffold(
             body: Builder(
               builder: (context) => TextButton(

@@ -375,6 +375,79 @@ def dart(app: Path, v):
     (app / "venue_defines.json").write_text(json.dumps(defines, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def with_firebase_plist(v, venue_dir: Path):
+    """venue.json's empty Firebase and Google ids, from the venue's
+    GoogleService-Info.plist (tool/firebase_ios_app.py writes it in CI; the
+    owner's download on a PC): the app id, project, sender and Google's iOS
+    sign-in client. What venue.json gives always wins."""
+    plist = venue_dir / "GoogleService-Info.plist"
+    if not plist.exists():
+        return v
+    import plistlib
+    p = plistlib.loads(plist.read_bytes())
+    v = dict(v)
+    for key, field in (("firebase_ios_app_id", "GOOGLE_APP_ID"), ("firebase_project_id", "PROJECT_ID"),
+                       ("firebase_sender_id", "GCM_SENDER_ID"), ("google_ios_client_id", "CLIENT_ID")):
+        if not v.get(key) and p.get(field):
+            v[key] = str(p[field])
+    return v
+
+
+def app_links(v):
+    """The links that open the app (owner, 2026-11-19: deep links to the club's
+    members' site and /app): venue.json "app_links", each "host" (every path)
+    or "host/path" (that page only, never the pages under it: /app/privacy and
+    /app/terms stay in the browser), e.g. ["member.loughorrfc.site",
+    "loughorrfc.site/app"]. Each site names the app in its own
+    assetlinks.json and apple-app-site-association."""
+    out = []
+    for link in v.get("app_links", []):
+        host, _, path = str(link).strip().strip("/").partition("/")
+        if host:
+            out.append((host.lower(), "/" + path if path else ""))
+    return out
+
+
+def app_links_android(app: Path, v):
+    links = app_links(v)
+    if not links:
+        return
+    filters = "".join(
+        "            <intent-filter android:autoVerify=\"true\">\n"
+        "                <action android:name=\"android.intent.action.VIEW\"/>\n"
+        "                <category android:name=\"android.intent.category.DEFAULT\"/>\n"
+        "                <category android:name=\"android.intent.category.BROWSABLE\"/>\n"
+        f"                <data android:scheme=\"https\" android:host=\"{host}\""
+        + (f" android:path=\"{path}\"/>\n                <data android:scheme=\"https\" android:host=\"{host}\""
+           f" android:path=\"{path}/\"/>\n" if path else "/>\n")
+        + "            </intent-filter>\n"
+        for host, path in links)
+    # The link opens the app where the member left it; Flutter's own routing
+    # of the link's path is off (the app has no page per web address).
+    meta = ("            <meta-data android:name=\"flutter_deeplinking_enabled\" android:value=\"false\"/>\n")
+    edit(app / "android" / "app" / "src" / "main" / "AndroidManifest.xml", [(
+        "                <category android:name=\"android.intent.category.LAUNCHER\"/>\n            </intent-filter>\n",
+        "                <category android:name=\"android.intent.category.LAUNCHER\"/>\n            </intent-filter>\n"
+        + filters + meta,
+    )])
+    print("App links (Android): " + ", ".join(h + p for h, p in links))
+
+
+def app_links_ios(app: Path, v):
+    hosts = sorted({host for host, _ in app_links(v)})
+    if not hosts:
+        return
+    ios_dir = app / "ios" / "Runner"
+    edit(ios_dir / "Runner.entitlements", [(
+        "\t<key>com.apple.developer.associated-domains</key>\n\t<array>\n",
+        "\t<key>com.apple.developer.associated-domains</key>\n\t<array>\n"
+        + "".join(f"\t\t<string>applinks:{h}</string>\n" for h in hosts),
+    )])
+    edit(ios_dir / "Info.plist", [("</dict>\n</plist>",
+                                   "\t<key>FlutterDeepLinkingEnabled</key>\n\t<false/>\n</dict>\n</plist>")])
+    print("App links (iPhone): " + ", ".join(hosts))
+
+
 def clear(app):
     """Delete the last generated project. On Windows a Gradle daemon (VS Code's
     Java extension starts one on any Android project it sees) can hold files in
@@ -427,9 +500,22 @@ def main():
             shutil.rmtree(app / own.relative_to(overlay), ignore_errors=True)
     shutil.copytree(overlay, app, dirs_exist_ok=True)
 
+    # The members' card by NFC on Android phones and Wear OS watches
+    # (CardHceService.kt), for venues that have it: "nfc": true in venue.json.
+    if v.get("nfc"):
+        for module in ("app", "wear"):
+            res = app / "android" / module / "src" / "main" / "res" / "values" / "nfc_card.xml"
+            if res.exists():
+                res.write_text(res.read_text(encoding="utf-8").replace(
+                    '<bool name="nfc_card">false</bool>', '<bool name="nfc_card">true</bool>'), encoding="utf-8")
+        print("NFC card: on (Android phone and Wear OS)")
+
+    v = with_firebase_plist(v, venue_dir)
     android(app, venue_dir, v)
+    app_links_android(app, v)
     ios(app, v, venue_dir)
     dart(app, v)
+    app_links_ios(app, v)
     print(f"{v['name']} {v['version']} ({v['build']}) as {v['app_id']}: {app}")
 
 

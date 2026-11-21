@@ -41,6 +41,7 @@ import 'lan/lan_link.dart' show LanMessage;
 import 'lan/lan_service.dart';
 import '../config/constants.dart' show apiBase, goAppVersion;
 import '../payments/stripe_tap.dart';
+import '../remote/go_remote.dart';
 import 'terminal_sync.dart';
 import 'screen_set.dart';
 
@@ -407,7 +408,7 @@ final paymentsProvider = Provider<PaymentService>((ref) {
   // A Teya venue (back office, Card Payments) pays on its Teya machines.
   final teya = ref.watch(tapProvider.select((s) => s.config.teya));
   if (teya.enabled) return TeyaCardMachine(ref.watch(apiProvider), teya, tillName: ref.read(tapProvider.notifier).terminalName);
-  return DojoTapToPay(ref.watch(apiProvider));
+  return DojoCardMachine(ref.watch(apiProvider));
 });
 
 final tapProvider = NotifierProvider<TapSession, TapState>(TapSession.new);
@@ -874,6 +875,11 @@ class TapSession extends Notifier<TapState> {
       return;
     }
     final type = '${msg['type'] ?? ''}';
+    if (type == 'go.remote') {
+      // A key pressed on this screen from Vesopa Go on a phone or tablet.
+      if ('${msg['device_id'] ?? ''}' == deviceId) GoRemote.press('${msg['key'] ?? ''}');
+      return;
+    }
     if (type == 'qrpay.updated') {
       // A printed bill's QR code paid: found and put on its bill.
       final id = '${msg['id'] ?? ''}';

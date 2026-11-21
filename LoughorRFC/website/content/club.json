@@ -1,0 +1,234 @@
+{
+  "_about": "Everything the site states as fact about the club, with where it came from. The AI helper is told this is the whole of what it may say. Sources: Wikipedia 'Loughor RFC' and the WRU community club pages (read 2026-11-18), Companies House 13489973, the club's Facebook page (facebook.com/loughorrugbyclub) and X (@LoughorRFC). Edit here, not in the page templates.",
+  "name": "Loughor RFC",
+  "full_name": "Loughor Rugby Football Club",
+  "welsh_name": "Clwb Rygbi Casllwchwr",
+  "company": {
+    "name": "Loughor RFC (1882) Limited",
+    "number": "13489973",
+    "registered_office": "Villa Field, Belgrave Road, Loughor, Swansea, SA4 6RF"
+  },
+  "founded": 1882,
+  "tagline": "The Blues of Loughor, playing rugby since 1882",
+  "short": "Loughor RFC, the Blues, is a community rugby union club in Loughor, on the River Loughor at the western edge of Swansea, Wales. Founded in 1882, it is a member club of the Welsh Rugby Union, with its ground and clubhouse at Villa Field on Belgrave Road.",
+  "colours": {
+    "primary": "#1238A8",
+    "deep": "#071A52",
+    "glow": "#2F62E0",
+    "gold": "#F5C518",
+    "kit": "Royal blue",
+    "green": "#1E8C3A",
+    "_note": "Taken from the club's crest: royal blue field, gold lettering and edging, green, white and black."
+  },
+  "address": {
+    "name": "Loughor RFC Clubhouse",
+    "street": "Villa Field, Belgrave Road",
+    "town": "Loughor",
+    "county": "Swansea",
+    "postcode": "SA4 6RF",
+    "country": "GB",
+    "lat": 51.6627,
+    "lng": -4.0655
+  },
+  "phone": "01792 894109",
+  "phone_e164": "+441792894109",
+  "email": "info@loughorrfc.site",
+  "email_forwards_to": "info@vesopasoftware.com",
+  "web": {
+    "site": "https://loughorrfc.site",
+    "members": "https://member.loughorrfc.site",
+    "facebook": "https://www.facebook.com/loughorrugbyclub/",
+    "wru_league": "https://community.wru.wales/club/national-leagues/national-leagues-fixtures-and-results/",
+    "wikipedia": "https://en.wikipedia.org/wiki/Loughor_RFC",
+    "android_package": "com.vesopaepos.loughorrfc",
+    "ios_app": "https://member.loughorrfc.site/",
+    "android_app": "https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc",
+    "ios_test": "https://testflight.apple.com/join/tegkU2kN",
+    "android_test": "https://play.google.com/apps/testing/com.vesopaepos.loughorrfc",
+    "android_apk": "/downloads/loughor-rfc.apk",
+    "wear_apk": "/downloads/loughor-rfc-wear-os.apk",
+    "x": "https://x.com/LoughorRFC",
+    "apps_live": false
+  },
+  "ground": "Villa Field, Loughor",
+  "league": "WRU Admiral National League 2 West",
+  "league_note": "League names change from season to season; the WRU site has the current table and fixtures.",
+  "coaches": [],
+  "history": [
+    "Loughor Rugby Football Club was founded in 1882 in Loughor, the old town on the River Loughor at the western edge of Swansea, where the Romans built the fort of Leucarum and the Normans later raised Loughor Castle. The club plays in royal blue, which gives it its name: the Blues.",
+    "Loughor played in the Swansea and District League in its early years, including the 1910-11 season, and became a member club of the Welsh Rugby Union.",
+    "The club's best years on the field came in the 1950s, when Loughor won the West Wales Cup in 1952-53 and the West Wales Championship the following season, 1953-54.",
+    "Loughor's most famous son in rugby is Ivor Jones, the Wales and British Lions forward. Today the club runs a first XV and second XV in the WRU National Leagues, and a junior section from under 6 to youth, with its home at Villa Field on Belgrave Road."
+  ],
+  "timeline": [
+    {
+      "year": "1882",
+      "text": "Loughor Rugby Football Club is founded."
+    },
+    {
+      "year": "1910",
+      "text": "Loughor plays in the Swansea and District League (1910-11)."
+    },
+    {
+      "year": "1953",
+      "text": "West Wales Cup winners (1952-53)."
+    },
+    {
+      "year": "1954",
+      "text": "West Wales Champions (1953-54)."
+    },
+    {
+      "year": "2021",
+      "text": "Loughor RFC (1882) Limited is incorporated (company 13489973)."
+    },
+    {
+      "year": "2026",
+      "text": "A new website, online ordering and the members' app at member.loughorrfc.site."
+    }
+  ],
+  "notable_players": [
+    {
+      "name": "Ivor Jones",
+      "honours": "Wales and British and Irish Lions"
+    }
+  ],
+  "teams": [
+    {
+      "name": "First XV",
+      "text": "Senior men's rugby in the WRU Admiral National League 2 West, with home games at Villa Field."
+    },
+    {
+      "name": "Second XV",
+      "text": "The club's second team, giving more players a game every week."
+    },
+    {
+      "name": "Juniors and youth",
+      "text": "Age-group rugby from under 6 up to youth, with qualified coaches. Ask the club which age groups are training this season."
+    }
+  ],
+  "clubhouse": {
+    "text": "The clubhouse at Villa Field, Belgrave Road, is the heart of the club: a members' bar, rugby and sport on the screens, and a home for club events.",
+    "features": [
+      {
+        "icon": "beer",
+        "title": "Members' bar",
+        "text": "A proper club bar, with members' discount through the club app."
+      },
+      {
+        "icon": "plate",
+        "title": "Food",
+        "text": "See the menu and order to your table or for collection, straight from this site."
+      },
+      {
+        "icon": "screen",
+        "title": "Live sport",
+        "text": "Internationals and big games on the screens with a full house."
+      },
+      {
+        "icon": "party",
+        "title": "Functions",
+        "text": "Birthdays, wakes, christenings and celebrations. Call the club to book."
+      },
+      {
+        "icon": "handshake",
+        "title": "Sponsorship",
+        "text": "Put your business in front of the community and support local rugby."
+      }
+    ],
+    "hours_note": "Opening hours change with the fixtures and the season. Call the club on 01792 894109 to check."
+  },
+  "membership": {
+    "text": "Membership supports the club and gives you members' prices at the bar. Your membership card lives in the Loughor RFC app at member.loughorrfc.site: hold your phone or watch to the reader, or show the code at the bar, and the discount is applied every time.",
+    "benefits": [
+      "Members' discount at the bar, applied at the till every visit",
+      "Your membership card on your phone and watch: tap it on the reader or show the QR code",
+      "See what you have spent and saved",
+      "Club news and offers sent to your phone",
+      "A say in your club and its future"
+    ],
+    "join": "The members' app is for paid-up members. To join or renew, ask behind the bar or call the club, and the club will add you; then sign in at member.loughorrfc.site with your email address and a one-time code."
+  },
+  "faq": [
+    {
+      "q": "Where is Loughor RFC?",
+      "a": "The club's ground and clubhouse are at Villa Field, Belgrave Road, Loughor, Swansea, SA4 6RF."
+    },
+    {
+      "q": "What is the club's phone number?",
+      "a": "Call the clubhouse on 01792 894109."
+    },
+    {
+      "q": "When was the club founded?",
+      "a": "Loughor RFC was founded in 1882."
+    },
+    {
+      "q": "Why are Loughor called the Blues?",
+      "a": "The club plays in royal blue."
+    },
+    {
+      "q": "How do I become a member?",
+      "a": "Ask behind the bar or call 01792 894109. Once the club has added you, sign in to the members' app at member.loughorrfc.site with your email address and the code we send."
+    },
+    {
+      "q": "How do I use my members' discount?",
+      "a": "Open the Loughor RFC app and hold your phone or watch near the reader, or show your card's QR code at the bar. The discount is applied at the till."
+    },
+    {
+      "q": "Can I order food online?",
+      "a": "Yes. On the Menu & Order page you can order to your table when you are in the clubhouse, or order for collection and pay at the bar when you collect."
+    },
+    {
+      "q": "Where are the fixtures and results?",
+      "a": "The current fixtures, results and league table are on the WRU community site, and the club posts match news on its Facebook page and on X (@LoughorRFC)."
+    },
+    {
+      "q": "Can I hire the clubhouse for a function?",
+      "a": "Yes. Call the club on 01792 894109 to check dates and prices."
+    },
+    {
+      "q": "Does the club have junior rugby?",
+      "a": "Yes, from under 6 up to youth. Call the club to find out when each age group trains this season."
+    },
+    {
+      "q": "Can my business sponsor the club?",
+      "a": "Yes, the club welcomes sponsors. Call the club on 01792 894109 to talk about kit, match-day and pitch-side sponsorship."
+    },
+    {
+      "q": "What has the club won?",
+      "a": "Loughor won the West Wales Cup in 1952-53 and the West Wales Championship in 1953-54."
+    },
+    {
+      "q": "Which famous players came from Loughor?",
+      "a": "Ivor Jones, who played for Wales and the British and Irish Lions."
+    }
+  ],
+  "email_note": "info@loughorrfc.site is a mailbox on the Cloud box (Hestia). It keeps every message and also forwards a copy to email_forwards_to (owner 2026-11-18: info@vesopasoftware.com). contact@ only forwards. See scripts/mail-forward.sh.",
+  "social": {
+    "x": {
+      "handle": "@LoughorRFC",
+      "bio": "Loughor RFC, the Blues, est. 1882",
+      "source": "x.com/LoughorRFC"
+    },
+    "facebook": {
+      "page": "facebook.com/loughorrugbyclub"
+    }
+  },
+  "nickname": "The Blues",
+  "honours": [
+    {
+      "year": "1952-53",
+      "title": "West Wales Cup winners"
+    },
+    {
+      "year": "1953-54",
+      "title": "West Wales Championship"
+    }
+  ],
+  "slug": "loughor-rfc",
+  "short_name": "Loughor",
+  "crest": {
+    "file": "LoughorRFC/brand/crest.png",
+    "alt": "The Loughor R.F.C. crest: Leucarum",
+    "note": "The club's own crest, used exactly as supplied. Never redrawn or recoloured."
+  }
+}

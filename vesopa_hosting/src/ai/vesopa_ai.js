@@ -67,6 +67,7 @@ const PURPOSES = {
   'translate':  { tier: 0, maxTier: 1, maxTokens: 4000,  temperature: 0.2 },
   'vision':     { tier: 0, maxTier: 1, maxTokens: 1000,  temperature: 0.2 },
   'code':       { tier: 2, maxTier: 3, maxTokens: 16000, temperature: 0.2 },
+  'advisor':    { tier: 0, maxTier: 1, maxTokens: 900,   temperature: 0.2 }, // Vesopa AI on admin.vesopa.com: explains figures the server worked out
 };
 
 /** Peak is 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday. */

@@ -59,12 +59,14 @@ def apk_version(apk):
 
 
 def publish_apk(apk):
-    """The Android build (go-android.yml's vesopa-go-apk artifact) beside the iPhone one."""
+    """The Android build (go-android.yml's vesopa-go-apk artifact) beside the iPhone one, for phones and Android TV."""
     version, build = apk_version(apk)
     shown = f"{version} ({build})"
     print(f"== Vesopa Go {shown} for Android")
     stamp(INSTALL / "index.html", [
         (r'<p class="version-android">[^<]*</p>', f'<p class="version-android">Version {shown}</p>'),
+        # Android TV takes the same APK (it has the TV launcher entry).
+        (r'<p class="version-tv">[^<]*</p>', f'<p class="version-tv">Version {shown}</p>'),
     ])
     connect()
     user, folder = go_site.where()

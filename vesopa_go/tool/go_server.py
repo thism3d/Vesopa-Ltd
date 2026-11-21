@@ -354,6 +354,35 @@ fi""")
     return client
 
 
+# Stripe's live keys, from the repository's GitHub secrets into the live back
+# office's .env (owner, 2026-11-17: the owner's ID check runs on live Stripe,
+# go_onboarding.js). Sent on stdin, never on a command line; only names print.
+STRIPE_LIVE_ENV = {
+    "STRIPE_LIVE_SECRET_KEY": ("sk_live_", "rk_live_"),
+    "STRIPE_LIVE_PUBLISHABLE_KEY": ("pk_live_",),
+}
+
+
+def stripe_live_keys(app):
+    lines, names = [], []
+    for name, prefixes in STRIPE_LIVE_ENV.items():
+        value = os.environ.get(name, "").strip()
+        if not value:
+            continue
+        if not value.startswith(prefixes) or any(c in value for c in "\n\r'\" $`\\"):
+            raise SystemExit(f"! {name} does not look like a Stripe live key; .env unchanged")
+        lines.append(f"{name}={value}")
+        names.append(name)
+    if not lines:
+        note("  Stripe live keys: none in GitHub secrets; .env unchanged")
+        return
+    script = (f"cd {app} && touch .env && while IFS= read -r line; do k=${{line%%=*}}; "
+              "grep -v \"^$k=\" .env > .env.vesopa-tmp || true; cat .env.vesopa-tmp > .env; "
+              "printf '%s\\n' \"$line\" >> .env; done; rm -f .env.vesopa-tmp")
+    sh(script, data=("\n".join(lines) + "\n").encode())
+    note(f"  .env: {', '.join(names)} set from GitHub secrets")
+
+
 def restart_and_check(domain, app, folder):
     sh(PM2.format(f"restart {domain} --update-env") + " >/dev/null")
     for _ in range(18):
@@ -458,6 +487,9 @@ def main():
         deploy_files(app, upload)
         note("== Vesopa Auth")
         auth_client(app, auth)
+        if m == "live":
+            note("== Stripe live keys")
+            stripe_live_keys(app)
         note("== restart")
         restart_and_check(domain, app, folder)
         if m == "live":
