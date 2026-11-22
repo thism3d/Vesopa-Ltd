@@ -18,7 +18,8 @@ const groups = isAdmin ? [
                ["/portal/admin/subscriptions", "Recurring", "repeat"]]],
   ["People",  [["/portal/admin/customers", "Customers", "users"],
                ["/portal/admin/staff", "Staff", "badge"]]],
-  ["System",  [["/portal/admin/mail", "Mail log", "mail"]]],
+  ["System",  [["/portal/admin/mail", "Mail log", "mail"],
+               ["/portal/admin/github", "GitHub", "git"]]],
 ] : [
   [null,      [["/portal", "Overview", "grid"]]],
   ["Work",    [["/portal/projects", "Projects", "layers"],
@@ -31,6 +32,7 @@ const active = (href) =>
   (href === "/portal" || href === "/portal/admin") ? path === href : path.startsWith(href);
 const ICON = {
   grid:   'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
+  git:    'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 9a9 9 0 0 1-9 9',
   layers: 'M12 2 2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
   tag:    'M20.6 13.4 12 22l-9-9V3h10zM7.5 7.5h.01',
   inbox:  'M22 12h-6l-2 3h-4l-2-3H2M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z',
