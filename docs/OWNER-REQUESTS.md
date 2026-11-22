@@ -112,6 +112,12 @@ secrets only).
 | Deep links (member.pontardawerfc.com and pontardawerfc.com/app), no app release | websites ready: pontardawerfc.com's assetlinks.json was already right; member.pontardawerfc.com names the app with its 4 fingerprints (loyalty_host.js). In Play Console > Deep links the owner sets the web links to member.pontardawerfc.com path /.* and pontardawerfc.com path /app. iPhone universal links need the next Pontardawe build (venue.json app_links is ready) |
 | App Store "Ready for Distribution": is it published? | answered: that status means it is live on the App Store |
 
+## vesopasoftware.com
+
+| Ask | Status |
+| --- | --- |
+| GitHub webhooks to https://vesopasoftware.com/webhooks/github, used properly (owner, 2026-11-22) | Receiver (vesopasoftware/server/routes/github.js): signed deliveries only (X-Hub-Signature-256 with this site's secret; none set = every delivery refused), each kept once as a one-line summary for 120 days. Admin portal > System > GitHub: the payload URL, content type and the secret to paste into GitHub (made there, Show/Copy), each workflow's latest result, open pull requests, releases and every event, live. A failed or timed-out workflow run notifies every admin and emails info@vesopasoftware.com; a release or a pull request opened or merged notifies. On GitHub: Payload URL as above, Content type application/json, Secret from the portal page, SSL verification on, Send me everything |
+
 ## vesopaepos.com (Vesopa EPOS website)
 
 | Ask (owner, 2026-11-19, "quick tasks", priority) | Status |

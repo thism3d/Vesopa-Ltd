@@ -19,6 +19,7 @@ import authRoutes from "./routes/auth.js";
 import vesopaSsoRoutes, { LIVE as VESOPA_SSO_LIVE } from "./routes/vesopa-sso.js";
 import customerRoutes from "./routes/customer.js";
 import adminRoutes from "./routes/admin.js";
+import { webhookRouter as githubWebhook, adminRouter as githubAdmin } from "./routes/github.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -27,6 +28,10 @@ app.set("trust proxy", 1);
 
 app.set("view engine", "ejs");
 app.set("views", path.join(SERVER_DIR, "views"));
+
+// GitHub's webhook first: it signs the raw body, so it must see the bytes
+// before any parser does (routes/github.js).
+app.use(githubWebhook());
 
 app.use(express.urlencoded({ extended: false, limit: "200kb" }));
 app.use(express.json({ limit: "200kb" }));
@@ -112,6 +117,7 @@ app.use("/portal/static", express.static(path.join(SERVER_DIR, "public"), {
 app.use("/portal", vesopaSsoRoutes);
 app.use("/portal", authRoutes);
 app.use("/portal", customerRoutes);
+app.use("/portal/admin/github", githubAdmin());
 app.use("/portal/admin", adminRoutes);
 
 /* ---------- the marketing site ----------

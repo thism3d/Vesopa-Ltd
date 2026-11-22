@@ -544,3 +544,33 @@ CREATE TABLE IF NOT EXISTS ai_sessions (
   KEY idx_ai_sessions_visitor (visitor, updated_at),
   KEY idx_ai_sessions_updated (updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- GitHub's webhook deliveries (routes/github.js, set up in the admin portal
+-- under GitHub): one line each, never the payload. Only signed deliveries are
+-- kept, once each (delivery is GitHub's own id), and only for 120 days.
+CREATE TABLE IF NOT EXISTS github_events (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  delivery    VARCHAR(64)  NOT NULL,
+  event       VARCHAR(40)  NOT NULL,
+  action      VARCHAR(40)  NULL,
+  repo        VARCHAR(140) NULL,
+  ref         VARCHAR(190) NULL,
+  actor       VARCHAR(80)  NULL,
+  title       VARCHAR(300) NULL,
+  url         VARCHAR(500) NULL,
+  state       VARCHAR(30)  NULL,
+  number      INT UNSIGNED NULL,
+  received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_github_delivery (delivery),
+  KEY idx_github_received (received_at),
+  KEY idx_github_event (event, repo, received_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The GitHub webhook's secret (one row), made in the admin portal under GitHub.
+CREATE TABLE IF NOT EXISTS github_webhook (
+  id         TINYINT UNSIGNED NOT NULL,
+  secret     VARCHAR(128) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
