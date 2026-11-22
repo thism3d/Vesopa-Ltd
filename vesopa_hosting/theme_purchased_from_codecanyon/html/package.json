@@ -10,11 +10,11 @@
     "autoprefixer": "^10.4.21",
     "chokidar": "^3.6.0",
     "fs-extra": "^11.1.1",
-    "glob": "^10.3.3",
+    "glob": "^14.0.6",
     "nunjucks": "^3.2.4",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.33",
     "sass": "^1.73.1",
-    "vite": "^7.1.5"
+    "vite": "^7.3.7"
   },
   "dependencies": {
     "bootstrap": "^5.3.8"
