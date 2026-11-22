@@ -108,6 +108,7 @@ secrets only).
 
 | Ask | Status |
 | --- | --- |
+| Force update the software versions (owner, 2026-11-22) | Back office - patch, target live, run `pontardawe-force-update`: venue 35's till, kitchen and customer display pinned to the newest installers on admin.vesopa.com, installed now even with a bill open (the bill is kept), update prompts on (tool/update_venue_versions.py --force). The Pontardawe RFC phone app is not touched |
 | Deep links (member.pontardawerfc.com and pontardawerfc.com/app), no app release | websites ready: pontardawerfc.com's assetlinks.json was already right; member.pontardawerfc.com names the app with its 4 fingerprints (loyalty_host.js). In Play Console > Deep links the owner sets the web links to member.pontardawerfc.com path /.* and pontardawerfc.com path /app. iPhone universal links need the next Pontardawe build (venue.json app_links is ready) |
 | App Store "Ready for Distribution": is it published? | answered: that status means it is live on the App Store |
 
