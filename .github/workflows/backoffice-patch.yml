@@ -49,7 +49,7 @@ on:
       run:
         description: After the deploy, run one of the server's set-up tools (back office targets only)
         type: choice
-        options: [none, kitchen-display-adverts, pontardawe-force-update]
+        options: [none, kitchen-display-adverts, pontardawe-force-update, pontardawe-till-soft-update]
         default: none
       confirm:
         description: Type deploy to change the live server
@@ -240,13 +240,22 @@ jobs:
               [ "$SRC" = vesopa_server ] || { echo "::error::$RUN_TOOL is a back office tool"; exit 1; }
               R "su - $APP_USER -c 'cd $app && node tool/kitchen-display-adverts.js'"
               ;;
-            pontardawe-force-update)
-              # Pontardawe RFC's tills, kitchen screens and customer displays
-              # to the newest installers on admin.vesopa.com (Versions), to
-              # install now even with a bill open (the bill is kept): the
-              # owner's say-so each time (tool/update_venue_versions.py).
+            pontardawe-force-update|pontardawe-till-soft-update)
+              # Pontardawe RFC to the newest installers on admin.vesopa.com
+              # (Versions), on the owner's say-so each time
+              # (tool/update_venue_versions.py).
+              #   force: tills, kitchen screens and customer displays install
+              #          now, even with a bill open (the bill is kept)
+              #   till soft: the tills only, asked on screen: Update now, or
+              #          On next start. Nothing installs while they carry on
+              #          (owner, 2026-11-23: "Soft update request ... Can
+              #          ignore if they want")
               [ "$TARGET" = live ] || { echo "::error::$RUN_TOOL is for the live back office"; exit 1; }
-              python3 tool/update_venue_versions.py --force --stage "$RUNNER_TEMP/pins"
+              if [ "$RUN_TOOL" = pontardawe-force-update ]; then
+                python3 tool/update_venue_versions.py --force --stage "$RUNNER_TEMP/pins"
+              else
+                python3 tool/update_venue_versions.py --only till --stage "$RUNNER_TEMP/pins"
+              fi
               admin_app="/home/$APP_USER/web/admin.vesopa.com/private/nodeapp"
               ssh "$SERVER" "cat > '$admin_app/zz_rel.js' && chown $APP_USER '$admin_app/zz_rel.js'" < "$RUNNER_TEMP/pins/zz_rel.js"
               ssh "$SERVER" "cat > '$app/zz_pin.js' && chown $APP_USER '$app/zz_pin.js'" < "$RUNNER_TEMP/pins/zz_pin.js"
