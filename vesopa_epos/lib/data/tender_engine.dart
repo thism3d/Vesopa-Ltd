@@ -259,6 +259,44 @@ class TenderState {
         activeShare: activeShare ?? this.activeShare,
       );
 
+  /// A paid share whose items and payments have gone to a bill of their own
+  /// (TableRepository.settleShareOff): its payments, from [tendersFrom] on,
+  /// and the share itself leave this bill. What is left is split as before;
+  /// one share left is simply the rest of the bill.
+  TenderState withoutMovedShare(List<String> lineIds, {required int tendersFrom}) {
+    final ids = lineIds.toSet();
+    final at = shares.indexWhere(
+      (s) => s.lineIds.length == ids.length && ids.containsAll(s.lineIds),
+    );
+    final kept = tenders.sublist(0, tendersFrom.clamp(0, tenders.length));
+    if (at == -1) return copyWith(tenders: kept);
+    final rest = [
+      for (var i = 0; i < shares.length; i++)
+        if (i != at) shares[i],
+    ];
+    if (rest.length < 2) {
+      return TenderState(totals: totals, tenders: kept);
+    }
+    final renumbered = [
+      for (var i = 0; i < rest.length; i++)
+        SplitShare(
+          index: i,
+          amountMinor: rest[i].amountMinor,
+          paidMinor: rest[i].paidMinor,
+          lineIds: rest[i].lineIds,
+          name: rest[i].name,
+        ),
+    ];
+    final next = renumbered.indexWhere((s) => !s.settled);
+    return TenderState(
+      totals: totals,
+      tenders: kept,
+      splitMode: splitMode,
+      shares: renumbered,
+      activeShare: next == -1 ? 0 : next,
+    );
+  }
+
   /// The payments from [from] onwards, marked as recorded against the bill.
   TenderState markSavedFrom(int from) => copyWith(tenders: [
         for (var i = 0; i < tenders.length; i++)
