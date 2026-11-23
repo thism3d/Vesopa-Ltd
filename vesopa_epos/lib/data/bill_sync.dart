@@ -373,6 +373,7 @@ class BillSync {
               'cashback_minor': p.cashbackMinor,
               'gratuity_minor': p.gratuityMinor,
               'entry_mode': p.entryMode,
+              'line_ids': p.lineIds,
             },
         ],
     };
@@ -544,6 +545,7 @@ class BillSync {
                 cashbackMinor: Value(_int(p['cashback_minor'])),
                 gratuityMinor: Value(_int(p['gratuity_minor'])),
                 entryMode: Value(p['entry_mode'] as String?),
+                lineIds: Value(p['line_ids'] as String?),
               ),
             );
       }

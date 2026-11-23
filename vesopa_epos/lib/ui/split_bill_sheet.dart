@@ -175,16 +175,57 @@ class SplitBillSheetState extends State<SplitBillSheet> {
   /// can be told to say "1 × Prosecco" on a share that is paying for one.
   final Map<String, int> _divided = {};
 
+  /// Items paid for already, by a share of this bill that has been paid
+  /// (TenderState.paidLineIds). They are not on this screen at all: not in the
+  /// pool, not in Left to split, not on a share (Pontardawe RFC, 2026-11-23:
+  /// "They paid for hooker and pint of lemonade but the items still appeared
+  /// on the split afterward").
+  late final Set<String> _paid;
+
+  /// The bill as this screen starts from: every line in reading order, minus
+  /// what has been paid for. A line one unit of which was paid for comes
+  /// already divided, with that unit gone.
+  List<PricedLine> _unpaidLines() {
+    var lines = orderWithModifiers(
+      widget.state.totals.lines,
+      idOf: (l) => l.id,
+      parentOf: (l) => l.parentLineId,
+    );
+    final partlyPaid = {for (final id in _paid) if (isPortion(id)) baseLineId(id)};
+    for (final baseId in partlyPaid) {
+      final at = lines.indexWhere((l) => l.id == baseId);
+      if (at == -1 || !canDivide(lines[at])) continue;
+      final line = lines[at];
+      final count = line.quantity.round();
+      final children = [for (final l in lines) if (l.parentLineId == baseId) l];
+      lines = [
+        ...lines.sublist(0, at),
+        for (var i = 1; i <= count; i++) ...[
+          _unit(line, count, i, parentId: null),
+          for (final child in children) _unit(child, count, i, parentId: portionId(baseId, i)),
+        ],
+        for (final l in lines.sublist(at + 1))
+          if (l.parentLineId != baseId) l,
+      ];
+      _divided[baseId] = count;
+    }
+    return [for (final l in lines) if (!_paid.contains(l.id)) l];
+  }
+
+  /// How many items have been paid for already, for the pool's footnote.
+  int get _paidItemCount =>
+      _paid.where((id) {
+        final line = widget.state.totals.lines.where((l) => l.id == baseLineId(id));
+        return line.isNotEmpty && line.first.parentLineId == null;
+      }).length;
+
   @override
   void initState() {
     super.initState();
     // Reading order, so a modifier sits under the item it belongs to here as
     // it does everywhere else.
-    _lines = orderWithModifiers(
-      widget.state.totals.lines,
-      idOf: (l) => l.id,
-      parentOf: (l) => l.parentLineId,
-    );
+    _paid = widget.state.paidLineIds;
+    _lines = _unpaidLines();
     // Taken from the bill as rung, not from the working lines: a round is what
     // was ordered together, and dividing a line afterwards does not change what
     // was ordered together.
@@ -299,6 +340,8 @@ class SplitBillSheetState extends State<SplitBillSheet> {
   /// only state in which putting it back together means anything.
   bool canRejoin(String baseId) {
     if (!_divided.containsKey(baseId)) return false;
+    // A unit already paid for cannot be put back into the line.
+    if (_paid.any((id) => baseLineId(id) == baseId)) return false;
     final taken = <String>{for (final share in _shares) ...share};
     return !taken.any((id) => baseLineId(id) == baseId);
   }
@@ -448,11 +491,7 @@ class SplitBillSheetState extends State<SplitBillSheet> {
       // some of the bill on a card and leave the rest of the same drink in the
       // pool, which is not what "by round" means.
       _divided.clear();
-      _lines = orderWithModifiers(
-        widget.state.totals.lines,
-        idOf: (l) => l.id,
-        parentOf: (l) => l.parentLineId,
-      );
+      _lines = _unpaidLines();
       _shares
         ..clear()
         ..addAll([
@@ -476,11 +515,7 @@ class SplitBillSheetState extends State<SplitBillSheet> {
       // and a screen that returned every share but left three separate glasses
       // in the pool would have undone half of what it says it undoes.
       _divided.clear();
-      _lines = orderWithModifiers(
-        widget.state.totals.lines,
-        idOf: (l) => l.id,
-        parentOf: (l) => l.parentLineId,
-      );
+      _lines = _unpaidLines();
     });
   }
 
@@ -846,6 +881,16 @@ class SplitBillSheetState extends State<SplitBillSheet> {
               ],
             ),
           ),
+          if (_paidItemCount > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+              child: Text(
+                _paidItemCount == 1
+                    ? '1 item already paid for is not shown.'
+                    : '$_paidItemCount items already paid for are not shown.',
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
             child: FilledButton.icon(

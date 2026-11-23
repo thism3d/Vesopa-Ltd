@@ -1,0 +1,4 @@
+Version 1.16.57.0 - Split bill and card machine fixes
+
+Split bill: items someone has already paid for no longer appear when the bill is split again, here or on another till. "Not split yet" shows only what is still to pay, and "Left to split" is what is still owed.
+Card machines: the till checks its connection to the card machine every 20 seconds and reconnects by itself after a network blip, instead of sending the next sale down a connection that has dropped.

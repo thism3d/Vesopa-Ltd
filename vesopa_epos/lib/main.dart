@@ -394,6 +394,10 @@ final floorRepositoryProvider = FutureProvider<FloorRepository>((ref) async {
           apiKey: key,
           softwareHouseId: softwareHouse.isEmpty ? null : softwareHouse,
           installerId: reseller.isEmpty ? null : reseller,
+          // Pinged every 20 seconds and opened again by itself after a drop,
+          // so a blip of the venue's network does not leave the till sending
+          // sales into a dead link (Pontardawe RFC, 2026-11-23).
+          autoReconnect: true,
         ),
     );
   }

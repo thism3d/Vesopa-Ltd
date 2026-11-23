@@ -158,12 +158,29 @@ class ConnectPacProvider implements PaymentProvider {
   /// able to take money.
   ConnectSocket? socket;
 
-  /// Set once a socket attempt has failed, so the till stops paying the
-  /// connection timeout on every subsequent sale and just uses REST.
-  bool _socketUnavailable = false;
+  /// When the socket last failed to open, so the next few sales do not each
+  /// pay its connection timeout and go straight to REST.
+  ///
+  /// Only for [socketRetryAfter]. This used to be for the rest of the day: one
+  /// blip of the venue's Wi-Fi and every sale after it went over REST, which
+  /// Connect refuses with "Terminal is busy" while it still holds the reader
+  /// for the socket it has not yet noticed is gone (2026-11-23).
+  DateTime? _socketFailedAt;
+
+  /// How long after a failed open the socket is tried again.
+  Duration socketRetryAfter = const Duration(seconds: 45);
+
+  /// Clock, for tests.
+  DateTime Function() now = DateTime.now;
+
+  set _socketUnavailable(bool down) => _socketFailedAt = down ? now() : null;
 
   /// Whether this payment should go over the socket.
-  bool get _preferSocket => socket != null && !_socketUnavailable;
+  bool get _preferSocket {
+    if (socket == null) return false;
+    final failed = _socketFailedAt;
+    return failed == null || now().difference(failed) >= socketRetryAfter;
+  }
 
   @override
   String get method => 'card';

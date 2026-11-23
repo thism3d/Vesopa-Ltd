@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vesopa_epos/payments/connect_pac.dart'
     show ConnectReport, ConnectException;
@@ -11,9 +12,16 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 /// and lets the test push replies back, exercising the JSON-RPC round trip
 /// without a real socket.
 class _FakeChannel implements WebSocketChannel {
+  _FakeChannel({this.refuse = false});
+
+  /// Whether the sink throws, as a closed one does.
+  final bool refuse;
   final _incoming = StreamController<dynamic>.broadcast();
   final sent = <String>[];
-  late final _FakeSink _sink = _FakeSink(sent.add);
+  late final _FakeSink _sink = _FakeSink((m) {
+    if (refuse) throw StateError('StreamSink is closed');
+    sent.add(m);
+  });
 
   @override
   Stream<dynamic> get stream => _incoming.stream;
@@ -186,6 +194,101 @@ void main() {
       await channel.serverClose();
 
       await expectLater(future, throwsA(isA<ConnectException>()));
+    });
+
+    // Pontardawe RFC, 2026-11-23: "card machines keep disconnecting from dojo
+    // and they use standalone". A link that dropped was kept, so every sale
+    // after it went into a dead socket until the till was restarted.
+    test('after a drop the next call opens a new link and goes through',
+        () async {
+      final channels = <_FakeChannel>[];
+      final s = ConnectSocket(
+        baseUrl: 'https://acct.connect.paymentsense.cloud',
+        apiKey: 'live-key',
+        connector: (_) {
+          final c = _FakeChannel();
+          channels.add(c);
+          return c;
+        },
+      );
+      final changes = <bool>[];
+      s.onConnectionChanged = changes.add;
+
+      await s.connect();
+      expect(s.connected, isTrue);
+      await channels.first.serverClose();
+      await Future<void>.delayed(Duration.zero);
+      expect(s.connected, isFalse, reason: 'a dropped link is forgotten');
+      expect(s.lastDrop, contains('closed'));
+
+      final future = s.connectedTerminals();
+      await Future<void>.delayed(Duration.zero);
+      expect(channels, hasLength(2), reason: 'a fresh link was opened');
+      final id = jsonDecode(channels[1].sent.single)['id'] as int;
+      channels[1].serverSend({
+        'jsonrpc': '2.0',
+        'id': id,
+        'result': [
+          {'tid': '22160823', 'status': 'AVAILABLE'},
+        ],
+      });
+      expect(await future, hasLength(1));
+      expect(channels.first.sent, isEmpty, reason: 'nothing went into the dead link');
+      expect(changes, [true, false, true]);
+      await s.dispose();
+    });
+
+    test('a request the closed link would not take is sent on a new one',
+        () async {
+      final channels = <_FakeChannel>[];
+      final s = ConnectSocket(
+        baseUrl: 'https://acct.connect.paymentsense.cloud',
+        apiKey: 'live-key',
+        connector: (_) {
+          final c = channels.isEmpty ? _FakeChannel(refuse: true) : _FakeChannel();
+          channels.add(c);
+          return c;
+        },
+      );
+      await s.connect();
+      // The sink refuses, as a closed one does, before the drop is heard of.
+      final future = s.connectedTerminals();
+      await Future<void>.delayed(Duration.zero);
+      expect(channels, hasLength(2));
+      final id = jsonDecode(channels[1].sent.single)['id'] as int;
+      channels[1].serverSend({'jsonrpc': '2.0', 'id': id, 'result': <Object>[]});
+      expect(await future, isEmpty);
+      await s.dispose();
+    });
+
+    test('opens again by itself after a drop, when asked to', () {
+      fakeAsync((async) {
+        final channels = <_FakeChannel>[];
+        final s = ConnectSocket(
+          baseUrl: 'https://acct.connect.paymentsense.cloud',
+          apiKey: 'live-key',
+          autoReconnect: true,
+          connector: (_) {
+            final c = _FakeChannel();
+            channels.add(c);
+            return c;
+          },
+        );
+        s.connect();
+        async.flushMicrotasks();
+        channels.first.serverClose();
+        async.flushMicrotasks();
+        expect(s.connected, isFalse);
+        async.elapse(const Duration(seconds: 3));
+        expect(channels, hasLength(2));
+        expect(s.connected, isTrue);
+        s.dispose();
+        async.flushMicrotasks();
+        // Disposed: a later drop does not bring it back.
+        channels[1].serverClose();
+        async.elapse(const Duration(minutes: 2));
+        expect(channels, hasLength(2));
+      });
     });
 
     test('surfaces a JSON-RPC error as a readable message', () async {

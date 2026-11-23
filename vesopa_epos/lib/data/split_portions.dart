@@ -80,3 +80,17 @@ int portionValue(int total, int count, int index) {
   final remainder = total - (base * count);
   return base + (index == 1 ? remainder : 0);
 }
+
+/// The line ids a payment paid for, as kept on it (`Payments.lineIds`):
+/// comma-separated, null when there are none. Neither a UUID nor a portion id
+/// can hold a comma.
+String? encodeLineIds(Iterable<String> ids) {
+  final kept = [for (final id in ids) if (id.isNotEmpty) id];
+  return kept.isEmpty ? null : kept.join(',');
+}
+
+/// The ids [encodeLineIds] wrote, or none.
+List<String> decodeLineIds(String? stored) => [
+      for (final id in (stored ?? '').split(','))
+        if (id.trim().isNotEmpty) id.trim(),
+    ];
