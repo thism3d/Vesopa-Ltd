@@ -1120,6 +1120,8 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   /// earlier, here or on another till (2026-10-26). They count as paid, are
   /// not recorded again, and cannot be undone from here.
   Future<void> _loadEarlierPayments() async {
+    await _moveOffPaidShares();
+    if (!mounted) return;
     final payments = await ref.read(orderRepositoryProvider).paymentsFor(widget.orderId);
     if (!mounted || payments.isEmpty) return;
     TenderKind kindOf(String method, String? entryMode) => switch (method) {
@@ -1155,6 +1157,33 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       '${_money(earlier.fold<int>(0, (s, t) => s + t.amountMinor))} has already been paid on this bill.',
     );
     await _offerToClosePaidBill(earlier.fold<int>(0, (s, t) => s + t.amountMinor));
+  }
+
+  /// Shares of a table's bill paid before 1.16.58 left their items on the
+  /// table (Table 3's Guinness, 2026-11-23). They leave it now, with their
+  /// payments, as sales of their own, the first time the bill is paid on.
+  Future<void> _moveOffPaidShares() async {
+    final repo = ref.read(orderRepositoryProvider);
+    final order = await repo.orderOnce(widget.orderId);
+    if (order?.tableNumber == null) return;
+    final groups = <String>{
+      for (final p in await repo.paymentsFor(widget.orderId))
+        if (p.lineIds != null && p.lineIds!.isNotEmpty) p.lineIds!,
+    };
+    if (groups.isEmpty) return;
+    final session = await ref.read(sessionRepositoryProvider).current();
+    var moved = false;
+    for (final ids in groups) {
+      final id = await ref.read(tableRepositoryProvider).settleShareOff(
+            widget.orderId,
+            decodeLineIds(ids),
+            sessionId: session.id,
+            staffId: ref.read(servedByIdProvider),
+            staffName: ref.read(servedByProvider),
+          );
+      moved |= id != null;
+    }
+    if (moved) unawaited(ref.read(syncServiceProvider).flush());
   }
 
   /// A bill whose earlier payments already cover it has nothing to take and no
@@ -1742,42 +1771,56 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         ),
       );
     }
-    await _saveSettledShare(lineIds);
-    await _offerNextShare();
+    final moved = await _saveSettledShare(lineIds);
+    await _offerNextShare(rest: moved);
   }
 
   /// Newbridge's "Process payment for the next bill of the split?": after a
   /// share is paid, the next one is offered by name and amount. Yes stays here
   /// with it ready; Not now goes back with the rest still on the bill
   /// (owner, 2026-11-07; back office: Splitting a bill).
-  Future<void> _offerNextShare() async {
-    if (!mounted || !_tender.isSplit || _tender.settled) return;
+  ///
+  /// [rest]: the share just paid left the bill and what is left is no longer
+  /// split (two shares became one), so the rest itself is offered.
+  Future<void> _offerNextShare({bool rest = false}) async {
+    if (!mounted || _tender.settled) return;
+    if (!_tender.isSplit && !rest) return;
     if (!(await _loadSplitOptions()).nextPrompt || !mounted) return;
-    final next = _tender.nextUnpaidShare;
-    if (next == null) return;
+    final next = _tender.isSplit ? _tender.nextUnpaidShare : null;
+    if (_tender.isSplit && next == null) return;
+    final table = (await ref.read(orderRepositoryProvider).orderOnce(widget.orderId))?.tableNumber;
+    final owed = await _owedNow();
+    if (!mounted) return;
     final yes = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         icon: const Icon(Icons.call_split, size: 36),
-        title: const Text('Pay the next share?'),
+        title: Text(next == null ? 'Pay the rest now?' : 'Pay the next share?'),
         content: Text(
-          '${next.label}: ${_money(next.outstandingMinor)}\n'
-          '${_money(_tender.outstandingMinor)} still to pay on this bill.',
+          next == null
+              ? '${_money(owed)} still to pay'
+                  '${table == null ? ' on this bill' : ' on table $table'}.'
+              : '${next.label}: ${_money(next.outstandingMinor)}\n'
+                  '${_money(owed)} still to pay'
+                  '${table == null ? ' on this bill' : ' on table $table'}.',
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 18),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Not now')),
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: Text(table == null ? 'Not now' : 'Leave on table $table'),
+          ),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Yes, take it')),
         ],
       ),
     );
     if (!mounted) return;
     if (yes == true) {
-      setState(() => _tender = _tender.selectShare(next.index));
+      if (next != null) setState(() => _tender = _tender.selectShare(next.index));
     } else {
-      // The paid shares are already on the bill; the rest waits on the table.
-      Navigator.of(context).maybePop();
+      // The paid shares are already off the bill; the rest waits on the table.
+      await _leaveRestOnTable();
     }
   }
 
@@ -1790,7 +1833,8 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   ///
   /// Gift cards are left as holds until the bill closes, as before: their
   /// money is only spent once, when the sale is recorded.
-  Future<void> _saveSettledShare([List<String> lineIds = const []]) async {
+  /// True when the share's items left the bill (see TableRepository.settleShareOff).
+  Future<bool> _saveSettledShare([List<String> lineIds = const []]) async {
     final repo = ref.read(orderRepositoryProvider);
     final from = _shareStart;
     // This share's payments say which items they paid for, at once and
@@ -1820,7 +1864,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     ].fold<int>(0, (s, v) => s + v);
     if (order == null || recorded + adding >= order.totalMinor) {
       if (mounted) setState(() => _shareStart = tenders.length);
-      return;
+      return false;
     }
     for (var i = from; i < tenders.length; i++) {
       final t = tenders[i];
@@ -1840,7 +1884,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         lineIds: t.lineIds,
       );
     }
-    if (!mounted) return;
+    if (!mounted) return false;
     setState(() {
       // Gift card holds stay unsaved so the final settle still spends them.
       _tender = _tender.copyWith(tenders: [
@@ -1849,8 +1893,73 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       ]);
       _shareStart = tenders.length;
     });
-    final left = _tender.outstandingMinor;
-    PosMessenger.success(context, 'Share paid. ${_money(left)} still to pay on this bill.');
+    var movedOff = false;
+    // On a table, the paid items leave the table with their payments, as a
+    // sale of their own: the table keeps only what is still owed (Pontardawe
+    // RFC, 2026-11-23: the Guinness paid for came back on Table 3).
+    if (lineIds.isNotEmpty && order.tableNumber != null) {
+      final moved = await ref.read(tableRepositoryProvider).settleShareOff(
+            widget.orderId,
+            lineIds,
+            sessionId: session.id,
+            staffId: servedById,
+            staffName: servedBy,
+          );
+      movedOff = moved != null;
+      if (moved != null && mounted) {
+        setState(() {
+          _tender = _tender.withoutMovedShare(lineIds, tendersFrom: from);
+          _shareStart = _tender.tenders.length;
+        });
+        unawaited(ref.read(syncServiceProvider).flush());
+      }
+    }
+    final left = await _owedNow();
+    if (!mounted) return false;
+    PosMessenger.success(
+      context,
+      order.tableNumber != null
+          ? 'Share paid. ${_money(left)} still to pay on table ${order.tableNumber}.'
+          : 'Share paid. ${_money(left)} still to pay on this bill.',
+    );
+    return movedOff;
+  }
+
+  /// What the bill still owes, from the bill itself: the screen's own figure
+  /// is a frame behind just after a share's items have left the bill.
+  Future<int> _owedNow() async {
+    final repo = ref.read(orderRepositoryProvider);
+    final order = await repo.orderOnce(widget.orderId);
+    if (order == null) return _tender.outstandingMinor;
+    final left = order.totalMinor - await repo.amountPaid(widget.orderId);
+    return left > 0 ? left : 0;
+  }
+
+  /// The rest of a table's bill waits on the table: save it there and clear
+  /// the till, as Save Table does. Before, Not now went back to the sale
+  /// screen with the whole table still on it, and Save Table was the only way
+  /// out (Pontardawe RFC, 2026-11-23). Off a table, back to the sale screen.
+  Future<void> _leaveRestOnTable() async {
+    final order = await ref.read(orderRepositoryProvider).orderOnce(widget.orderId);
+    if (!mounted) return;
+    final table = order?.tableNumber;
+    if (order == null || table == null || !const ['open', 'parked'].contains(order.status)) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    final left = await _owedNow();
+    await ref.read(tableRepositoryProvider).park(widget.orderId, table, roomId: order.roomId);
+    unawaited(ref.read(syncServiceProvider).flush());
+    if (!mounted) return;
+    final messenger = context;
+    widget.onSettled();
+    Navigator.of(context).pop();
+    final signedOff = ref
+        .read(staffSessionProvider.notifier)
+        .signOffAfterTable(ref.read(tillSettingsProvider), table);
+    if (!signedOff && messenger.mounted) {
+      PosMessenger.success(messenger, 'Table $table saved: ${_money(left)} still to pay.');
+    }
   }
 
   Future<void> _takeGiftCard(int amount) async {

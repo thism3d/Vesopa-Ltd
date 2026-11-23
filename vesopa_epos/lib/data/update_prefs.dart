@@ -118,6 +118,11 @@ const whatsNewByVersion = <String, List<String>>{
     'Split bill: items a person has already paid for stay off the split. Open the split again and they are gone from Not split yet, and Left to split is what is still owed.',
     'Card machines: the till now notices when its link to the card machine drops and opens it again by itself, so sales no longer go to a machine the till has lost.',
   ],
+  '1.16.58': [
+    'Split bill on a table: when one person pays their share, their items leave the table as a sale of their own. The table keeps only what is still owed.',
+    'After a share is paid, Leave on table saves the table and clears the till, with no need to press Save Table.',
+    'Tables part-paid on the last version are tidied the next time they are paid on.',
+  ],
 };
 
 /// The notes to show once after an update to [VesopaBrand.appVersion], or

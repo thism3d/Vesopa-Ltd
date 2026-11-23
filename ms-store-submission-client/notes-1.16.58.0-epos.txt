@@ -1,0 +1,5 @@
+Version 1.16.58.0 - Split bills on tables
+
+When one person at a table pays their share, the items they paid for now leave the table as a sale of their own, so the table shows only what is still owed, on every till.
+After a share is paid, "Leave on table" saves the table and clears the till: no need to press Save Table.
+Tables part-paid on the last version are tidied the next time they are paid on.

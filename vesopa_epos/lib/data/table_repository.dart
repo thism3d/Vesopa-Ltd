@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import 'local/database.dart';
 import 'order_repository.dart';
+import 'split_portions.dart' show decodeLineIds;
 
 /// Saving orders to tables, moving them, and splitting bills.
 class TableRepository {
@@ -305,6 +306,74 @@ class TableRepository {
     });
   }
 
+  /// A share of this bill has been paid: take its items off the bill, onto a
+  /// bill of their own that its payments close. Returns that bill's id, or
+  /// null when nothing moved and the bill stays as it was.
+  ///
+  /// Pontardawe RFC, 2026-11-23, filmed: a Guinness split off Table 3 and paid
+  /// by card, then Not now. The till kept the whole table on screen, Save
+  /// Table was the only way out, and Table 3 came back with the Guinness on it
+  /// and £30.00 on the plan. "We need to get rid of that Guinness." Now the
+  /// table holds only what is still owed, on this till and every other one,
+  /// and the paid round is a sale of its own on the Z straight away.
+  ///
+  /// [lineIds] are the share's lines (modifiers included), as recorded on its
+  /// payments (Payments.lineIds). Only payments recorded with exactly those
+  /// lines move. Nothing moves, and the bill is left as before (the split
+  /// screen still leaves the paid items out), when:
+  ///   * a line is a unit of a divided round (a line cannot be half moved);
+  ///   * those lines are the whole bill (it closes by itself);
+  ///   * the money does not come out exact on both bills: an offer or service
+  ///     on the bill as a whole stays with the table when lines move, so the
+  ///     share paid its part of it and the moved items would not add up.
+  Future<String?> settleShareOff(
+    String orderId,
+    List<String> lineIds, {
+    String? sessionId,
+    int? staffId,
+    String? staffName,
+  }) async {
+    final ids = lineIds.toSet();
+    if (ids.isEmpty || ids.any((id) => id.contains('#'))) return null;
+    try {
+      return await _db.transaction(() async {
+        final source = await (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
+            .getSingleOrNull();
+        if (source == null || !const ['open', 'parked'].contains(source.status)) return null;
+        final all = await (_db.select(_db.orderLines)..where((l) => l.orderId.equals(orderId))).get();
+        final onBill = {for (final l in all) l.id};
+        if (!onBill.containsAll(ids) || ids.length >= all.length) return null;
+
+        final payments = [
+          for (final p in await (_db.select(_db.payments)..where((p) => p.orderId.equals(orderId))).get())
+            if (p.lineIds != null && decodeLineIds(p.lineIds).toSet().containsAll(ids) &&
+                ids.containsAll(decodeLineIds(p.lineIds)))
+              p,
+        ];
+        if (payments.isEmpty) return null;
+        final paid = payments.fold<int>(0, (s, p) => s + p.amountMinor - p.gratuityMinor);
+        final before = source.totalMinor;
+
+        final newId = await splitLines(orderId, ids.toList());
+        final moved = await (_db.select(_db.orders)..where((o) => o.id.equals(newId))).getSingle();
+        final left = await (_db.select(_db.orders)..where((o) => o.id.equals(orderId))).getSingle();
+        if (moved.totalMinor != paid || left.totalMinor != before - paid) {
+          throw const _NotExact();
+        }
+
+        await (_db.update(_db.payments)..where((p) => p.id.isIn([for (final p in payments) p.id])))
+            .write(PaymentsCompanion(orderId: Value(newId)));
+        // The paid round, closed and sent up as the sale it is.
+        if (!await _orders.closeIfPaid(newId, sessionId: sessionId, staffId: staffId, staffName: staffName)) {
+          throw const _NotExact();
+        }
+        return newId;
+      });
+    } on _NotExact {
+      return null; // Rolled back: the bill is exactly as it was.
+    }
+  }
+
   // There is deliberately no `splitEvenly` here any more.
   //
   // It used to write N new orders carrying only a `totalMinor` — no lines at
@@ -333,4 +402,9 @@ class TableOccupied implements Exception {
 
   @override
   String toString() => 'Table $tableNumber already has an open bill.';
+}
+
+/// The moved items and the share's payments did not come out the same: undo.
+class _NotExact implements Exception {
+  const _NotExact();
 }
