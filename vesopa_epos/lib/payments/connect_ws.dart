@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'connect_pac.dart';
@@ -31,8 +32,37 @@ class ConnectSocket {
     this.installerId,
     this.apiVersion = 'v1',
     this.connectTimeout = const Duration(seconds: 15),
+    this.pingInterval = const Duration(seconds: 20),
+    this.autoReconnect = false,
     WebSocketChannel Function(Uri uri)? connector,
-  }) : _connector = connector ?? WebSocketChannel.connect;
+  }) : _connector = connector ??
+            ((uri) => IOWebSocketChannel.connect(
+                  uri,
+                  pingInterval: pingInterval,
+                  connectTimeout: connectTimeout,
+                ));
+
+  /// How often the till pings Connect, and so how quickly a dead link is
+  /// noticed (a ping not answered within it closes the socket).
+  ///
+  /// Without it a link that died quietly -- the venue's Wi-Fi blinking, a
+  /// router forgetting an idle connection, the PC sleeping -- looked open for
+  /// ever: the next sale went into a socket nobody was listening to and sat on
+  /// "did not answer" while Connect still had the reader down as held, so the
+  /// fallback was refused "Terminal is busy" (Pontardawe RFC, 2026-11-23: "card
+  /// machines keep disconnecting from dojo and they use standalone").
+  final Duration pingInterval;
+
+  /// Open the link again by itself after it drops, so it is up before the
+  /// next sale rather than found down by it. Waits 2, 5, 15, 30, then every
+  /// 60 seconds while it cannot. Only once the link has been opened: a till
+  /// that never takes a card never holds a link.
+  final bool autoReconnect;
+
+  static const _reconnectSteps = [2, 5, 15, 30, 60];
+  var _reconnectAttempt = 0;
+  Timer? _reconnectTimer;
+  bool _disposed = false;
 
   final String baseUrl;
   final String apiKey;
@@ -67,6 +97,15 @@ class ConnectSocket {
 
   bool get connected => _channel != null;
 
+  /// Told when the link opens (true) or drops (false), for the till's status.
+  void Function(bool connected)? onConnectionChanged;
+
+  /// Why the link last dropped, for the diagnostics screen. Null while open.
+  String? lastDrop;
+
+  /// The open in progress, so two callers at once share one socket.
+  Future<void>? _opening;
+
   Uri get uri {
     final host = baseUrl
         .replaceFirst(RegExp(r'^https?://'), '')
@@ -84,35 +123,89 @@ class ConnectSocket {
   /// Connect pings periodically and drops a client that does not answer;
   /// `web_socket_channel` replies to pings in the platform layer, so there is
   /// nothing to do here beyond keeping the subscription alive.
-  Future<void> connect() async {
-    if (_channel != null) return;
+  ///
+  /// A link that has dropped is forgotten the moment it drops (see [_dropped]),
+  /// so this opens a fresh one: before, the dead one was kept and every sale
+  /// after a drop was sent into it until the till was restarted.
+  Future<void> connect() {
+    if (_channel != null) return Future.value();
+    return _opening ??= _open().whenComplete(() => _opening = null);
+  }
 
-    final channel = _connector(uri);
-    // `ready` throws on a rejected handshake — a bad key, or a version the
-    // account is not entitled to.
-    await channel.ready.timeout(
-      connectTimeout,
-      onTimeout: () => throw ConnectException(
-        'The card machine service did not answer in time. Check the network '
-        'and the API URL.',
-      ),
-    );
+  Future<void> _open() async {
+    final WebSocketChannel channel;
+    try {
+      channel = _connector(uri);
+      // `ready` throws on a rejected handshake — a bad key, or a version the
+      // account is not entitled to.
+      await channel.ready.timeout(
+        connectTimeout,
+        onTimeout: () => throw ConnectException(
+          'The card machine service did not answer in time. Check the network '
+          'and the API URL.',
+        ),
+      );
+    } on ConnectException {
+      rethrow;
+    } catch (e) {
+      throw ConnectException('Could not reach the card machine service: $e');
+    }
 
     _channel = channel;
+    lastDrop = null;
+    _reconnectAttempt = 0;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _sub = channel.stream.listen(
       _receive,
-      onError: (Object e) => _failAll('Card machine connection error: $e'),
-      onDone: () => _failAll('The card machine connection closed.'),
+      onError: (Object e) => _dropped(channel, 'Card machine connection error: $e'),
+      onDone: () => _dropped(channel, 'The card machine connection closed.'),
       cancelOnError: false,
     );
+    onConnectionChanged?.call(true);
+  }
+
+  /// The link has gone: fail whatever was waiting on it and forget it, so the
+  /// next call opens a new one.
+  void _dropped(WebSocketChannel channel, String reason) {
+    if (!identical(_channel, channel)) return; // An older link, already gone.
+    _channel = null;
+    final sub = _sub;
+    _sub = null;
+    lastDrop = reason;
+    _failAll(reason);
+    unawaited(sub?.cancel());
+    unawaited(Future(() => channel.sink.close()).catchError((_) {}));
+    onConnectionChanged?.call(false);
+    _scheduleReconnect();
+  }
+
+  void _scheduleReconnect() {
+    if (!autoReconnect || _disposed || _reconnectTimer != null) return;
+    final step = _reconnectSteps[_reconnectAttempt.clamp(0, _reconnectSteps.length - 1)];
+    _reconnectAttempt++;
+    _reconnectTimer = Timer(Duration(seconds: step), () async {
+      _reconnectTimer = null;
+      if (_disposed || _channel != null) return;
+      try {
+        await connect();
+      } catch (e) {
+        lastDrop = '$e';
+        _scheduleReconnect();
+      }
+    });
   }
 
   Future<void> dispose() async {
+    _disposed = true;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _failAll('Card machine connection closed.');
-    await _sub?.cancel();
-    await _channel?.sink.close();
-    _sub = null;
+    final channel = _channel;
     _channel = null;
+    await _sub?.cancel();
+    await channel?.sink.close();
+    _sub = null;
   }
 
   /// Fail every waiting caller. A dropped socket must never leave a payment
@@ -208,10 +301,16 @@ class ConnectSocket {
 
   void _send(Map<String, dynamic> message) {
     final channel = _channel;
-    if (channel == null) throw ConnectException('Not connected.');
+    if (channel == null) throw _NotSent('Not connected.');
     final text = jsonEncode(message);
+    try {
+      channel.sink.add(text);
+    } catch (e) {
+      // A sink that has closed under us: nothing went out.
+      _dropped(channel, 'The card machine connection closed.');
+      throw _NotSent('$e');
+    }
     onTraffic?.call('→', text);
-    channel.sink.add(text);
   }
 
   /// Send a JSON-RPC request and wait for its reply.
@@ -230,14 +329,28 @@ class ConnectSocket {
     _nextId = _nextId >= 999999 ? 1 : _nextId + 1;
 
     final completer = Completer<Map<String, dynamic>>();
-    _pending[id] = completer;
-
-    _send({
+    final request = {
       'jsonrpc': '2.0',
       'id': id,
       'method': method,
       if (params.isNotEmpty) 'params': params,
-    });
+    };
+    // Waited on only once it has gone: a reply arrives in a later event, never
+    // during the send, and a send that fails must not fail its own request.
+    try {
+      _send(request);
+    } on _NotSent {
+      // The link had gone before this left the till, so the reader was asked
+      // nothing: open a new one and ask once more. Safe for a sale, because a
+      // request that was never sent cannot have been started.
+      await connect();
+      try {
+        _send(request);
+      } on _NotSent catch (e) {
+        throw ConnectException('Could not reach the card machine service: ${e.reason}');
+      }
+    }
+    _pending[id] = completer;
 
     try {
       return await completer.future.timeout(timeout, onTimeout: () {
@@ -339,4 +452,13 @@ class ConnectSocket {
     }
     return null;
   }
+}
+
+/// A request that never left the till: the link was gone. Distinct from a
+/// [ConnectException] because it is always safe to send again.
+class _NotSent implements Exception {
+  _NotSent(this.reason);
+  final String reason;
+  @override
+  String toString() => reason;
 }

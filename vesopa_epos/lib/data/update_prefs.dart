@@ -114,6 +114,10 @@ const whatsNewByVersion = <String, List<String>>{
     'Typing on a real keyboard puts the screen keyboard away; the keyboard button in the corner brings it back.',
     'Prices, quantities and covers get a big round number pad.',
   ],
+  '1.16.57': [
+    'Split bill: items a person has already paid for stay off the split. Open the split again and they are gone from Not split yet, and Left to split is what is still owed.',
+    'Card machines: the till now notices when its link to the card machine drops and opens it again by itself, so sales no longer go to a machine the till has lost.',
+  ],
 };
 
 /// The notes to show once after an update to [VesopaBrand.appVersion], or

@@ -17,6 +17,7 @@ import '../data/staff_session.dart';
 import '../data/membership.dart';
 import '../data/memberships_api.dart' show MembershipsException, MemberPlan;
 import '../data/tender_engine.dart';
+import '../data/split_portions.dart' show decodeLineIds;
 import '../data/customer_display.dart';
 import '../data/customer_display_control.dart';
 import '../data/till_settings.dart';
@@ -1142,6 +1143,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
           gratuityMinor: p.gratuityMinor,
           cashBreakdown: p.cashBreakdown,
           saved: true,
+          lineIds: decodeLineIds(p.lineIds),
         ),
     ];
     setState(() {
@@ -1713,7 +1715,15 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       if (_tender.tenders.skip(_shareStart).any((t) => t.kind == TenderKind.cash && !t.saved)) {
         unawaited(TillActions.openCashDrawerQuietly(ref));
       }
-      unawaited(_finishShare(shareChange));
+      // The items this person paid for, so a split opened again on this bill
+      // (here, later, or on another till) leaves them out.
+      final paidShare = before.activeShare >= 0 && before.activeShare < before.shares.length
+          ? before.shares[before.activeShare]
+          : null;
+      unawaited(_finishShare(
+        shareChange,
+        before.splitMode == SplitMode.byItem ? paidShare?.lineIds ?? const [] : const [],
+      ));
       return;
     }
     _settleIfPaid();
@@ -1721,7 +1731,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
   /// One share of a split paid, not the last: hand over its change, then
   /// record its payments on the bill.
-  Future<void> _finishShare(int changeMinor) async {
+  Future<void> _finishShare(int changeMinor, List<String> lineIds) async {
     if (changeMinor > 0 && mounted) {
       await showDialog<bool>(
         context: context,
@@ -1732,7 +1742,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         ),
       );
     }
-    await _saveSettledShare();
+    await _saveSettledShare(lineIds);
     await _offerNextShare();
   }
 
@@ -1780,12 +1790,23 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   ///
   /// Gift cards are left as holds until the bill closes, as before: their
   /// money is only spent once, when the sale is recorded.
-  Future<void> _saveSettledShare() async {
+  Future<void> _saveSettledShare([List<String> lineIds = const []]) async {
     final repo = ref.read(orderRepositoryProvider);
+    final from = _shareStart;
+    // This share's payments say which items they paid for, at once and
+    // whether or not they are written below: splitting again replaces the
+    // shares, and the payments are what is left to say these items are paid.
+    if (lineIds.isNotEmpty && mounted) {
+      setState(() {
+        _tender = _tender.copyWith(tenders: [
+          for (var i = 0; i < _tender.tenders.length; i++)
+            i >= from ? _tender.tenders[i].forLines(lineIds) : _tender.tenders[i],
+        ]);
+      });
+    }
     final session = await ref.read(sessionRepositoryProvider).current();
     final servedBy = ref.read(servedByProvider);
     final servedById = ref.read(servedByIdProvider);
-    final from = _shareStart;
     final tenders = _tender.tenders;
     // The bill closes when what is recorded reaches its stored total. A tip
     // added on this screen is not in that total, so a share could reach it
@@ -1816,6 +1837,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         gratuityMinor: t.gratuityMinor,
         entryMode: t.entryMode,
         cashbackMinor: t.cashbackMinor,
+        lineIds: t.lineIds,
       );
     }
     if (!mounted) return;
