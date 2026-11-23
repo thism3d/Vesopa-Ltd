@@ -13,7 +13,7 @@
     "create-submission": "node examples/create-submission.js"
   },
   "dependencies": {
-    "archiver": "^7.0.1",
+    "archiver": "^8.0.0",
     "dotenv": "^16.4.5"
   },
   "license": "UNLICENSED",
