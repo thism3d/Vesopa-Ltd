@@ -1,0 +1,24 @@
+<%- include('_top') %>
+<meta name="csrf" content="<%= me.csrf %>">
+<link rel="stylesheet" href="/ai.css?v=1">
+<div class="ai-page">
+  <div class="ai-head">
+    <span class="ai-mark">✦</span>
+    <div style="flex:1;min-width:200px">
+      <h1>Vesopa AI</h1>
+      <p>The whole business: every venue's takings, Vesopa's income, licences, devices and sign-ups. Read-only.</p>
+    </div>
+    <% if (me.isOwner) { %><a class="btn" href="/admins">Invite people</a><% } %>
+  </div>
+  <div id="ai-app" data-me="<%= me.email %>" aria-live="polite"><p class="ai-muted">Loading…</p></div>
+  <noscript><p class="ai-err">This page needs JavaScript switched on.</p></noscript>
+</div>
+<dialog id="records" class="ai-dialog" aria-labelledby="records-title">
+  <div class="ai-dialog-head">
+    <div><h2 id="records-title">Supporting data</h2><p id="records-sub" class="ai-muted"></p></div>
+    <button type="button" class="ai-icon-btn" data-close aria-label="Close">✕</button>
+  </div>
+  <div id="records-body" class="ai-dialog-body"></div>
+</dialog>
+<script src="/ai.js?v=1" defer></script>
+<%- include('_bottom') %>

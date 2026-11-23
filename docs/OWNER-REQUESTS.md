@@ -64,8 +64,8 @@ secrets only).
 
 | Ask | Status |
 | --- | --- |
-| Vesopa AI for the owner only: info@vesopasoftware.com tracks everything (owner, 2026-11-21), and only people the owner invites; invited people see the same as the owner, read-only | in progress: a Vesopa AI page on admin.vesopa.com (the staff console's own sign-in); venues' sales, licences and revenue, devices and health, sign-ups and payments; figures worked out by the back office, words by DeepSeek with business figures only. A preview link first; nothing new goes live until the owner says |
-| Remove the per-venue Vesopa AI from Vesopa Go (owner, 2026-11-21) | removing: the Go page, its server routes and go.vesopa.com/ai (never published) are taken out; go 1.2.63 builds that had it are replaced by every later Go release |
+| Vesopa AI for the owner only: info@vesopasoftware.com tracks everything (owner, 2026-11-21), and only people the owner invites; invited people see the same as the owner, read-only | built, waiting for the owner's go-ahead: admin.vesopa.com/ai (Briefing, Ask, Takings, Income, Devices, Sign-ups). Back office `src/owner_ai.js` + `owner_ai_engine.js` (`/api/admin/insights/*`, admin service key only, read-only); console role "Vesopa AI" (permission `insights.view`): the owner invites people in Admins with that role. Preview on sample data: https://claude.ai/artifact/GMhb538sFYmLyp7cuGbHaV. To go live: Go - server live, then admin.vesopa.com - code (type deploy) |
+| Remove the per-venue Vesopa AI from Vesopa Go (owner, 2026-11-21) | done 2026-11-21 (#24): the Go page, its server routes, go.vesopa.com/ai (never published) and the vesopasoftware.com link are out; Go 1.2.63 builds that had it are replaced by every later Go release |
 | Preview links before anything is published; plain web pages that open in any browser (the Flutter web preview did not) | standing |
 
 ## Vesopa EPOS till (Windows, `vesopa_epos/`)

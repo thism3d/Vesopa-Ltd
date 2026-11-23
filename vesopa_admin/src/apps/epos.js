@@ -9,7 +9,15 @@ const get = (path, as) => call('epos', 'GET', `/api/admin${path}`, { as });
 const put = (path, body, as) => call('epos', 'PUT', `/api/admin${path}`, { body, as });
 const post = (path, body, as) => call('epos', 'POST', `/api/admin${path}`, { body, as });
 
+// Vesopa AI for the owner (vesopa_server/src/owner_ai.js): read-only.
+const insightsQuery = (q) => Object.entries(q || {})
+  .filter(([k, v]) => ['source', 'period'].includes(k) && /^[a-z_0-9]{1,32}$/.test(String(v)))
+  .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+
 module.exports = {
+  insightsBriefing: (as) => call('epos', 'GET', '/api/admin/insights/briefing', { as, timeout: 40000 }),
+  insightsAsk: (body, as) => call('epos', 'POST', '/api/admin/insights/ask', { body, as, timeout: 40000 }),
+  insightsRecords: (q, as) => get(`/insights/records?${insightsQuery(q)}`, as),
   overview: (as) => get('/overview', as),
   licences: (as) => get('/licences', as),
   limits: (id, as) => get(`/offices/${Number(id)}/licence-limits`, as),
