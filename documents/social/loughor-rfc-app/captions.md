@@ -14,7 +14,7 @@ Loughor RFC's members' card is now on members' phones.
 
 Tap or show it at the bar and the members' discount is applied, along with
 club news and fixtures, all in the club's own app. Proud to have built it
-for the Blues.
+for Loughor RFC.
 
 Get it on Google Play: https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc
 
@@ -22,7 +22,7 @@ Get it on Google Play: https://play.google.com/store/apps/details?id=com.vesopae
 
 Loughor RFC, in your pocket.
 
-The Blues now have their own app: the members' card on your phone, the
+Loughor RFC now has its own app: the members' card on your phone, the
 discount at the bar, and club news and fixtures as they happen. Built by
 Vesopa Software.
 
