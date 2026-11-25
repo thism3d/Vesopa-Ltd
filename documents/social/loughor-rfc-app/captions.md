@@ -67,7 +67,7 @@ Google Play: https://play.google.com/store/apps/details?id=com.vesopaepos.lougho
 
 ## X (`x-1600x900.jpg`)
 
-The Blues have an app 🏉💙
+Loughor RFC has an app 🏉💙
 
 Loughor RFC's members' card, discount and every fixture, on your phone.
 Built by Vesopa Software.
