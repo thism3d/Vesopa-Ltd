@@ -17,11 +17,12 @@ section.dl { scroll-margin-top: 90px; padding: 2px 20px 6px; margin: 22px -20px 
 section.dl.mine { border-color: rgba(var(--lime-rgb),.55); background: var(--card); }
 .mine-note { color: var(--lime-hi); font-weight: 700; margin: 0; }
 </style>
+<link rel="stylesheet" href="/css/ask.css?v=1">
 </head>
 <body>
 <header class="top"><div class="wrap">
   <a class="brand" href="/"><img src="/img/go-mark.png" alt="">Vesopa <b>Go</b></a>
-  <nav class="links"><a href="/">Home</a><a href="/whats-new/">What's new</a><a href="/support/">Support</a></nav>
+  <nav class="links"><a href="/">Home</a><a href="/whats-new/">What's new</a><a href="/support/">Support</a><a href="#ask" data-ask hidden>Ask AI</a></nav>
 </div></header>
 <main class="doc">
   <h1>Vesopa Go: test builds</h1>
@@ -99,5 +100,6 @@ section.dl.mine { border-color: rgba(var(--lime-rgb),.55); background: var(--car
   note.hidden = false;
 })();
 </script>
+<script src="/js/ask.js?v=1" defer></script>
 </body>
 </html>

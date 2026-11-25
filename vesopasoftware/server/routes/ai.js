@@ -26,6 +26,10 @@
  *
  * Only `user` and `assistant` turns are ever replayed, so the page cannot post
  * a `system` role and rewrite the rules.
+ *
+ * go.vesopa.com (static files, no server of its own) has the same dock and
+ * posts here with `site: "go"`: it gets lib/go_site_ai.js's grounding about
+ * Vesopa Go instead of SYSTEM, and only that origin is let through CORS.
  */
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
@@ -33,6 +37,7 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { config } from "../lib/config.js";
 import { q, one, exec } from "../lib/db.js";
+import { GO_ORIGIN, GO_SYSTEM } from "../lib/go_site_ai.js";
 
 const require = createRequire(import.meta.url);
 const { createClient, redact, BudgetError } = require("../lib/vesopa_ai.cjs");
@@ -186,6 +191,26 @@ HOW TO ANSWER
   in this form and nothing after it:
   >> First question? | Second question? | Third question?`;
 
+/** Which site is asking: go.vesopa.com says so; anything else is this site. */
+const siteOf = (body) => (body && body.site === "go" ? "go" : "vesopasoftware");
+
+/* go.vesopa.com calls these from its own origin. Only that origin is answered,
+   with no cookies (the assistant reads no session), so another site cannot
+   use this as a model endpoint from its visitors' browsers. */
+router.use("/ai", (req, res, next) => {
+  if (req.get("origin") === GO_ORIGIN) {
+    res.set({
+      "Access-Control-Allow-Origin": GO_ORIGIN,
+      "Access-Control-Allow-Methods": "GET, POST",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400",
+      Vary: "Origin",
+    });
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+  }
+  next();
+});
+
 const limiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 40,
@@ -280,6 +305,7 @@ router.post("/ai", limiter, async (req, res) => {
   sweep();
 
   const body = req.body || {};
+  const site = siteOf(body);
   const visitor = ID.test(String(body.visitor || "")) ? String(body.visitor) : "";
   const device = deviceOf(req);
   let session = visitor ? await loadSession(visitor, body.session).catch(() => null) : null;
@@ -326,7 +352,7 @@ router.post("/ai", limiter, async (req, res) => {
       stream: true,
       signal: ctl.signal,
       userId: visitor || undefined,
-      messages: [{ role: "system", content: SYSTEM }, ...sent],
+      messages: [{ role: "system", content: site === "go" ? GO_SYSTEM : SYSTEM }, ...sent],
       onDelta: (t) => { answer += t; write({ t }); },
     });
     if (!answer) {
