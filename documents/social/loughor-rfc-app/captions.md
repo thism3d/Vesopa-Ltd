@@ -43,27 +43,19 @@ https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc
 
 ## LinkedIn (`linkedin-1200x627.jpg`)
 
-Client launch: Loughor RFC goes digital 🏉
+We are proud to launch the official Loughor RFC app.
 
-Loughor RFC, a community rugby club in South Wales since 1882, now has its own
-branded members' app, designed and built by Vesopa Software.
+Members now carry their card on their phone or watch. They tap or show it at
+the bar and the members' discount is applied through the club's Vesopa EPOS
+till. The app also holds Apple and Google Wallet passes and sends club news
+and fixtures straight to members.
 
-What we built:
-• A digital members' card with a QR code, and NFC tap on Android phones and Wear OS watches
-• Apple Wallet and Google Wallet passes
-• Points, visits and savings linked to the club's Vesopa EPOS till, so the members' discount goes on at the bar automatically
-• Club news, fixtures and offers sent as push notifications
-• Apps for Android, Wear OS, iPhone and Apple Watch, plus a members' website
+For a community club founded in 1882, it means no plastic cards and a direct
+line to every member.
 
-For a volunteer-run club this means no plastic cards to print, no lost
-cards, and a direct line to every member on match day.
-
-If you run a sports club, bar or hospitality venue and want the same,
-let's talk: vesopaepos.com
+Running a club or venue? We would be glad to build yours: vesopaepos.com
 
 Google Play: https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc
-
-#ClientLaunch #SportsTech #Hospitality #EPOS #MobileApps #Wales #Rugby #Vesopa
 
 ## X (`x-1600x900.jpg`)
 
