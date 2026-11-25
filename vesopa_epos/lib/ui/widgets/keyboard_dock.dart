@@ -1397,3 +1397,110 @@ class _RenderMeasure extends RenderProxyBox {
     }
   }
 }
+
+/// Every text box on the till opens the keyboard, whether or not its screen
+/// asked for it (Nicky, Pontardawe RFC, 2026-11-24: "This have now broken
+/// keyboards on setting and custom text. Staff prefer the new keyboard but
+/// need to sort out the errors.").
+///
+/// 1.16.56 gave the keyboard to the boxes built as [PosTextField] or paired
+/// with an [OnScreenKeyboard], and took the old floating keyboard away from
+/// everything else, which left about eighty plain text boxes (most of
+/// Settings, custom text, the stock and printer screens) with no keyboard at
+/// all on a till with no real one. This watches the till's focus instead: a
+/// text box that has it, and has not brought a keyboard of its own, asks for
+/// the dock, and lets go when it loses focus.
+///
+/// A box marked `keyboardType: TextInputType.none` is one that brings its own
+/// (that is how every paired box says "ours is the input method"), and a
+/// read-only box takes no typing, so neither is touched.
+class KeyboardAutoAsk {
+  KeyboardAutoAsk._();
+
+  static bool _installed = false;
+  static KeyboardRequest? _ask;
+  static bool _pending = false;
+
+  /// The request this has made for the focused box, for tests.
+  @visibleForTesting
+  static KeyboardRequest? get current => _ask;
+
+  /// Start watching. Safe to call more than once.
+  static void install() {
+    if (_installed) return;
+    _installed = true;
+    FocusManager.instance.addListener(_focusMoved);
+  }
+
+  @visibleForTesting
+  static void uninstall() {
+    if (!_installed) return;
+    _installed = false;
+    FocusManager.instance.removeListener(_focusMoved);
+    _letGo();
+  }
+
+  /// Looked at after the frame, so a box's own request (a [PosTextField]
+  /// asks as its focus changes) is already in place and is left alone.
+  static void _focusMoved() {
+    if (_pending) return;
+    _pending = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _pending = false;
+      _check();
+    });
+    SchedulerBinding.instance.ensureVisualUpdate();
+  }
+
+  static void _check() {
+    final focus = FocusManager.instance.primaryFocus;
+    final context = focus?.context;
+    EditableTextState? box;
+    if (context != null && context.mounted) {
+      box = context.findAncestorStateOfType<EditableTextState>();
+    }
+    final field = box?.widget;
+    if (field == null ||
+        field.readOnly ||
+        field.keyboardType.index == TextInputType.none.index) {
+      _letGo();
+      return;
+    }
+    final controller = field.controller;
+    final dock = KeyboardDock.instance;
+    final active = dock.active.value;
+    // The box's own keyboard is already up for it.
+    if (active != null && !identical(active, _ask) && identical(active.controller, controller)) {
+      _letGo();
+      return;
+    }
+    if (_ask != null && identical(_ask!.controller, controller)) return;
+    _letGo();
+
+    final type = field.keyboardType;
+    final mode = type.index == TextInputType.number.index || type.index == TextInputType.phone.index
+        ? (type.decimal == true ? PosKeyboardMode.decimal : PosKeyboardMode.number)
+        : PosKeyboardMode.text;
+    final ask = _ask = KeyboardRequest(
+      controller: controller,
+      mode: mode,
+      autoCapitalise: mode == PosKeyboardMode.text && field.textCapitalization != TextCapitalization.none,
+      submitLabel: 'Done',
+      onSubmit: () {
+        field.onSubmitted?.call(controller.text);
+        // Done means finished with this box: the keyboard goes with it.
+        focus?.unfocus();
+      },
+    );
+    dock.show(context!, ask);
+    // Ours is the input method: Windows' own touch keyboard stays away, as it
+    // does for the boxes that say so with `keyboardType: none`.
+    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide').catchError((_) {}));
+  }
+
+  static void _letGo() {
+    final ask = _ask;
+    _ask = null;
+    if (ask != null) KeyboardDock.instance.release(ask);
+  }
+}

@@ -2061,15 +2061,15 @@ app.post('/till/floor/tables', requireTerminal(JWT_SECRET), async (req, res, nex
       return res.status(400).json({ error: 'Give the table a number.' });
     }
 
-    // A name has to be unique across the venue and not merely within the room:
-    // a runner carrying food to "Window" is not helped by being told there are
-    // two of them in different rooms.
+    // A name is unique within its room (2026-11-25): the tills call a table
+    // by its room as well, so "Window" in the Bar and in the Lounge are two
+    // tables nobody mixes up.
     const nm = body.name == null ? '' : String(body.name).trim();
     const name = !nm || /^(null|undefined)$/i.test(nm) ? null : nm.slice(0, 60);
     if (name) {
       const [[clash]] = await pool.query(
-        'SELECT id FROM floor_tables WHERE office_id = ? AND LOWER(name) = LOWER(?)',
-        [officeId, name]
+        'SELECT id FROM floor_tables WHERE office_id = ? AND room_id = ? AND LOWER(name) = LOWER(?)',
+        [officeId, roomId, name]
       );
       if (clash) {
         return res.status(409).json({

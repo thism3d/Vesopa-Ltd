@@ -46,6 +46,7 @@ class RemoteBill {
     this.totalMinor = 0,
     this.lineCount = 0,
     this.payload,
+    this.changedAt,
   });
 
   factory RemoteBill.fromJson(Map<String, dynamic> j) => RemoteBill(
@@ -61,7 +62,12 @@ class RemoteBill {
     totalMinor: (j['total_minor'] as num?)?.toInt() ?? 0,
     lineCount: (j['line_count'] as num?)?.toInt() ?? 0,
     payload: j['payload'] as Map<String, dynamic>?,
+    changedAt: (j['changed_at'] as num?)?.toInt(),
   );
+
+  /// When the till holding it last changed it, on the venue's main-till clock;
+  /// null from a back office or a till too old to say.
+  final int? changedAt;
 
   final String id;
 

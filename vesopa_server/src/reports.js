@@ -40,6 +40,7 @@ const { reportBuilders } = require('./report_builders');
 const { salesBuilders } = require('./report_builders_sales');
 const { stockBuilders } = require('./report_builders_stock');
 const { staffBuilders } = require('./report_builders_staff');
+const { tillLabels } = require('./till_sites');
 
 // ---------------------------------------------------------------------------
 // Windows
@@ -320,6 +321,13 @@ const section = (title, columns, rows) => ({
 const UNKNOWN_TERMINAL = '__unknown__';
 
 /**
+ * A filter value naming a terminal by what it is called in the reports, when
+ * more than one computer name is behind that name (a till replaced by a new
+ * PC keeps its terminal number): resolved to all of them when the report runs.
+ */
+const TERMINAL_NAMED = 'named:';
+
+/**
  * The terminals that actually appear in a venue's sales, for the filter's list.
  *
  * Read from the ledger rather than from bo_devices on purpose: this list has to
@@ -340,13 +348,32 @@ async function terminalsInUse({ pool, office }) {
     )
     .catch(() => [[]]);
 
-  const named = [];
+  // "Terminal 1", "Terminal 2", a name given in Sites, or "Vesopa Go 1"
+  // rather than the computer's own name, and a till hidden from reports is
+  // not offered (Nicky, Pontardawe RFC, 2026-11-24). See tillLabels.
+  const labels = await tillLabels(pool, office).catch(() => ({ of: (raw) => ({ label: raw, hidden: false }) }));
+  const groups = new Map();
   let unknown = 0;
   for (const row of rows) {
     const name = (row.terminal || '').trim();
-    if (name) named.push({ value: name, label: name, sales: Number(row.sales) });
-    else unknown += Number(row.sales);
+    if (!name) {
+      unknown += Number(row.sales);
+      continue;
+    }
+    const l = labels.of(name);
+    if (l.hidden) continue;
+    const g = groups.get(l.label) || { label: l.label, raws: [], sales: 0 };
+    g.raws.push(name);
+    g.sales += Number(row.sales);
+    groups.set(l.label, g);
   }
+  const named = [...groups.values()]
+    .sort((x, y) => x.label.localeCompare(y.label, 'en-GB', { numeric: true }))
+    .map((g) => ({
+      value: g.raws.length === 1 ? g.raws[0] : TERMINAL_NAMED + g.label,
+      label: g.label,
+      sales: g.sales,
+    }));
 
   // Only offered when there is actually something behind it, so a venue that
   // has only ever run tills on this release never sees a puzzling extra entry.
@@ -358,6 +385,24 @@ async function terminalsInUse({ pool, office }) {
     });
   }
   return named;
+}
+
+/**
+ * The terminal filter as the report builders take it: one computer name, the
+ * unknown sentinel, or every computer name behind a reports name.
+ */
+async function resolveTerminal({ pool, office, terminal }) {
+  if (!terminal || terminal === UNKNOWN_TERMINAL) return { filter: terminal || null, label: null };
+  const labels = await tillLabels(pool, office).catch(() => null);
+  if (terminal.startsWith(TERMINAL_NAMED)) {
+    const label = terminal.slice(TERMINAL_NAMED.length);
+    const [rows] = await pool
+      .query('SELECT DISTINCT terminal FROM epos_orders WHERE email = ? AND terminal IS NOT NULL', [office])
+      .catch(() => [[]]);
+    const raws = rows.map((r) => r.terminal).filter((raw) => labels && labels.of(raw).label === label);
+    return { filter: raws.length ? raws : ['\u0000'], label };
+  }
+  return { filter: terminal, label: labels ? labels.of(terminal).label : terminal };
 }
 
 /** The staff who have rung a sale, by the name the sale carries. */
@@ -439,8 +484,10 @@ async function financialSummary({ pool, office, from, to, siteName, terminal }) 
   if (terminal === UNKNOWN_TERMINAL) {
     window += " AND (o.terminal IS NULL OR o.terminal = '')";
   } else if (terminal) {
-    window += ' AND o.terminal = ?';
-    params.push(terminal);
+    window += Array.isArray(terminal)
+      ? ` AND o.terminal IN (${terminal.map(() => '?').join(', ')})`
+      : ` AND o.terminal = ?`;
+    params.push(...[].concat(terminal));
   }
 
   // One pass over the lines. Department and sub department are two groupings
@@ -563,8 +610,10 @@ async function financialSummary({ pool, office, from, to, siteName, terminal }) 
   const eventParams = [office, sqlDateTime(from), sqlDateTime(to)];
   if (terminal === UNKNOWN_TERMINAL) eventWindow.push("(e.terminal IS NULL OR e.terminal = '')");
   else if (terminal) {
-    eventWindow.push('e.terminal = ?');
-    eventParams.push(terminal);
+    eventWindow.push(
+      Array.isArray(terminal) ? `e.terminal IN (${terminal.map(() => '?').join(', ')})` : 'e.terminal = ?'
+    );
+    eventParams.push(...[].concat(terminal));
   }
   const [eventRows] = await pool
     .query(
@@ -1586,7 +1635,8 @@ async function runReport({
   }
   if (!range) throw new Error('That date range is not one we can run.');
 
-  const filter = (terminal || '').trim() || null;
+  const asked = (terminal || '').trim() || null;
+  const { filter, label: terminalName } = await resolveTerminal({ pool, office, terminal: asked });
 
   const built = await definition.build({
     pool,
@@ -1602,12 +1652,12 @@ async function runReport({
 
   // Carried on the report itself so every export renders the same header
   // without each format having to be told separately.
-  built.terminal = filter;
-  built.terminalLabel = !filter
+  built.terminal = asked;
+  built.terminalLabel = !asked
     ? 'All terminals'
-    : filter === UNKNOWN_TERMINAL
+    : asked === UNKNOWN_TERMINAL
       ? 'Unknown terminal'
-      : filter;
+      : terminalName || asked;
   return built;
 }
 

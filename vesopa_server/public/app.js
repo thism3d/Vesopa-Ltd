@@ -375,6 +375,7 @@ const ROUTES = {
   offices: '/offices',
   licences: '/licences',
   admin_modules: '/admin-modules',
+  support_staff: '/support-logins',
   billing: '/billing',
   backups: '/backups',
 };
@@ -1405,6 +1406,7 @@ const VIEW_LOADERS = {
     events: loadEvents,
     modules: loadModules,
     admin_modules: loadAdminModules,
+    support_staff: loadSupportStaff,
     wallet: loadWallet,
     loyalty_app: loadLoyaltyApp,
     devices: loadDevices,
@@ -8174,7 +8176,11 @@ async function loadSites() {
     box.hidden = true;
     return;
   }
-  const sites = data.sites || [];
+  // Practice venues are not in the drop-down (Nicky, Pontardawe RFC,
+  // 2026-11-24: "Remove Demo sites from drop down from back office"). They are
+  // opened from Settings > Practice venue, and left from the banner inside one.
+  // The one this session is in stays listed, so the menu says where it is.
+  const sites = (data.sites || []).filter((s) => !s.demo || Number(s.id) === Number(data.current));
   if (sites.length < 2) {
     box.hidden = true;
     return;
@@ -8323,6 +8329,11 @@ async function loadDemoVenue() {
   }
 
   if (card) card.hidden = false;
+  const open = $('demo-open');
+  if (open) {
+    open.hidden = !data.demo;
+    if (data.demo) open.dataset.officeId = data.demo.id;
+  }
   if (!state) return;
   if (!data.demo) {
     state.textContent =
@@ -8336,7 +8347,7 @@ async function loadDemoVenue() {
 }
 
 document.addEventListener('click', async (e) => {
-  const leave = e.target.closest && e.target.closest('#demo-leave');
+  const leave = e.target.closest && (e.target.closest('#demo-leave') || e.target.closest('#demo-open'));
   if (leave) {
     const officeId = Number(leave.dataset.officeId);
     if (!officeId) return;
@@ -8800,11 +8811,12 @@ function smRender(d) {
   const opts = (sel) => '<option value="">No site</option>' + d.sites.map((s) => `<option value="${s.id}"${s.id === sel ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
   $('sm-tills').innerHTML = d.tills.length ? d.tills.map((t) => `<tr data-sm-till="${esc(t.terminal)}">
       <td class="small">${esc(t.terminal)}</td>
-      <td><input type="text" value="${esc(t.label || '')}" maxlength="80" placeholder="e.g. Bar till 1" aria-label="Name for ${esc(t.terminal)}"></td>
+      <td><input type="text" value="${esc(t.label || '')}" maxlength="80" placeholder="${esc(t.suggested || 'e.g. Bar till 1')}" aria-label="Name for ${esc(t.terminal)}"></td>
       <td><select aria-label="Site for ${esc(t.terminal)}">${opts(t.site_id)}</select></td>
+      <td><input type="checkbox" data-sm-shown${t.hidden ? '' : ' checked'} aria-label="Show ${esc(t.terminal)} in reports"></td>
       <td class="small">${t.last_sale ? siteAgo(t.last_sale) : '—'}</td>
       <td class="right">${t.sales_30d || 0}</td></tr>`).join('')
-    : '<tr><td colspan="5" class="empty">No till has taken a sale yet.</td></tr>';
+    : '<tr><td colspan="6" class="empty">No till has taken a sale yet.</td></tr>';
   $('sm-sites').querySelectorAll('[data-sm-site]').forEach((row) => {
     const id = row.dataset.smSite;
     const [colour, name, address] = row.querySelectorAll('input');
@@ -8819,16 +8831,20 @@ function smRender(d) {
     };
   });
   $('sm-tills').querySelectorAll('[data-sm-till]').forEach((row) => {
-    const input = row.querySelector('input');
+    const input = row.querySelector('input[type="text"]');
     const select = row.querySelector('select');
+    const shown = row.querySelector('[data-sm-shown]');
     const save = async () => {
       try {
-        await api('/till-names', { method: 'PUT', body: JSON.stringify({ terminal: row.dataset.smTill, label: input.value, site_id: select.value || null }) });
-        smSay(`Saved ${input.value || row.dataset.smTill}.`, true);
+        await api('/till-names', { method: 'PUT', body: JSON.stringify({
+          terminal: row.dataset.smTill, label: input.value, site_id: select.value || null, hidden: !shown.checked,
+        }) });
+        smSay(`Saved ${input.value || input.placeholder || row.dataset.smTill}.`, true);
       } catch (err) { smSay(err.message, false); }
     };
     input.onchange = save;
     select.onchange = save;
+    shown.onchange = save;
   });
 }
 
@@ -13913,6 +13929,75 @@ function moduleChargeText(m) {
   const promo = m.promo && m.promo.applies ? ` (${m.promo.code})` : '';
   return `${money(m.charge_minor)} a month${promo}`;
 }
+
+// ---- Support logins (Administration, 2026-11-25) -------------------------
+//
+// Nicky: "Create a super user for tech support with access to all sites (This
+// may be done but can't find how to enable it)." The list of logins that see
+// every company, kept by the platform admin.
+
+async function loadSupportStaff() {
+  const rows = $('support-staff-rows');
+  if (!rows) return;
+  let data;
+  try {
+    data = await api('/admin/support-staff');
+  } catch (err) {
+    rows.innerHTML = `<tr><td colspan="5" class="muted">${esc(err.message)}</td></tr>`;
+    return;
+  }
+  const when = (v) => (v ? new Date(v).toLocaleString('en-GB') : '—');
+  rows.innerHTML = data.staff.length
+    ? data.staff
+        .map(
+          (s) => `<tr><td>${esc(s.name || '')}</td><td>${esc(s.email)}</td>
+            <td>${s.has_login ? 'Yes' : '<span class="muted">No login with this email yet</span>'}</td>
+            <td>${when(s.last_visit)}</td>
+            <td><button class="btn small danger" data-support-remove="${esc(s.email)}">Remove</button></td></tr>`
+        )
+        .join('')
+    : '<tr><td colspan="5" class="muted">Nobody yet.</td></tr>';
+  $('support-visit-rows').innerHTML = data.visits.length
+    ? data.visits
+        .map((v) => `<tr><td>${when(v.at)}</td><td>${esc(v.email)}</td><td>${esc(v.office_name || `#${v.office_id}`)}</td></tr>`)
+        .join('')
+    : '<tr><td colspan="3" class="muted">No company opened yet.</td></tr>';
+}
+
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'support-add') return;
+  e.preventDefault();
+  try {
+    const r = await api('/admin/support-staff', {
+      method: 'POST',
+      body: JSON.stringify({ email: $('support-email').value, name: $('support-name').value }),
+    });
+    toast(r.has_login
+      ? `${r.email} can now open every company.`
+      : `${r.email} is on the list. They need a back office login with this email.`);
+    $('support-email').value = '';
+    $('support-name').value = '';
+    loadSupportStaff();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest && e.target.closest('[data-support-remove]');
+  if (!btn) return;
+  const email = btn.dataset.supportRemove;
+  const ok = await confirmDialog(`${email} will no longer see every company.`, {
+    title: 'Remove support login', confirmLabel: 'Remove', danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api(`/admin/support-staff/${encodeURIComponent(email)}`, { method: 'DELETE' });
+    loadSupportStaff();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
 
 async function loadAdminModules() {
   const [catalogue, venues, promos] = await Promise.all([

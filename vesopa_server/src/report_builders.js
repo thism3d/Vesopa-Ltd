@@ -42,8 +42,10 @@ function tradingWindow({ office, from, to, terminal, sqlDateTime, unknownTermina
   if (terminal === unknownTerminal) {
     where += " AND (o.terminal IS NULL OR o.terminal = '')";
   } else if (terminal) {
-    where += ' AND o.terminal = ?';
-    params.push(terminal);
+    where += Array.isArray(terminal)
+      ? ` AND o.terminal IN (${terminal.map(() => '?').join(', ')})`
+      : ` AND o.terminal = ?`;
+    params.push(...[].concat(terminal));
   }
   return { where, params };
 }
@@ -495,8 +497,10 @@ function reportBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TER
     if (terminal === UNKNOWN_TERMINAL) {
       where += " AND (v.terminal IS NULL OR v.terminal = '')";
     } else if (terminal) {
-      where += ' AND v.terminal = ?';
-      params.push(terminal);
+      where += Array.isArray(terminal)
+        ? ` AND v.terminal IN (${terminal.map(() => '?').join(', ')})`
+        : ` AND v.terminal = ?`;
+      params.push(...[].concat(terminal));
     }
 
     const [byReason] = await pool.query(

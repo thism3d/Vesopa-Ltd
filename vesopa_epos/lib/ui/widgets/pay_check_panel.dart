@@ -32,6 +32,7 @@ class PayCheckPanel extends StatelessWidget {
     super.key,
     required this.totals,
     this.tableNumber,
+    this.tableLabel,
     this.covers,
     this.customer,
     this.selectedLineIds = const {},
@@ -43,6 +44,9 @@ class PayCheckPanel extends StatelessWidget {
   final BasketTotals totals;
 
   final int? tableNumber;
+
+  /// What the table is called ("Bar 1"); "Table N" when not given.
+  final String? tableLabel;
   final int? covers;
 
   /// Who the bill is for. Null on the ordinary walk-in sale, and then nothing
@@ -119,7 +123,7 @@ class PayCheckPanel extends StatelessWidget {
   /// [_showRoundHeadings].
   Widget _header(BuildContext context, PayPalette pay, double s) {
     final where = <String>[
-      if (tableNumber != null) 'Table $tableNumber',
+      if (tableNumber != null) tableLabel ?? 'Table $tableNumber',
       if (covers != null && covers! > 0) '$covers covers',
     ].join('  ·  ');
 

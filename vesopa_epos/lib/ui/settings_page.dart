@@ -954,6 +954,7 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
       switch (mode) {
         'master' => 'This till is the master. The others follow it within a few seconds.',
         'slave' => 'This till is a slave. It follows the master, and stands in if the master is off.',
+        'independent' => 'This till now works on its own: its tables are not shared and it shows only its own.',
         _ => 'Automatic: the till running longest leads.',
       },
     );
@@ -1043,6 +1044,38 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
   Widget build(BuildContext context) {
     final lan = LanService.instance;
     final node = lan.node;
+    if (lan.independent) {
+      // No link to show: the choice itself, so it can be changed back.
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.link_off_rounded, color: Pos.graphite),
+              title: Text('This till works on its own', style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text(
+                'Independent: nothing is shared with the other tills. Its tables stay here and the others\' are '
+                'not shown. Sales still go to the back office.',
+              ),
+            ),
+            const SizedBox(height: 8),
+            SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: 'master', icon: Icon(Icons.star_rounded), label: Text('Master')),
+                ButtonSegment(value: 'slave', icon: Icon(Icons.link_rounded), label: Text('Slave')),
+                ButtonSegment(value: 'auto', icon: Icon(Icons.auto_mode_rounded), label: Text('Auto')),
+                ButtonSegment(value: 'independent', icon: Icon(Icons.link_off_rounded), label: Text('Independent')),
+              ],
+              selected: const {'independent'},
+              onSelectionChanged: _busy ? null : (v) => _setMode(v.first),
+            ),
+          ],
+        ),
+      );
+    }
     if (node == null) {
       return const ListTile(
         leading: Icon(Icons.lan_outlined, color: Pos.graphite),
@@ -1104,7 +1137,12 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
                   ),
                 ),
                 _Badge(
-                  label: switch (lan.mode) { 'master' => 'MASTER', 'slave' => 'SLAVE', _ => 'AUTO' },
+                  label: switch (lan.mode) {
+                    'master' => 'MASTER',
+                    'slave' => 'SLAVE',
+                    'independent' => 'INDEPENDENT',
+                    _ => 'AUTO',
+                  },
                   color: switch (lan.mode) { 'master' => Pos.amber, 'slave' => Pos.blue, _ => Pos.graphite },
                 ),
               ],
@@ -1119,6 +1157,8 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
               ButtonSegment(value: 'master', icon: Icon(Icons.star_rounded), label: Text('Master')),
               ButtonSegment(value: 'slave', icon: Icon(Icons.link_rounded), label: Text('Slave')),
               ButtonSegment(value: 'auto', icon: Icon(Icons.auto_mode_rounded), label: Text('Auto')),
+              // Owner, 2026-11-25: for venues that share nothing between tills.
+              ButtonSegment(value: 'independent', icon: Icon(Icons.link_off_rounded), label: Text('Independent')),
             ],
             selected: {lan.mode},
             onSelectionChanged: _busy ? null : (v) => _setMode(v.first),
@@ -1132,6 +1172,10 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
               'slave' =>
                 'Follows the master. If the master is switched off, this till stands in within a few seconds '
                     'and hands the lead back when the master returns.',
+              'independent' =>
+                'Works on its own: no master or slave, and nothing shared with the other tills. Its tables stay on '
+                    'this till and the others\' are not shown here. Sales still go to the back office, and kitchen '
+                    'screens still get orders through the internet.',
               _ => 'The till that has been running longest leads, unless the back office has pinned one.',
             },
             style: TextStyle(fontSize: 13, color: theme.hintColor),

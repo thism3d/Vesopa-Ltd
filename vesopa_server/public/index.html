@@ -395,6 +395,7 @@
             <button class="nav" data-view="offices">Offices</button>
             <button class="nav" data-view="licences">Licences &amp; pricing</button>
             <button class="nav" data-view="admin_modules">Modules</button>
+            <button class="nav" data-view="support_staff">Support logins</button>
             <button class="nav" data-view="billing">Billing</button>
             <button class="nav" data-view="backups">Backups</button>
             <button class="nav" data-view="templates">Templates</button>
@@ -1470,11 +1471,14 @@
             <p class="muted small">
               A copy of this venue for training: the same products, screens, prices and tables, with
               none of the sales, customers or gift cards. A trainee's till works against it, so their
-              practice appears on <em>its</em> reports and never touches yours. Switch to it from the
-              <strong>Site</strong> menu to see what they did.
+              practice appears on <em>its</em> reports and never touches yours. Open it with
+              <strong>Open practice venue</strong> to see what they did.
             </p>
             <p class="muted small" id="demo-venue-state">Checking…</p>
             <div class="row gap">
+              <button class="btn primary" id="demo-open" hidden
+                      title="Switch this session to the practice venue. The banner at the top brings you back.">
+                Open practice venue</button>
               <button class="btn" id="demo-refresh"
                       title="Copy this venue's current products, screens and prices into the practice venue">
                 Set up / refresh from live</button>
@@ -5098,6 +5102,37 @@
         <!-- Admin > Modules (src/modules.js): what each module costs, promo
              codes, and every venue against every module with a switch, so
              adding or stopping anything is one click. -->
+        <section id="view-support_staff" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Support logins</h2>
+              <p class="muted small">
+                Vesopa's own technical support. A back office login on this list can open
+                <strong>every company</strong>: after signing in, the Site menu becomes a searchable
+                company list. Changes are made in the company's name but recorded against the support
+                person, and every company they open is listed below.
+              </p>
+            </div>
+          </div>
+          <div class="card panel">
+            <form id="support-add" class="row gap" style="flex-wrap:wrap;align-items:flex-end">
+              <label>Email <input type="email" id="support-email" required placeholder="name@vesopa.com"></label>
+              <label>Name <input type="text" id="support-name" placeholder="Their name"></label>
+              <button class="btn primary" type="submit">Add support login</button>
+            </form>
+            <p class="muted small">The email must be the one they sign in to the back office with.</p>
+          </div>
+          <div class="card"><div class="table-scroll"><table>
+            <thead><tr><th>Name</th><th>Email</th><th>Back office login</th><th>Last opened a company</th><th></th></tr></thead>
+            <tbody id="support-staff-rows"></tbody>
+          </table></div></div>
+          <h3 class="section-title">Companies opened by support</h3>
+          <div class="card"><div class="table-scroll"><table>
+            <thead><tr><th>When</th><th>Who</th><th>Company</th></tr></thead>
+            <tbody id="support-visit-rows"></tbody>
+          </table></div></div>
+        </section>
+
         <section id="view-admin_modules" class="view" hidden>
           <div class="page-head">
             <div>
@@ -5186,9 +5221,11 @@
             <button class="btn primary small" type="submit">Add site</button>
           </form>
           <h3>Tills</h3>
-          <p class="muted small">Every till that has taken a sale, by the computer's name. Give each a name the team uses and put it in its site.</p>
+          <p class="muted small">Every till that has taken a sale, by the computer's name. Give each a name the team uses and put it in its site.
+            Reports call a till by this name, or else by its terminal number (Terminal 1, Vesopa Go 2). Untick
+            <strong>In reports</strong> for a device that only sends orders and takes no money.</p>
           <div class="table-scroll"><table>
-            <thead><tr><th>Computer</th><th>Name</th><th>Site</th><th>Last sale</th><th class="right">Sales, 30 days</th></tr></thead>
+            <thead><tr><th>Computer</th><th>Name</th><th>Site</th><th>In reports</th><th>Last sale</th><th class="right">Sales, 30 days</th></tr></thead>
             <tbody id="sm-tills"></tbody>
           </table></div>
           <p class="small" id="sm-msg" role="status"></p>

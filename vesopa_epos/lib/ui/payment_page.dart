@@ -173,9 +173,14 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   /// Built from the just-settled *local* order, so it works even if the sale
   /// has not yet reached the server — the customer gets their receipt
   /// regardless of the network.
+  /// Gift cards this bill topped up or spent, with what each holds now. Any
+  /// at all and the receipt prints, automatic receipts or not.
+  final _giftReceipt = <String, GiftCardBalance>{};
+
   Future<void> _autoPrintReceipt() async {
     final settings = ref.read(tillSettingsProvider);
-    if (!settings.receiptAutoPrint) return;
+    final gift = _giftReceipt.values.toList();
+    if (!settings.receiptAutoPrint && gift.isEmpty) return;
 
     final printers = await ref.read(printerSettingsProvider.future);
     final printer = printers.receiptPrinter;
@@ -186,7 +191,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       if (mounted) {
         PosMessenger.error(
           context,
-          'Automatic receipts are on, but no receipt printer is set up.',
+          settings.receiptAutoPrint
+              ? 'Automatic receipts are on, but no receipt printer is set up.'
+              : 'No receipt printer is set up for the gift card receipt.',
         );
       }
       return;
@@ -219,6 +226,8 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         order: order,
         lines: lines,
         payments: payments,
+        giftCards: gift,
+        tableName: order.tableNumber == null ? null : ref.read(tableNamerProvider)(order.tableNumber, roomId: order.roomId),
       );
 
       // The venue's own copy, if they asked for one. After the customer's, so
@@ -1958,7 +1967,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         .read(staffSessionProvider.notifier)
         .signOffAfterTable(ref.read(tillSettingsProvider), table);
     if (!signedOff && messenger.mounted) {
-      PosMessenger.success(messenger, 'Table $table saved: ${_money(left)} still to pay.');
+      PosMessenger.success(
+        messenger,
+        '${ref.read(tableNamerProvider)(table, roomId: order.roomId)} saved: ${_money(left)} still to pay.',
+      );
     }
   }
 
@@ -2881,6 +2893,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // Loaded only now, once the money is in: a top-up rung up and then voided
     // never puts anything on the card. Keyed by the order, so a retry after a
     // dropped connection does not load the card twice.
+    _giftReceipt.clear();
     if (!practice) {
       for (final t in topUps) {
         try {
@@ -2889,6 +2902,11 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             amountMinor: t.amountMinor,
             orderId: widget.orderId,
             clerkName: servedBy,
+          );
+          _giftReceipt[t.code] = GiftCardBalance(
+            code: t.code,
+            loadedMinor: t.amountMinor,
+            balanceMinor: card.balanceMinor,
           );
           if (mounted) {
             PosMessenger.success(
@@ -2905,6 +2923,34 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             );
           }
         }
+      }
+    }
+
+    // ---- Gift cards spent on this bill, and what they hold now ----------
+    //
+    // For the receipt, which always prints when a gift card was topped up or
+    // spent (Pontardawe RFC, 2026-11-25). The balance is read after the spend;
+    // a card that cannot be read prints without one rather than holding up
+    // the sale.
+    if (!practice) {
+      final spent = <String, int>{};
+      for (final t in _tender.tenders) {
+        final code = t.reference;
+        if (t.kind != TenderKind.giftCard || code == null || code.isEmpty) continue;
+        spent[code] = (spent[code] ?? 0) + t.amountMinor;
+      }
+      for (final e in spent.entries) {
+        int? balance;
+        try {
+          balance = (await commerce.giftCard(e.key)).balanceMinor;
+        } catch (_) {}
+        final loaded = _giftReceipt[e.key];
+        _giftReceipt[e.key] = GiftCardBalance(
+          code: e.key,
+          loadedMinor: loaded?.loadedMinor ?? 0,
+          spentMinor: e.value,
+          balanceMinor: balance ?? loaded?.balanceMinor,
+        );
       }
     }
 
@@ -3185,6 +3231,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             final check = PayCheckPanel(
               totals: totals,
               tableNumber: order?.tableNumber,
+              tableLabel: ref.watch(tableNamerProvider)(order?.tableNumber, roomId: order?.roomId),
               covers: order?.covers,
               customer: billCustomer,
               // Who the bill is for stops being a choice the moment money has
@@ -3269,6 +3316,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                   children: [
                     _PayHeader(
                       tableNumber: order?.tableNumber,
+                      tableLabel: ref.watch(tableNamerProvider)(order?.tableNumber, roomId: order?.roomId),
                       covers: order?.covers,
                       clerkName: ref.read(servedByProvider),
                       // VOID AND CANCEL ARE NOT HERE ANY MORE WHEN THERE IS A
@@ -3808,6 +3856,7 @@ class _PayBar extends ConsumerWidget {
 class _PayHeader extends StatelessWidget {
   const _PayHeader({
     this.tableNumber,
+    this.tableLabel,
     this.covers,
     this.clerkName,
     this.onVoid,
@@ -3816,6 +3865,7 @@ class _PayHeader extends StatelessWidget {
   });
 
   final int? tableNumber;
+  final String? tableLabel;
   final int? covers;
   final String? clerkName;
 
@@ -3845,7 +3895,7 @@ class _PayHeader extends StatelessWidget {
     final compact = MediaQuery.sizeOf(context).width < 1100;
 
     final facts = <String>[
-      if (tableNumber != null) 'Table $tableNumber',
+      if (tableNumber != null) tableLabel ?? 'Table $tableNumber',
       if (covers != null && covers! > 0) '$covers covers',
       if (clerkName?.isNotEmpty ?? false) clerkName!,
     ];

@@ -35,6 +35,7 @@ class LiveReceipt extends StatelessWidget {
     this.onChangeCustomer,
     this.onRemoveCustomer,
     this.tableNumber,
+    this.tableLabel,
     this.covers,
     this.clerkName,
     this.onTapLine,
@@ -66,6 +67,9 @@ class LiveReceipt extends StatelessWidget {
   final VoidCallback? onRemoveCustomer;
 
   final int? tableNumber;
+
+  /// What the table is called ("Bar 1"); "Table N" when not given.
+  final String? tableLabel;
   final int? covers;
   final String? clerkName;
 
@@ -226,6 +230,7 @@ class LiveReceipt extends StatelessWidget {
                         children: [
                           _Context(
                             tableNumber: tableNumber,
+                            tableLabel: tableLabel,
                             covers: covers,
                             clerkName: clerkName,
                             style: small,
@@ -523,12 +528,16 @@ class _Header extends StatelessWidget {
 class _Context extends StatelessWidget {
   const _Context({
     this.tableNumber,
+    this.tableLabel,
     this.covers,
     this.clerkName,
     this.style,
   });
 
   final int? tableNumber;
+
+  /// What the table is called ("Bar 1"); "Table N" when not given.
+  final String? tableLabel;
   final int? covers;
   final String? clerkName;
   final TextStyle? style;
@@ -536,7 +545,7 @@ class _Context extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bits = <String>[
-      if (tableNumber != null) 'Table $tableNumber',
+      if (tableNumber != null) tableLabel ?? 'Table $tableNumber',
       if (covers != null && covers! > 0) '$covers covers',
       if (clerkName?.isNotEmpty ?? false) clerkName!,
       // No clock. It was rebuilt on every frame to say something the clerk can

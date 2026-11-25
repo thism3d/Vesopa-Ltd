@@ -50,6 +50,78 @@ async function siteScope(db, office, query, alias = '') {
   return { sql: '', params: [], label: null };
 }
 
+/**
+ * Whether a till is left out of the reports' terminal list (2026-11-25), on
+ * bo_till_names. Added on first use.
+ */
+let hiddenColumn = null;
+function ensureHiddenColumn(db) {
+  if (!hiddenColumn) {
+    hiddenColumn = db
+      .query('ALTER TABLE bo_till_names ADD COLUMN hidden TINYINT(1) NOT NULL DEFAULT 0')
+      .then(() => true)
+      .catch((e) => {
+        if (e && (e.code === 'ER_DUP_FIELDNAME' || e.errno === 1060)) return true;
+        hiddenColumn = null;
+        return false;
+      });
+  }
+  return hiddenColumn;
+}
+
+/**
+ * What every till is called in the reports, and whether it is shown there
+ * (Nicky, Pontardawe RFC, 2026-11-24: "Neaten up how we display the terminals
+ * on reporting, If there are 2 terminals It should be just Terminal 1 &
+ * Terminal 2, and an option rename them. Ability to name Vesopa Go Terminals
+ * ... or an option to hide from reporting").
+ *
+ * A sale records its till by the computer's name (epos_orders.terminal), so
+ * that is the key. The name given in Sites (bo_till_names.label) wins;
+ * otherwise the terminal number the till was signed in as (bo_terminals):
+ * "Terminal 1", or "Vesopa Go 2" for a Go device; otherwise the computer's
+ * name as before. Map: computer name -> { label, hidden, suggested }.
+ */
+async function tillLabels(db, office) {
+  const out = new Map();
+  let devices = [];
+  try {
+    [devices] = await db.query(
+      'SELECT kind, terminal_no, name, device_name, revoked_at FROM bo_terminals WHERE office = ?',
+      [office]
+    );
+  } catch (e) {
+    if (!missing(e)) throw e;
+  }
+  const suggest = (raw) => {
+    const match = devices
+      .filter((d) => d.device_name === raw || d.name === raw)
+      .sort((a, b) => (a.revoked_at ? 1 : 0) - (b.revoked_at ? 1 : 0));
+    const d = match[0];
+    if (!d) return null;
+    return d.kind === 'go' ? `Vesopa Go ${d.terminal_no}` : `Terminal ${d.terminal_no}`;
+  };
+  let names = [];
+  try {
+    const withHidden = await ensureHiddenColumn(db);
+    [names] = await db.query(
+      `SELECT terminal, label${withHidden ? ', hidden' : ''} FROM bo_till_names WHERE office = ?`,
+      [office]
+    );
+  } catch (e) {
+    if (!missing(e)) throw e;
+  }
+  const byName = new Map(names.map((n) => [n.terminal, n]));
+  return {
+    of(raw) {
+      if (!raw) return { label: raw, hidden: false, suggested: null };
+      const n = byName.get(raw) || {};
+      const suggested = suggest(raw);
+      return { label: (n.label && String(n.label).trim()) || suggested || raw, hidden: !!Number(n.hidden || 0), suggested };
+    },
+  };
+}
+
 function tillSitesRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
@@ -83,16 +155,22 @@ function tillSitesRoutes({ pool, broadcast, secret }) {
       [office]
     );
     const byName = new Map(names.map((n) => [n.terminal, n]));
+    const labels = await tillLabels(pool, office);
     const tills = new Map();
     for (const s of seen) {
       const n = byName.get(s.terminal) || {};
+      const l = labels.of(s.terminal);
       tills.set(s.terminal, {
         terminal: s.terminal, label: n.label || null, site_id: n.site_id || null,
+        suggested: l.suggested, hidden: l.hidden,
         first_sale: s.first_sale, last_sale: s.last_sale, sales_30d: Number(s.sales_30d) || 0,
       });
     }
     for (const n of names) {
-      if (!tills.has(n.terminal)) tills.set(n.terminal, { terminal: n.terminal, label: n.label, site_id: n.site_id, last_sale: null, sales_30d: 0 });
+      if (!tills.has(n.terminal)) {
+        const l = labels.of(n.terminal);
+        tills.set(n.terminal, { terminal: n.terminal, label: n.label, site_id: n.site_id, suggested: l.suggested, hidden: l.hidden, last_sale: null, sales_30d: 0 });
+      }
     }
     return {
       sites: sites.map((s, i) => ({ ...s, colour: s.colour || COLOURS[i % COLOURS.length] })),
@@ -176,6 +254,13 @@ function tillSitesRoutes({ pool, broadcast, secret }) {
          ON DUPLICATE KEY UPDATE label = VALUES(label), site_id = VALUES(site_id), updated_by = VALUES(updated_by)`,
         [office, terminal, label, siteId, req.user.email || null]
       );
+      // Left out of the reports' terminal list, e.g. a Vesopa Go handset that
+      // only sends orders to tables and takes no money.
+      if (b.hidden !== undefined && (await ensureHiddenColumn(pool))) {
+        await pool.execute('UPDATE bo_till_names SET hidden = ? WHERE office = ? AND terminal = ?', [
+          b.hidden ? 1 : 0, office, terminal,
+        ]);
+      }
       changed(office);
       res.json(await setup(office));
     } catch (e) { next(e); }
@@ -285,4 +370,4 @@ function windowOf(q, db) {
   return { from: `DATE_SUB(CURDATE(), INTERVAL ${days - 1} DAY)`, to: null, label: days === 1 ? 'Today' : `Last ${days} days` };
 }
 
-module.exports = { tillSitesRoutes, siteScope };
+module.exports = { tillSitesRoutes, siteScope, tillLabels };

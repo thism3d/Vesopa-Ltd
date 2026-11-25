@@ -1,0 +1,7 @@
+Version 1.16.59.0 - Keyboard everywhere, gift card receipts, tables by room
+
+Every text box opens the till's keyboard again, including Settings and custom text. Number boxes get the number pad.
+Topping up a gift card or paying with one always prints a receipt showing what the card now holds.
+In a venue with rooms, tables are called by their room (Bar 1, Lounge 1) on the till and the receipt. Table names can repeat in different rooms.
+Two tills now keep their tables in step: an older copy from the cloud no longer replaces a newer one from the other till.
+New in Settings > Local network: Independent, for a till that shares nothing with the others.

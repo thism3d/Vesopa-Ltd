@@ -41,8 +41,10 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
     if (terminal === UNKNOWN_TERMINAL) {
       where += ` AND (${alias}.terminal IS NULL OR ${alias}.terminal = '')`;
     } else if (terminal) {
-      where += ` AND ${alias}.terminal = ?`;
-      params.push(terminal);
+      where += Array.isArray(terminal)
+        ? ` AND ${alias}.terminal IN (${terminal.map(() => '?').join(', ')})`
+        : ` AND ${alias}.terminal = ?`;
+      params.push(...[].concat(terminal));
     }
     return { where, params };
   }
