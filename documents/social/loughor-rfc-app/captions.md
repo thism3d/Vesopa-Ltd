@@ -20,18 +20,13 @@ Get it on Google Play: https://play.google.com/store/apps/details?id=com.vesopae
 
 ## Instagram (`instagram-1080x1350.jpg`)
 
-Loughor RFC, in your pocket 💙💛
+Loughor RFC, in your pocket.
 
-The Blues (est. 1882) now have their own official app. Your members' card
-on your phone and your watch: show the QR or tap at the bar, and your
-discount is on. Club news and fixtures arrive as notifications.
+The Blues now have their own app: the members' card on your phone, the
+discount at the bar, and club news and fixtures as they happen. Built by
+Vesopa Software.
 
-Built by Vesopa Software for Loughor RFC.
-
-📲 Search "Loughor RFC" on Google Play. Link in bio.
-
-#LoughorRFC #TheBlues #Loughor #WelshRugby #RugbyUnion #CommunityRugby
-#Swansea #ClubApp #MembersCard #Vesopa #VesopaEPOS #SmallBusinessWales
+Search "Loughor RFC" on Google Play, or follow the link in our bio.
 
 (Instagram does not make links in captions clickable: put the Play link in
 the bio or a Story link sticker.)
