@@ -10,23 +10,13 @@ Link: https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc
 
 ## Facebook (`facebook-1080x1080.jpg`)
 
-Tap. Show. Save. 🏉
+Loughor RFC's members' card is now on members' phones.
 
-Loughor RFC's members' card now lives on members' phones. Show the QR code or
-tap your phone at the bar, and the members' discount goes on every time. No
-card to carry, nothing to lose.
+Tap or show it at the bar and the members' discount is applied, along with
+club news and fixtures, all in the club's own app. Proud to have built it
+for the Blues.
 
-The official Loughor RFC app, built by Vesopa Software:
-✅ Members' card with QR, plus NFC tap on Android and Wear OS
-✅ Apple and Google Wallet passes
-✅ Points, visits and savings, linked straight to the club's Vesopa till
-✅ Club news, fixtures and offers as notifications
-
-Get it on Google Play 👉 https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc
-
-Run a club, bar or venue? We'll build yours. vesopaepos.com
-
-#LoughorRFC #TheBlues #WelshRugby #RugbyClub #ClubApp #Vesopa #EPOS
+Get it on Google Play: https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc
 
 ## Instagram (`instagram-1080x1350.jpg`)
 
