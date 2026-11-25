@@ -443,6 +443,9 @@ app.use('/api/admin', adminLicenceRoutes({ pool }));
 // admin.vesopa.com's live overview: every venue's devices, takings, overdue
 // invoices and holds in one read. See src/admin_overview.js.
 app.use('/api/admin', adminOverviewRoutes({ pool }));
+// Vesopa AI for the owner of Vesopa (admin.vesopa.com/ai): the whole business,
+// read-only, behind the same admin gate. See src/owner_ai.js.
+app.use('/api/admin', require('./owner_ai').ownerAiRoutes({ pool, secret: JWT_SECRET }));
 // Pausing and removing a venue's apps, modules and Loyalty app, with a grace
 // day (admin.vesopa.com, 2026-10-05). See src/admin_holds.js.
 app.use('/api/admin', adminHoldRoutes({
@@ -2058,15 +2061,15 @@ app.post('/till/floor/tables', requireTerminal(JWT_SECRET), async (req, res, nex
       return res.status(400).json({ error: 'Give the table a number.' });
     }
 
-    // A name has to be unique across the venue and not merely within the room:
-    // a runner carrying food to "Window" is not helped by being told there are
-    // two of them in different rooms.
+    // A name is unique within its room (2026-11-25): the tills call a table
+    // by its room as well, so "Window" in the Bar and in the Lounge are two
+    // tables nobody mixes up.
     const nm = body.name == null ? '' : String(body.name).trim();
     const name = !nm || /^(null|undefined)$/i.test(nm) ? null : nm.slice(0, 60);
     if (name) {
       const [[clash]] = await pool.query(
-        'SELECT id FROM floor_tables WHERE office_id = ? AND LOWER(name) = LOWER(?)',
-        [officeId, name]
+        'SELECT id FROM floor_tables WHERE office_id = ? AND room_id = ? AND LOWER(name) = LOWER(?)',
+        [officeId, roomId, name]
       );
       if (clash) {
         return res.status(409).json({

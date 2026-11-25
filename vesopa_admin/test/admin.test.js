@@ -22,6 +22,18 @@ const GKEY = 'g'.repeat(40);
 const roles = require('../src/roles');
 const catalogue = require('../src/catalogue');
 
+test('roles: Vesopa AI is for the owner and the Vesopa AI role only', () => {
+  const owner = roles.principal({ email: 'info@vesopasoftware.com', ownerEmail: 'info@vesopasoftware.com' });
+  const ai = roles.principal({ email: 'ana@x.com', row: { role: 'insights', status: 'active', apps: '*' }, ownerEmail: 'info@vesopasoftware.com' });
+  assert.ok(roles.can(owner, 'insights.view'));
+  assert.ok(roles.can(ai, 'insights.view'));
+  assert.ok(!roles.can(ai, 'licences.view'), 'nothing else in the console');
+  for (const r of ['support', 'billing', 'content', 'readonly']) {
+    const who = roles.principal({ email: 'x@x.com', row: { role: r, status: 'active', apps: '*' }, ownerEmail: 'info@vesopasoftware.com' });
+    assert.ok(!roles.can(who, 'insights.view'), r);
+  }
+});
+
 test('roles: a role is limited to its apps, and the owner is everything', () => {
   const owner = roles.principal({ email: 'info@vesopasoftware.com', row: null, ownerEmail: 'info@vesopasoftware.com' });
   assert.ok(owner.isOwner && roles.can(owner, 'admins.manage') && roles.can(owner, 'licences.sell', 'gift'));
@@ -56,14 +68,15 @@ function listen(app) {
   return new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
 }
 
-function call(server, method, url, { cookie, form } = {}) {
+function call(server, method, url, { cookie, form, json, headers: extra } = {}) {
   return new Promise((resolve, reject) => {
-    const body = form ? new URLSearchParams(form).toString() : null;
+    const body = form ? new URLSearchParams(form).toString() : json ? JSON.stringify(json) : null;
     const req = http.request({
       host: '127.0.0.1', port: server.address().port, method, path: url,
       headers: {
         ...(cookie ? { Cookie: cookie } : {}),
-        ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } : {}),
+        ...(body ? { 'Content-Type': json ? 'application/json' : 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } : {}),
+        ...(extra || {}),
       },
     }, (res) => {
       let data = '';
@@ -116,6 +129,16 @@ test('admin.vesopa.com end to end', async (t) => {
     totals: { venues: 1, active: 1, paused: 0, devices: 2, online: 0, today_minor: 45600, today_orders: 12, overdue_invoices: 1, overdue_minor: 4900, holds_in_grace: Object.values(holds).filter((h) => !h.stopped).length, holds_stopped: 0 },
     venues: [venue()],
   }));
+  // Vesopa AI (owner_ai.js): what the page asks the back office for.
+  eposApp.get('/api/admin/insights/briefing', (_req, res) => res.json({
+    greeting: 'Good morning', name: 'info', headline: 'Every venue together took £456.00 from 12 sales.',
+    ai: null, ai_status: 'off', today: { label: 'Today so far', compare: 'Last Saturday', cards: [] },
+    income: { headline: 'Monthly recurring revenue is £29.00.', cards: [] }, signups: { headline: '0 new venues' },
+    alerts: [{ tone: 'bad', title: '£49.00 overdue from 1 venue', detail: 'The Arms £49.00.' }], actions: [],
+    meta: { period: { key: 'today', label: 'Today so far' }, site: { label: 'All venues (1)' }, definitions: [], freshness: {}, records: { source: 'venues', period: 'today' } },
+  }));
+  eposApp.post('/api/admin/insights/ask', (req, res) => res.json({ intent: req.body.intent || 'revenue', title: 'Vesopa income', headline: 'Monthly recurring revenue is £29.00.', why: [], cards: [], meta: { read_only: true }, asked: req.body }));
+  eposApp.get('/api/admin/insights/records', (req, res) => res.json({ source: req.query.source, title: 'Invoices', columns: [], rows: [] }));
   eposApp.get('/api/admin/offices/7/licence-limits', (_req, res) => res.json({ limits, keys: [] }));
   eposApp.get('/api/admin/licences', (_req, res) => res.json({ venues: [{ id: 7, products: [{ kind: 'till', in_use: 2 }] }] }));
   eposApp.get('/api/admin/offices/7/modules', (_req, res) => res.json([{ key: 'memberships', allowed: false, charge_minor: 2900 }]));
@@ -267,6 +290,46 @@ test('admin.vesopa.com end to end', async (t) => {
       const mia = await signIn('mia@vesopa.com');
       const m = await call(server, 'POST', '/admins', { cookie: mia.cookie, form: { _csrf: mia.csrf, email: 'x@vesopa.com', role: 'owner', apps: '*' } });
       assert.match(flashOf(m).text, /Only the owner can make another Owner/);
+    });
+
+    await t.test('Vesopa AI: the owner, and only the people the owner invites', async () => {
+      // The owner opens it; the menu offers it.
+      let r = await call(server, 'GET', '/ai', { cookie: owner.cookie });
+      assert.strictEqual(r.status, 200, r.text.slice(0, 200));
+      assert.match(r.text, /href="\/ai"[^>]*>Vesopa AI/);
+      r = await call(server, 'GET', '/ai/api/briefing', { cookie: owner.cookie });
+      assert.strictEqual(JSON.parse(r.text).headline, 'Every venue together took £456.00 from 12 sales.');
+      // A question needs the page's token.
+      r = await call(server, 'POST', '/ai/api/ask', { cookie: owner.cookie, json: { question: 'Who owes us money?' } });
+      assert.strictEqual(r.status, 403);
+      r = await call(server, 'POST', '/ai/api/ask', { cookie: owner.cookie, json: { question: 'Who owes us money?' }, headers: { 'X-CSRF-Token': owner.csrf } });
+      assert.strictEqual(r.status, 200);
+      const sent = asked.filter((a) => a.url === '/api/admin/insights/ask').pop();
+      assert.strictEqual(sent.body.question, 'Who owes us money?');
+      assert.strictEqual(sent.as, 'info@vesopasoftware.com', 'the back office is told who asked');
+      // The owner invites somebody to Vesopa AI by email.
+      r = await call(server, 'POST', '/admins', { cookie: owner.cookie, form: { _csrf: owner.csrf, email: 'Ana@Vesopa.com', role: 'insights', apps: '*' } });
+      assert.match(flashOf(r).text, /ana@vesopa\.com can sign in as Vesopa AI/);
+      const ana = await signIn('ana@vesopa.com');
+      r = await call(server, 'GET', '/', { cookie: ana.cookie });
+      assert.deepStrictEqual([r.status, r.headers.location], [303, '/ai'], 'lands on Vesopa AI');
+      r = await call(server, 'GET', '/ai', { cookie: ana.cookie });
+      assert.strictEqual(r.status, 200);
+      assert.doesNotMatch(r.text, />Invite people</, 'only the owner invites');
+      r = await call(server, 'POST', '/ai/api/ask', { cookie: ana.cookie, json: { intent: 'devices' }, headers: { 'X-CSRF-Token': ana.csrf } });
+      assert.strictEqual(r.status, 200, 'sees the same as the owner');
+      r = await call(server, 'GET', '/venues', { cookie: ana.cookie });
+      assert.strictEqual(r.status, 403, 'and nothing else in the console');
+      // Somebody with another role does not see it.
+      const hal = await signIn('hal@vesopa.com');
+      r = await call(server, 'GET', '/ai', { cookie: hal.cookie });
+      assert.strictEqual(r.status, 403);
+      r = await call(server, 'GET', '/ai/api/briefing', { cookie: hal.cookie });
+      assert.strictEqual(r.status, 403);
+      // Suspended: gone at once.
+      await db.run("UPDATE adm_admins SET status = 'suspended' WHERE email = 'ana@vesopa.com'");
+      r = await call(server, 'GET', '/ai/api/briefing', { cookie: ana.cookie });
+      assert.notStrictEqual(r.status, 200);
     });
 
     await t.test('the daily summary goes once a day, after eight', async () => {

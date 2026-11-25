@@ -86,10 +86,12 @@ RemoteBill _remote({
   int table = 6,
   int total = 1250,
   List<Map<String, dynamic>>? lines,
+  int? changedAt,
 }) => RemoteBill(
   id: id,
   status: 'parked',
   rev: 1,
+  changedAt: changedAt,
   terminal: terminal,
   tableNumber: table,
   totalMinor: total,
@@ -282,6 +284,30 @@ void main() {
       expect(lines, hasLength(2), reason: 'replaced, not appended');
     });
 
+    // Pontardawe RFC, 2026-11-24: the two tills' tables "weren't matching ...
+    // a while later they were back in sync". The cloud's copy of a table can be
+    // a change behind the one already here.
+    test('an older copy of a table never replaces a newer one', () async {
+      terminals.feed = BillFeed(rev: 4, changed: [_remote(total: 1750, changedAt: 2000)]);
+      await sync.pull();
+      terminals.feed = BillFeed(rev: 5, changed: [_remote(total: 1250, changedAt: 1000)]);
+      await sync.pull();
+      expect((await orders.orderOnce('other-1'))!.totalMinor, 1750);
+
+      terminals.feed = BillFeed(rev: 6, changed: [_remote(total: 2250, changedAt: 3000)]);
+      await sync.pull();
+      expect((await orders.orderOnce('other-1'))!.totalMinor, 2250, reason: 'a newer one does');
+    });
+
+    test('a table that moved to another till is not judged by the old till\'s clock', () async {
+      terminals.feed = BillFeed(rev: 4, changed: [_remote(terminal: 'Door', total: 1750, changedAt: 9000)]);
+      await sync.pull();
+      terminals.feed = BillFeed(rev: 5, changed: [_remote(terminal: 'Lounge', total: 2000, changedAt: 100)]);
+      await sync.pull();
+      expect((await orders.orderOnce('other-1'))!.totalMinor, 2000);
+      expect((await orders.orderOnce('other-1'))!.heldBy, 'Lounge');
+    });
+
     test('a settled table is taken off the plan', () async {
       terminals.feed = BillFeed(rev: 4, changed: [_remote()]);
       await sync.pull();
@@ -321,6 +347,55 @@ void main() {
         isTrue,
         reason: 'it is still a shared plan, it is just behind',
       );
+    });
+  });
+
+  // Owner, 2026-11-25: "allow a way to turn off Master and Slave so we can turn
+  // the tills to be independent on venues that require no sharing".
+  group('a till set to Independent', () {
+    late bool alone;
+    late BillSync solo;
+    setUp(() {
+      alone = false;
+      solo = BillSync(db, terminals, independent: () => alone);
+    });
+    tearDown(() => solo.dispose());
+
+    test('takes its tables off the others and theirs off this one', () async {
+      final mine = await billWithBeer();
+      await solo.pushAll();
+      terminals.feed = BillFeed(rev: 4, changed: [_remote()]);
+      await solo.pull();
+      expect(await orders.orderOnce('other-1'), isNotNull);
+
+      alone = true;
+      await solo.modeChanged();
+      expect(terminals.retired, contains(mine), reason: 'off the venue\'s plan');
+      expect(await orders.orderOnce('other-1'), isNull, reason: 'their table is not shown here');
+      expect(await orders.orderOnce(mine), isNotNull, reason: 'its own table stays');
+      expect(solo.currentStatus.independent, isTrue);
+    });
+
+    test('shares nothing while it stands alone', () async {
+      alone = true;
+      await solo.modeChanged();
+      await billWithBeer();
+      await solo.pushAll();
+      terminals.feed = BillFeed(rev: 4, changed: [_remote()]);
+      await solo.pull();
+      expect(terminals.pushed, isEmpty);
+      expect(await orders.orderOnce('other-1'), isNull);
+    });
+
+    test('and shares everything again when set back', () async {
+      alone = true;
+      await solo.modeChanged();
+      final mine = await billWithBeer();
+      alone = false;
+      terminals.feed = BillFeed(rev: 4, changed: [_remote()]);
+      await solo.modeChanged();
+      expect(terminals.pushed.map((p) => p['id']), contains(mine));
+      expect(await orders.orderOnce('other-1'), isNotNull);
     });
   });
 

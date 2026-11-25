@@ -9,6 +9,7 @@ import 'mix_match_engine.dart';
 import 'modifier_layout.dart';
 import 'price_levels.dart';
 import 'pricing_engine.dart';
+import 'split_portions.dart' show encodeLineIds;
 import 'commerce.dart';
 
 /// Owns the sale lifecycle. Every write lands in the local database first and
@@ -1312,6 +1313,7 @@ class OrderRepository {
     int gratuityMinor = 0,
     String? entryMode,
     int cashbackMinor = 0,
+    Iterable<String> lineIds = const [],
   }) async {
     await _db.transaction(() async {
       await _db.into(_db.payments).insert(
@@ -1329,6 +1331,9 @@ class OrderRepository {
               gratuityMinor: Value(gratuityMinor),
               entryMode: Value(entryMode),
               cashbackMinor: Value(cashbackMinor),
+              // The items this share of a split paid for, so the split screen
+              // leaves them out when the bill is opened again.
+              lineIds: Value(encodeLineIds(lineIds)),
             ),
           );
 

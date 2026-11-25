@@ -111,10 +111,15 @@ function terminalRoutes({ pool, broadcast, secret }) {
         [TOMBSTONE_DAYS]
       );
 
+      // When each bill last changed on the till that holds it, so a till that
+      // already has a newer copy over the local link does not take an older
+      // one back from here (Pontardawe RFC, 2026-11-24: the two tills' tables
+      // "weren't matching ... a while later they were back in sync").
+      const changed = await ensureChangedColumn();
       const [bills] = await pool.query(
         `SELECT id, terminal, table_number, room_id, covers, staff_id,
                 clerk_name, status, payload, total_minor, line_count, rev,
-                claimed_at, updated_at
+                claimed_at, updated_at${changed ? ', client_changed_at' : ''}
            FROM epos_open_bills
           WHERE office = ? AND rev > ?
           ORDER BY rev`,
@@ -138,9 +143,10 @@ function terminalRoutes({ pool, broadcast, secret }) {
         // from the rows, so a poll that happened to see nothing still moves
         // forward and a terminal does not re-read the same page for ever.
         rev: head ? Number(head.rev) : 0,
-        bills: bills.map((b) => ({
+        bills: bills.map(({ client_changed_at: changedAt, ...b }) => ({
           ...b,
           rev: Number(b.rev),
+          changed_at: changedAt == null ? null : Number(changedAt),
           // Parsed here rather than by every caller. A payload that will not
           // parse is not allowed to take the whole feed down with it -- the
           // bill is served with a null basket and the terminal shows it as a
@@ -292,7 +298,7 @@ function terminalRoutes({ pool, broadcast, secret }) {
   router.delete('/till/open-bills/:id', terminal, async (req, res, next) => {
     const office = req.office;
     const id = req.params.id;
-    const reason = ['settled', 'cancelled', 'merged'].includes(req.query.reason)
+    const reason = ['settled', 'cancelled', 'merged', 'independent'].includes(req.query.reason)
       ? req.query.reason
       : 'settled';
 

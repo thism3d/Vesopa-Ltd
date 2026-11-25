@@ -1,0 +1,129 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<%
+const tone = (s) => ({ success: 'ok', merged: 'ok', published: 'ok', completed: 'ok', ok: 'ok',
+  failure: 'bad', timed_out: 'bad', startup_failure: 'bad', cancelled: 'warn', closed: '',
+  open: 'info', draft: '', in_progress: 'info', queued: 'info', forced: 'warn', deleted: 'warn' })[s] ?? '';
+const when = (d) => new Date(d).toISOString();
+%>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow"><span class="eyebrow">Webhooks from GitHub, as they arrive</span><h1>GitHub</h1></div>
+    <span class="pill <%= last ? 'ok' : 'warn' %>"><%= last ? 'Receiving' : 'Nothing received yet' %></span>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><strong>Set up on GitHub</strong></div>
+    <p class="muted" style="font-size:.88rem">Repository (or organisation) &rsaquo; Settings &rsaquo; Webhooks &rsaquo; Add webhook, with exactly these:</p>
+    <div class="field"><label>Payload URL</label>
+      <div class="btn-row"><input readonly value="<%= payloadUrl %>" id="gh-url" style="flex:1">
+        <button class="btn ghost small" type="button" data-copy="#gh-url">Copy</button></div></div>
+    <div class="field"><label>Content type</label><input readonly value="application/json"></div>
+    <div class="field"><label>Secret</label>
+      <% if (secret) { %>
+        <div class="btn-row"><input readonly type="password" value="<%= secret %>" id="gh-secret" style="flex:1">
+          <button class="btn ghost small" type="button" data-reveal="#gh-secret">Show</button>
+          <button class="btn ghost small" type="button" data-copy="#gh-secret">Copy</button></div>
+        <p class="muted" style="font-size:.8rem;margin-top:.3rem"><%= fromEnv ? "Set in the server's environment (GITHUB_WEBHOOK_SECRET)." : "Made here and kept in the site's database. Only admins see it." %></p>
+      <% } else { %>
+        <p class="muted" style="font-size:.88rem">No secret yet: every delivery is refused until there is one. Make it here, then paste it into GitHub.</p>
+      <% } %>
+      <% if (!fromEnv) { %>
+        <form method="post" action="/portal/admin/github/secret" style="margin-top:.5rem"
+              <% if (secret) { %>onsubmit="return confirm('Make a new secret? GitHub\'s deliveries are refused until the new one is pasted into the webhook.')"<% } %>>
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn small <%= secret ? 'ghost' : '' %>" type="submit"><%= secret ? 'Make a new secret' : 'Make the secret' %></button>
+        </form>
+      <% } %>
+    </div>
+    <p class="muted" style="font-size:.85rem">SSL verification: <strong>Enable</strong>. Events: <strong>Send me everything</strong> (or at least Pushes, Pull requests, Workflow runs and Releases). GitHub sends a ping first; it shows below as “Webhook connected”.</p>
+    <p class="muted" style="font-size:.85rem">A failed or timed-out workflow run emails <strong><%= mailAdmin %></strong> and notifies every admin here; a release or a pull request opened or merged notifies.</p>
+  </div>
+
+  <div class="grid g3" style="margin-bottom:1rem">
+    <div class="stat <%= runs.some(r => ['failure','timed_out','startup_failure'].includes(r.state)) ? 'warn' : '' %>">
+      <b><%= runs.filter(r => ['failure','timed_out','startup_failure'].includes(r.state)).length %></b><span>Workflows failing now</span></div>
+    <div class="stat"><b><%= prs.length %></b><span>Open pull requests</span></div>
+    <div class="stat plain"><b><%= recent.length %></b><span>Recent events</span></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><strong>Workflows: latest result</strong></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Workflow</th><th>Repository</th><th>Branch</th><th>Result</th><th>When</th></tr></thead>
+      <tbody>
+        <% if (!runs.length) { %><tr><td colspan="5" class="t-empty">No finished workflow runs yet.</td></tr><% } %>
+        <% for (const r of runs) { %>
+          <tr>
+            <td><% if (r.url) { %><a href="<%= r.url %>" target="_blank" rel="noopener"><%= r.title %></a><% } else { %><%= r.title %><% } %></td>
+            <td class="muted"><%= r.repo %></td>
+            <td class="muted"><%= r.ref || '—' %></td>
+            <td><span class="pill <%= tone(r.state) %>"><%= (r.state || '').replace('_', ' ') %></span></td>
+            <td><time datetime="<%= when(r.received_at) %>"></time></td>
+          </tr>
+        <% } %>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="grid g2">
+    <div class="panel">
+      <div class="panel-head"><strong>Open pull requests</strong></div>
+      <% if (!prs.length) { %><p class="t-empty">None open.</p><% } %>
+      <% for (const p of prs) { %>
+        <p style="margin:.3rem 0"><a href="<%= p.url %>" target="_blank" rel="noopener"><%= p.title %></a>
+          <span class="pill <%= tone(p.state) %>"><%= p.state %></span>
+          <span class="muted" style="font-size:.8rem"><%= p.repo %> · <%= p.actor %></span></p>
+      <% } %>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><strong>Releases</strong></div>
+      <% if (!releases.length) { %><p class="t-empty">No releases published yet.</p><% } %>
+      <% for (const r of releases) { %>
+        <p style="margin:.3rem 0"><a href="<%= r.url %>" target="_blank" rel="noopener"><%= r.title %></a>
+          <span class="muted" style="font-size:.8rem"><%= r.repo %> · <time datetime="<%= when(r.received_at) %>"></time></span></p>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><strong>Everything, newest first</strong><span class="spacer"></span>
+      <span class="muted" id="gh-new" hidden style="font-size:.85rem">New events — <a href="/portal/admin/github">refresh</a></span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Event</th><th>What</th><th>Repository</th><th>By</th><th>Outcome</th><th>When</th></tr></thead>
+      <tbody>
+        <% if (!recent.length) { %><tr><td colspan="6" class="t-empty">Nothing has arrived. Add the webhook on GitHub with the details above.</td></tr><% } %>
+        <% for (const e of recent) { %>
+          <tr>
+            <td class="muted"><%= e.event.replace(/_/g, ' ') %><%= e.action ? ' · ' + e.action : '' %></td>
+            <td><% if (e.url) { %><a href="<%= e.url %>" target="_blank" rel="noopener"><%= e.title %></a><% } else { %><%= e.title %><% } %></td>
+            <td class="muted"><%= e.repo || '—' %><%= e.ref ? ' · ' + e.ref : '' %></td>
+            <td class="muted"><%= e.actor || '—' %></td>
+            <td><% if (e.state) { %><span class="pill <%= tone(e.state) %>"><%= e.state.replace('_', ' ') %></span><% } %></td>
+            <td><time datetime="<%= when(e.received_at) %>"></time></td>
+          </tr>
+        <% } %>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+<script>
+  document.addEventListener("click", (e) => {
+    const c = e.target.closest("[data-copy]");
+    if (c) {
+      const el = document.querySelector(c.dataset.copy);
+      navigator.clipboard?.writeText(el.value).then(() => { c.textContent = "Copied"; setTimeout(() => (c.textContent = "Copy"), 1500); });
+    }
+    const r = e.target.closest("[data-reveal]");
+    if (r) {
+      const el = document.querySelector(r.dataset.reveal);
+      el.type = el.type === "password" ? "text" : "password";
+      r.textContent = el.type === "password" ? "Show" : "Hide";
+    }
+  });
+  // New deliveries arrive over the portal's live connection.
+  window.addEventListener("load", () => window.VesopaLive?.on("github", () => {
+    document.getElementById("gh-new").hidden = false;
+  }));
+</script>
+<%- include("../partials/foot") %>

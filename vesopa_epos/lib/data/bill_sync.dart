@@ -48,7 +48,11 @@ import 'terminal_service.dart';
 
 /// Whether the plan on screen can be trusted.
 class BillSyncStatus {
-  const BillSyncStatus({this.sharing = false, this.stale = false});
+  const BillSyncStatus({this.sharing = false, this.stale = false, this.independent = false});
+
+  /// Set to stand alone (Settings > Local network > Independent): the plan is
+  /// this till's own tables, by choice.
+  final bool independent;
 
   /// True once this terminal has successfully read the venue's feed at least
   /// once. False on a till that is not commissioned for it, and on one that has
@@ -65,7 +69,17 @@ class BillSyncStatus {
 
 /// Pushes this terminal's open bills to the venue and mirrors everyone else's.
 class BillSync {
-  BillSync(this._db, this._terminals);
+  BillSync(this._db, this._terminals, {bool Function()? independent})
+      : _independent = independent ?? (() => LanService.instance.independent);
+
+  /// Whether this till is set to stand alone (owner, 2026-11-25: "allow a way
+  /// to turn off Master and Slave so we can turn the tills to be independent
+  /// on venues that require no sharing"). Then nothing is shared: its tables
+  /// are not sent anywhere and no other till's are shown.
+  final bool Function() _independent;
+  bool get _alone => _independent();
+  bool _wentAlone = false;
+  StreamSubscription<void>? _modeWatch;
 
   final AppDatabase _db;
   final TerminalService _terminals;
@@ -123,6 +137,8 @@ class BillSync {
 
   void start() {
     if (!_terminals.canShare) return;
+    _modeWatch = LanService.instance.changes.listen((_) => unawaited(modeChanged()));
+    unawaited(modeChanged());
 
     // The local link: other tills' bills the moment they change, whatever the
     // internet is doing; ours again whenever there is a new main till.
@@ -156,8 +172,45 @@ class BillSync {
     });
   }
 
+  /// The till was set to stand alone, or back to sharing.
+  ///
+  /// Going alone takes this till's tables off the other tills' plans (retired
+  /// on the venue's list, as a settled table is) and the other tills' tables
+  /// off this one. Coming back shares everything again from the start.
+  Future<void> modeChanged() async {
+    if (_disposed) return;
+    if (_alone && !_wentAlone) {
+      _wentAlone = true;
+      _emit(const BillSyncStatus(independent: true));
+      final mine = {
+        ..._sent.keys,
+        for (final row in await _liveQuery().get()) row.readTable(_db.orders).id,
+      };
+      for (final id in mine) {
+        await _terminals.retireBill(id, reason: 'independent');
+      }
+      _sent.clear();
+      _lanSent.clear();
+      final mirrors = await (_db.select(_db.orders)
+            ..where((o) => o.heldBy.isNotNull() & o.status.isIn(['open', 'parked'])))
+          .get();
+      for (final m in mirrors) {
+        await _forget(m.id);
+      }
+    } else if (!_alone && _wentAlone) {
+      _wentAlone = false;
+      _sent.clear();
+      _lanSent.clear();
+      _cursor = 0;
+      _emit(BillSyncStatus.idle);
+      await pushAll();
+      await pull();
+    }
+  }
+
   Future<void> dispose() async {
     _disposed = true;
+    await _modeWatch?.cancel();
     _poll?.cancel();
     await _watch?.cancel();
     await _status.close();
@@ -185,7 +238,7 @@ class BillSync {
 
   /// Send anything of ours that has changed, and retire anything that has gone.
   Future<void> pushAll() async {
-    if (_disposed || !_terminals.canShare || _busy) return;
+    if (_disposed || !_terminals.canShare || _busy || _alone) return;
     _busy = true;
     try {
       final rows = await _liveQuery().get();
@@ -256,7 +309,7 @@ class BillSync {
   /// network call in the way. Runs again straight after if anything changed
   /// while it was running, so nothing waits for the next tick.
   Future<void> _lanPass() async {
-    if (_disposed || !_terminals.canShare) return;
+    if (_disposed || !_terminals.canShare || _alone) return;
     if (_lanBusy) {
       _lanAgain = true;
       return;
@@ -373,6 +426,7 @@ class BillSync {
               'cashback_minor': p.cashbackMinor,
               'gratuity_minor': p.gratuityMinor,
               'entry_mode': p.entryMode,
+              'line_ids': p.lineIds,
             },
         ],
     };
@@ -384,7 +438,7 @@ class BillSync {
 
   /// Ask the venue what has changed and mirror it locally.
   Future<void> pull() async {
-    if (_disposed || !_terminals.canShare) return;
+    if (_disposed || !_terminals.canShare || _alone) return;
     final feed = await _terminals.pullBills(since: _cursor);
     _cloudDown = feed == null;
     if (feed == null) {
@@ -396,7 +450,7 @@ class BillSync {
     }
 
     for (final bill in feed.changed) {
-      await _mirror(bill);
+      await _mirror(bill, changedAt: bill.changedAt);
     }
     for (final id in feed.removed) {
       await _forget(id);
@@ -446,8 +500,29 @@ class BillSync {
       return;
     }
 
+    // ANOTHER TILL'S, and older than the copy already here. The local link
+    // brings a change the moment it is made; the cloud's copy of the same bill
+    // can arrive afterwards and be a change behind, and writing it put the
+    // table back the way it was until the next change came round (Pontardawe
+    // RFC, 2026-11-24: the two tills' tables "weren't matching ... a while
+    // later they were back in sync").
+    // Compared only against the same till's own clock: a bill that has moved
+    // to another till is measured afresh, so a till whose clock runs behind
+    // is never shut out of a table it now holds.
+    final have = _mirrorChangedAt[bill.id];
+    if (changedAt != null && have != null && have.terminal == bill.terminal && changedAt < have.at) return;
+
     await _write(bill, heldBy: bill.terminal, over: false);
+    if (changedAt != null) {
+      _mirrorChangedAt[bill.id] = (terminal: bill.terminal, at: changedAt);
+    } else {
+      _mirrorChangedAt.remove(bill.id);
+    }
   }
+
+  /// When each bill mirrored from another till last changed, as last written,
+  /// and which till said so.
+  final _mirrorChangedAt = <String, ({String? terminal, int at})>{};
 
   /// The write itself, shared by the feed and by a claim.
   ///
@@ -544,6 +619,7 @@ class BillSync {
                 cashbackMinor: Value(_int(p['cashback_minor'])),
                 gratuityMinor: Value(_int(p['gratuity_minor'])),
                 entryMode: Value(p['entry_mode'] as String?),
+                lineIds: Value(p['line_ids'] as String?),
               ),
             );
       }
@@ -557,11 +633,15 @@ class BillSync {
   /// own retire and our own push, and losing a live bill to it would be
   /// unrecoverable at a counter.
   Future<void> _forget(String id) async {
+    _mirrorChangedAt.remove(id);
     await _db.transaction(() async {
       final existing =
           await (_db.select(_db.orders)..where((o) => o.id.equals(id)))
               .getSingleOrNull();
       if (existing == null || existing.heldBy == null) return;
+      // The copy of its payments goes with it (written by _write), or the
+      // order could not be deleted under them.
+      await (_db.delete(_db.payments)..where((p) => p.orderId.equals(id))).go();
       await (_db.delete(_db.orderLines)..where((l) => l.orderId.equals(id)))
           .go();
       await (_db.delete(_db.orders)..where((o) => o.id.equals(id))).go();
@@ -579,7 +659,7 @@ class BillSync {
 
   /// Another till's bill, or its retraction, over the venue's own network.
   Future<void> _onLan(LanMessage m) async {
-    if (_disposed) return;
+    if (_disposed || _alone) return;
     final id = m.key;
     if (id == null) return;
     final d = m.data;
@@ -676,6 +756,7 @@ class BillSync {
       }
     }
     _changedAt[id] = LanService.instance.now();
+    _mirrorChangedAt.remove(id);
     // Written from the server's answer rather than assumed, and with heldBy
     // null: the server has just moved the bill to this terminal, so this is now
     // ours to ring up on and ours to settle.

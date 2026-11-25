@@ -92,6 +92,16 @@ def main():
     stage = pathlib.Path(tempfile.mkdtemp(prefix="pins-"))
     (stage / "zz_rel.js").write_text(READ.replace("%APPS%", repr(APPS).replace("'", '"')), encoding="utf-8")
     (stage / "zz_pin.js").write_text(PIN.replace("%CHECK%", "true" if check else "false").replace("%VENUES%", str(AUTO_VENUES)).replace("%WHEN%", '{"mode":"now","force":true}' if "--force" in sys.argv else ('{"mode":"now"}' if "--now" in sys.argv else '{}')), encoding="utf-8")
+    # --stage DIR: only write the two scripts there, for the Back office -
+    # patch workflow to copy and run with its own SSH login (owner,
+    # 2026-11-22: "Force update the software versions for Pontardawe RFC").
+    if "--stage" in sys.argv:
+        out = pathlib.Path(sys.argv[sys.argv.index("--stage") + 1])
+        out.mkdir(parents=True, exist_ok=True)
+        for name in ("zz_rel.js", "zz_pin.js"):
+            (out / name).write_text((stage / name).read_text(encoding="utf-8"), encoding="utf-8")
+        print(f"staged for venues {AUTO_VENUES}: {', '.join(APPS)} ({'force' if '--force' in sys.argv else 'now' if '--now' in sys.argv else 'ask'})")
+        return
     print(f"▶ updating venues {AUTO_VENUES} to the newest versions")
     ssh("put", str(stage), "/tmp/.pinstage")
     ssh("run", f"cp /tmp/.pinstage/zz_rel.js {ADMIN}/ && cp /tmp/.pinstage/zz_pin.js {BACKOFFICE}/ && rm -rf /tmp/.pinstage && "

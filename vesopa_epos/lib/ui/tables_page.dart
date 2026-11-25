@@ -514,9 +514,33 @@ class _SharedPlanChip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final status = ref.watch(billSyncStatusProvider).value;
+    final scheme = Theme.of(context).colorScheme;
+    if (status != null && status.independent) {
+      return Tooltip(
+        message: 'This till is set to Independent (Settings > Local network): '
+            'its tables are not shared with the other tills.',
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.link_off, size: 15, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Text(
+                'This till only',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (status == null || !status.sharing) return const SizedBox.shrink();
 
-    final scheme = Theme.of(context).colorScheme;
     final stale = status.stale;
     return Tooltip(
       message: stale

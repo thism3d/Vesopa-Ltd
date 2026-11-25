@@ -114,6 +114,22 @@ const whatsNewByVersion = <String, List<String>>{
     'Typing on a real keyboard puts the screen keyboard away; the keyboard button in the corner brings it back.',
     'Prices, quantities and covers get a big round number pad.',
   ],
+  '1.16.57': [
+    'Split bill: items a person has already paid for stay off the split. Open the split again and they are gone from Not split yet, and Left to split is what is still owed.',
+    'Card machines: the till now notices when its link to the card machine drops and opens it again by itself, so sales no longer go to a machine the till has lost.',
+  ],
+  '1.16.58': [
+    'Split bill on a table: when one person pays their share, their items leave the table as a sale of their own. The table keeps only what is still owed.',
+    'After a share is paid, Leave on table saves the table and clears the till, with no need to press Save Table.',
+    'Tables part-paid on the last version are tidied the next time they are paid on.',
+  ],
+  '1.16.59': [
+    'Every text box opens the till\'s keyboard again, including Settings and custom text; number boxes get the number pad.',
+    'Gift cards: topping up or paying with one always prints a receipt, with what the card holds now.',
+    'Tables in rooms are called by the room: Bar 1, Lounge 1. Table names can repeat in different rooms.',
+    'The tills\' tables stay in step: an older copy from the cloud no longer replaces a newer one from the other till.',
+    'Settings > Local network > Independent: a till that shares nothing with the others, for venues that need no sharing.',
+  ],
 };
 
 /// The notes to show once after an update to [VesopaBrand.appVersion], or

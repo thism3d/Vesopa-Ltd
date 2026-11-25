@@ -29,9 +29,14 @@ const APPS = {
  *   releases.download  download our Windows installers, any version
  *   versions.manage  choose which version each venue runs, and switch the
  *                    in-app update prompt on or off
+ *   insights.view    Vesopa AI: the whole business (every venue's takings,
+ *                    Vesopa's income, licences, devices, sign-ups), read-only.
+ *                    The owner, and only the people the owner gives the
+ *                    "Vesopa AI" role (owner, 2026-11-21: "only those people
+ *                    who are invited by the owner").
  */
 const PERMISSIONS = ['licences.view', 'licences.run', 'licences.sell', 'admins.manage', 'venues.signin', 'audit.view',
-  'releases.download', 'versions.manage'];
+  'releases.download', 'versions.manage', 'insights.view'];
 
 const ROLES = {
   owner: { label: 'Owner', summary: 'Everything, in every app.', can: PERMISSIONS },
@@ -46,6 +51,11 @@ const ROLES = {
     can: ['licences.view', 'licences.run', 'licences.sell', 'audit.view', 'releases.download'],
   },
   content: { label: 'Content', summary: 'Websites, blog and Store text.', can: ['licences.view'] },
+  insights: {
+    label: 'Vesopa AI',
+    summary: 'Sees the whole business in Vesopa AI, as the owner does: every venue\'s takings, income, licences, devices and sign-ups. Read-only; changes nothing.',
+    can: ['insights.view'],
+  },
   readonly: { label: 'Read only', summary: 'Sees everything it is given and can download installers; changes nothing.', can: ['licences.view', 'audit.view', 'releases.download'] },
 };
 

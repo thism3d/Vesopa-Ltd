@@ -586,6 +586,16 @@ class Payments extends Table {
   /// Null for cash.
   TextColumn get entryMode => text().nullable()();
 
+  /// The bill's lines this payment paid for, comma-separated, when it was one
+  /// share of a bill split by item (1.16.57). A line divided into units is
+  /// named by unit (`<line id>#2`, see split_portions.dart).
+  ///
+  /// Kept so the split screen, opened again on this bill, here or on another
+  /// till, leaves those items out: Pontardawe RFC, 2026-11-23, a Hooker and a
+  /// Pint of Lemonade paid for and still offered to split. Null for a payment
+  /// that was not for named items (the whole bill, an equal share, an amount).
+  TextColumn get lineIds => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -715,7 +725,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 31;
+  int get schemaVersion => 32;
 
 
   /// Add a column only if the table has not already got it.
@@ -980,6 +990,10 @@ class AppDatabase extends _$AppDatabase {
           if (from < 31) {
             // 1.16.30: the cash part of a refund, for the Z's cash expected.
             await _addColumnIfMissing(m, tillEvents, tillEvents.cashMinor);
+          }
+          if (from < 32) {
+            // 1.16.57: which items a paid share of a split bill paid for.
+            await _addColumnIfMissing(m, payments, payments.lineIds);
           }
         },
       );

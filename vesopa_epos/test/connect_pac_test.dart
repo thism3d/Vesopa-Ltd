@@ -73,8 +73,60 @@ class _FakeSocket extends ConnectSocket {
   }
 }
 
+/// A socket that will not open until told it can.
+class _FlakySocket extends _FakeSocket {
+  _FlakySocket() : super({'transactionResult': 'SUCCESSFUL', 'amountBase': 500, 'amountTotal': 500});
+
+  bool down = true;
+  int sales = 0;
+
+  @override
+  Future<void> connect() async {
+    if (down) throw ConnectException('Could not reach the card machine service.');
+  }
+
+  @override
+  Future<Map<String, dynamic>> performTransaction({
+    required String tid,
+    required int amountMinor,
+    String method = 'sale',
+    String currency = 'GBP',
+    bool cardholderNotPresent = false,
+    int? amountCashback,
+  }) {
+    sales++;
+    return super.performTransaction(tid: tid, amountMinor: amountMinor);
+  }
+}
+
 void main() {
   setUp(_sent.clear);
+
+  // Pontardawe RFC, 2026-11-23: "card machines keep disconnecting from dojo".
+  // One failed open used to put the till on REST for the rest of the day.
+  test('a socket that failed to open is tried again after a while', () async {
+    var clock = DateTime(2026, 11, 23, 20);
+    final socket = _FlakySocket();
+    final provider = _provider(_sequence([
+      {'transactionResult': 'SUCCESSFUL', 'amountBase': 500, 'amountTotal': 500},
+    ]))
+      ..socket = socket
+      ..now = (() => clock);
+
+    expect((await provider.take(500)).approved, isTrue);
+    expect(_sent.where((r) => r.method == 'POST'), hasLength(1), reason: 'REST took it');
+
+    // Back up, but within the wait: still REST, no connection timeout paid.
+    socket.down = false;
+    clock = clock.add(const Duration(seconds: 10));
+    await provider.take(500);
+    expect(socket.sales, 0);
+
+    // After it: the socket again.
+    clock = clock.add(const Duration(minutes: 1));
+    expect((await provider.take(500)).approved, isTrue);
+    expect(socket.sales, 1);
+  });
 
   group("cashback (the till's Cashback key, 2026-10-13)", () {
     test('asked-for cashback goes to the machine, and what it took comes back', () async {

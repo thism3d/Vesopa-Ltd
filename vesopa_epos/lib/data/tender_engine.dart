@@ -14,10 +14,15 @@ class TenderEntry {
     this.cashBreakdown,
     this.holdId,
     this.saved = false,
+    this.lineIds = const [],
   });
 
   final TenderKind kind;
   final int amountMinor;
+
+  /// The bill's lines this payment paid for, when it was a share of a bill
+  /// split by item and has been recorded (Payments.lineIds). Empty otherwise.
+  final List<String> lineIds;
 
   /// Already recorded against the bill (2026-10-26, split bills). A share of a
   /// split bill is written to the order the moment that person has paid, so
@@ -37,6 +42,21 @@ class TenderEntry {
         cashBreakdown: cashBreakdown,
         holdId: holdId,
         saved: true,
+        lineIds: lineIds,
+      );
+
+  /// This payment, recorded as paying for [ids].
+  TenderEntry forLines(List<String> ids) => TenderEntry(
+        kind: kind,
+        amountMinor: amountMinor,
+        reference: reference,
+        entryMode: entryMode,
+        cashbackMinor: cashbackMinor,
+        gratuityMinor: gratuityMinor,
+        cashBreakdown: cashBreakdown,
+        holdId: holdId,
+        saved: saved,
+        lineIds: ids,
       );
 
   /// The same payment for a different amount (a split share's cash, cut to
@@ -51,6 +71,7 @@ class TenderEntry {
         cashBreakdown: cashBreakdown,
         holdId: holdId,
         saved: saved,
+        lineIds: lineIds,
       );
 
   /// A gift-card code, deposit reference or card auth code — whatever makes
@@ -174,6 +195,28 @@ class TenderState {
 
   int get paidMinor => tenders.fold(0, (s, t) => s + t.amountMinor);
 
+  /// The items on this bill that have been paid for already: those of a share
+  /// of a split by item that is paid, on this screen or recorded earlier (here
+  /// or on another till). Ids as the split screen names them, so a unit of a
+  /// divided line is `<line id>#2`.
+  ///
+  /// The split screen leaves these out (Pontardawe RFC, 2026-11-23: a Hooker
+  /// and a Pint of Lemonade paid for, and both still offered to split).
+  Set<String> get paidLineIds {
+    final live = {for (final l in totals.lines) l.id};
+    bool onBill(String id) => live.contains(baseLineId(id));
+    return {
+      for (final t in tenders)
+        for (final id in t.lineIds)
+          if (onBill(id)) id,
+      if (splitMode == SplitMode.byItem)
+        for (final s in shares)
+          if (s.settled && s.amountMinor > 0)
+            for (final id in s.lineIds)
+              if (onBill(id)) id,
+    };
+  }
+
   /// What is still owed on the whole bill.
   int get outstandingMinor {
     final left = totals.totalMinor - paidMinor;
@@ -215,6 +258,44 @@ class TenderState {
         shares: shares ?? this.shares,
         activeShare: activeShare ?? this.activeShare,
       );
+
+  /// A paid share whose items and payments have gone to a bill of their own
+  /// (TableRepository.settleShareOff): its payments, from [tendersFrom] on,
+  /// and the share itself leave this bill. What is left is split as before;
+  /// one share left is simply the rest of the bill.
+  TenderState withoutMovedShare(List<String> lineIds, {required int tendersFrom}) {
+    final ids = lineIds.toSet();
+    final at = shares.indexWhere(
+      (s) => s.lineIds.length == ids.length && ids.containsAll(s.lineIds),
+    );
+    final kept = tenders.sublist(0, tendersFrom.clamp(0, tenders.length));
+    if (at == -1) return copyWith(tenders: kept);
+    final rest = [
+      for (var i = 0; i < shares.length; i++)
+        if (i != at) shares[i],
+    ];
+    if (rest.length < 2) {
+      return TenderState(totals: totals, tenders: kept);
+    }
+    final renumbered = [
+      for (var i = 0; i < rest.length; i++)
+        SplitShare(
+          index: i,
+          amountMinor: rest[i].amountMinor,
+          paidMinor: rest[i].paidMinor,
+          lineIds: rest[i].lineIds,
+          name: rest[i].name,
+        ),
+    ];
+    final next = renumbered.indexWhere((s) => !s.settled);
+    return TenderState(
+      totals: totals,
+      tenders: kept,
+      splitMode: splitMode,
+      shares: renumbered,
+      activeShare: next == -1 ? 0 : next,
+    );
+  }
 
   /// The payments from [from] onwards, marked as recorded against the bill.
   TenderState markSavedFrom(int from) => copyWith(tenders: [
@@ -411,7 +492,32 @@ class TenderState {
     // paid stays paid on the bill; [dueNowMinor] never asks a share for more
     // than the bill still owes.
     final covered = itemised.fold<int>(0, (s, v) => s + v);
-    final amounts = _apportion(itemised, totals.totalMinor - covered, covered);
+
+    // Items paid for already are not in any group (the split screen leaves
+    // them out), and what they cost is not this split's to place. What is
+    // left to place is the bill's service or offer, in proportion to what
+    // these shares hold of the items: it was placed on the paid share the
+    // same way when that was split off.
+    final paid = paidLineIds.difference({for (final g in groups) ...g});
+    final paidValue = paid.fold<int>(0, (s, id) => s + valueOfId(id, byId));
+    var extra = totals.totalMinor - covered - paidValue;
+    if (paidValue > 0 && covered + paidValue != 0) {
+      extra = (extra * covered) ~/ (covered + paidValue);
+    }
+    final amounts = _apportion(itemised, extra, covered);
+    if (paidValue > 0 && amounts.isNotEmpty) {
+      // The paid share's part of an offer was rounded when it was taken, so
+      // these can be a penny or two from what the bill still owes. Owed is
+      // what has to be collected, so the pennies go on the largest share.
+      final diff = outstandingMinor - amounts.fold<int>(0, (s, v) => s + v);
+      if (diff != 0 && diff.abs() <= groups.length + 1) {
+        var largest = 0;
+        for (var i = 1; i < amounts.length; i++) {
+          if (amounts[i] > amounts[largest]) largest = i;
+        }
+        amounts[largest] += diff;
+      }
+    }
 
     return copyWith(
       splitMode: SplitMode.byItem,

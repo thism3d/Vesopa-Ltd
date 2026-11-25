@@ -266,6 +266,73 @@ function siteRoutes({ pool, broadcast, secret }) {
     }
   });
 
+
+  // ---- Vesopa support logins, managed by the platform admin (2026-11-25) ----
+  //
+  // Nicky, Pontardawe RFC: "Create a super user for tech support with access
+  // to all sites (This may be done but can't find how to enable it)." It was
+  // done -- a login on the support list sees every company in the site picker
+  // -- but the list could only be changed in the database. Now the platform
+  // admin changes it under Administration > Support logins.
+
+  const adminOnly = (req, res, nextFn) =>
+    req.user && req.user.role === 'admin'
+      ? nextFn()
+      : res.status(403).json({ error: 'Administrator access only' });
+
+  router.get('/admin/support-staff', auth, adminOnly, async (req, res, next) => {
+    try {
+      await ensureSupportTables(pool);
+      const [staff] = await pool.query(
+        `SELECT s.email, s.name, s.created_at,
+                (SELECT COUNT(*) FROM backoffice_users u WHERE LOWER(u.email) = LOWER(s.email)) AS has_login,
+                (SELECT MAX(v.at) FROM bo_support_visits v WHERE LOWER(v.email) = LOWER(s.email)) AS last_visit
+           FROM bo_support_staff s
+          ORDER BY s.name, s.email`
+      );
+      const [visits] = await pool.query(
+        'SELECT email, office_id, office_name, at FROM bo_support_visits ORDER BY id DESC LIMIT 30'
+      );
+      res.json({
+        staff: staff.map((r) => ({ ...r, has_login: Number(r.has_login) > 0 })),
+        visits,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/admin/support-staff', auth, adminOnly, async (req, res, next) => {
+    try {
+      const email = String((req.body || {}).email || '').trim().toLowerCase();
+      const name = String((req.body || {}).name || '').trim().slice(0, 191) || null;
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 191) {
+        return res.status(400).json({ error: 'Give the support person\'s email address.' });
+      }
+      await ensureSupportTables(pool);
+      await pool.query(
+        'INSERT INTO bo_support_staff (email, name) VALUES (?, ?) ON DUPLICATE KEY UPDATE name = COALESCE(VALUES(name), name)',
+        [email, name]
+      );
+      const [[u]] = await pool.query('SELECT COUNT(*) AS n FROM backoffice_users WHERE LOWER(email) = ?', [email]);
+      res.status(201).json({ ok: true, email, has_login: Number(u.n) > 0 });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete('/admin/support-staff/:email', auth, adminOnly, async (req, res, next) => {
+    try {
+      const email = String(req.params.email || '').trim().toLowerCase();
+      await ensureSupportTables(pool);
+      const [r] = await pool.query('DELETE FROM bo_support_staff WHERE LOWER(email) = ?', [email]);
+      if (!r.affectedRows) return res.status(404).json({ error: 'Not on the support list.' });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   return router;
 }
 

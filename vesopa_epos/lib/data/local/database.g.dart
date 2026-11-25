@@ -4446,6 +4446,17 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _lineIdsMeta = const VerificationMeta(
+    'lineIds',
+  );
+  @override
+  late final GeneratedColumn<String> lineIds = GeneratedColumn<String>(
+    'line_ids',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -4458,6 +4469,7 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
     cashbackMinor,
     gratuityMinor,
     entryMode,
+    lineIds,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4548,6 +4560,12 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
         entryMode.isAcceptableOrUnknown(data['entry_mode']!, _entryModeMeta),
       );
     }
+    if (data.containsKey('line_ids')) {
+      context.handle(
+        _lineIdsMeta,
+        lineIds.isAcceptableOrUnknown(data['line_ids']!, _lineIdsMeta),
+      );
+    }
     return context;
   }
 
@@ -4596,6 +4614,10 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
       entryMode: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}entry_mode'],
+      ),
+      lineIds: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}line_ids'],
       ),
     );
   }
@@ -4646,6 +4668,16 @@ class Payment extends DataClass implements Insertable<Payment> {
   /// one dipped in a reader, so the two must not be reported as the same thing.
   /// Null for cash.
   final String? entryMode;
+
+  /// The bill's lines this payment paid for, comma-separated, when it was one
+  /// share of a bill split by item (1.16.57). A line divided into units is
+  /// named by unit (`<line id>#2`, see split_portions.dart).
+  ///
+  /// Kept so the split screen, opened again on this bill, here or on another
+  /// till, leaves those items out: Pontardawe RFC, 2026-11-23, a Hooker and a
+  /// Pint of Lemonade paid for and still offered to split. Null for a payment
+  /// that was not for named items (the whole bill, an equal share, an amount).
+  final String? lineIds;
   const Payment({
     required this.id,
     required this.orderId,
@@ -4657,6 +4689,7 @@ class Payment extends DataClass implements Insertable<Payment> {
     required this.cashbackMinor,
     required this.gratuityMinor,
     this.entryMode,
+    this.lineIds,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4676,6 +4709,9 @@ class Payment extends DataClass implements Insertable<Payment> {
     map['gratuity_minor'] = Variable<int>(gratuityMinor);
     if (!nullToAbsent || entryMode != null) {
       map['entry_mode'] = Variable<String>(entryMode);
+    }
+    if (!nullToAbsent || lineIds != null) {
+      map['line_ids'] = Variable<String>(lineIds);
     }
     return map;
   }
@@ -4698,6 +4734,9 @@ class Payment extends DataClass implements Insertable<Payment> {
       entryMode: entryMode == null && nullToAbsent
           ? const Value.absent()
           : Value(entryMode),
+      lineIds: lineIds == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lineIds),
     );
   }
 
@@ -4717,6 +4756,7 @@ class Payment extends DataClass implements Insertable<Payment> {
       cashbackMinor: serializer.fromJson<int>(json['cashbackMinor']),
       gratuityMinor: serializer.fromJson<int>(json['gratuityMinor']),
       entryMode: serializer.fromJson<String?>(json['entryMode']),
+      lineIds: serializer.fromJson<String?>(json['lineIds']),
     );
   }
   @override
@@ -4733,6 +4773,7 @@ class Payment extends DataClass implements Insertable<Payment> {
       'cashbackMinor': serializer.toJson<int>(cashbackMinor),
       'gratuityMinor': serializer.toJson<int>(gratuityMinor),
       'entryMode': serializer.toJson<String?>(entryMode),
+      'lineIds': serializer.toJson<String?>(lineIds),
     };
   }
 
@@ -4747,6 +4788,7 @@ class Payment extends DataClass implements Insertable<Payment> {
     int? cashbackMinor,
     int? gratuityMinor,
     Value<String?> entryMode = const Value.absent(),
+    Value<String?> lineIds = const Value.absent(),
   }) => Payment(
     id: id ?? this.id,
     orderId: orderId ?? this.orderId,
@@ -4760,6 +4802,7 @@ class Payment extends DataClass implements Insertable<Payment> {
     cashbackMinor: cashbackMinor ?? this.cashbackMinor,
     gratuityMinor: gratuityMinor ?? this.gratuityMinor,
     entryMode: entryMode.present ? entryMode.value : this.entryMode,
+    lineIds: lineIds.present ? lineIds.value : this.lineIds,
   );
   Payment copyWithCompanion(PaymentsCompanion data) {
     return Payment(
@@ -4781,6 +4824,7 @@ class Payment extends DataClass implements Insertable<Payment> {
           ? data.gratuityMinor.value
           : this.gratuityMinor,
       entryMode: data.entryMode.present ? data.entryMode.value : this.entryMode,
+      lineIds: data.lineIds.present ? data.lineIds.value : this.lineIds,
     );
   }
 
@@ -4796,7 +4840,8 @@ class Payment extends DataClass implements Insertable<Payment> {
           ..write('reference: $reference, ')
           ..write('cashbackMinor: $cashbackMinor, ')
           ..write('gratuityMinor: $gratuityMinor, ')
-          ..write('entryMode: $entryMode')
+          ..write('entryMode: $entryMode, ')
+          ..write('lineIds: $lineIds')
           ..write(')'))
         .toString();
   }
@@ -4813,6 +4858,7 @@ class Payment extends DataClass implements Insertable<Payment> {
     cashbackMinor,
     gratuityMinor,
     entryMode,
+    lineIds,
   );
   @override
   bool operator ==(Object other) =>
@@ -4827,7 +4873,8 @@ class Payment extends DataClass implements Insertable<Payment> {
           other.reference == this.reference &&
           other.cashbackMinor == this.cashbackMinor &&
           other.gratuityMinor == this.gratuityMinor &&
-          other.entryMode == this.entryMode);
+          other.entryMode == this.entryMode &&
+          other.lineIds == this.lineIds);
 }
 
 class PaymentsCompanion extends UpdateCompanion<Payment> {
@@ -4841,6 +4888,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
   final Value<int> cashbackMinor;
   final Value<int> gratuityMinor;
   final Value<String?> entryMode;
+  final Value<String?> lineIds;
   final Value<int> rowid;
   const PaymentsCompanion({
     this.id = const Value.absent(),
@@ -4853,6 +4901,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     this.cashbackMinor = const Value.absent(),
     this.gratuityMinor = const Value.absent(),
     this.entryMode = const Value.absent(),
+    this.lineIds = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PaymentsCompanion.insert({
@@ -4866,6 +4915,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     this.cashbackMinor = const Value.absent(),
     this.gratuityMinor = const Value.absent(),
     this.entryMode = const Value.absent(),
+    this.lineIds = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        orderId = Value(orderId),
@@ -4882,6 +4932,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     Expression<int>? cashbackMinor,
     Expression<int>? gratuityMinor,
     Expression<String>? entryMode,
+    Expression<String>? lineIds,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4895,6 +4946,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       if (cashbackMinor != null) 'cashback_minor': cashbackMinor,
       if (gratuityMinor != null) 'gratuity_minor': gratuityMinor,
       if (entryMode != null) 'entry_mode': entryMode,
+      if (lineIds != null) 'line_ids': lineIds,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4910,6 +4962,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     Value<int>? cashbackMinor,
     Value<int>? gratuityMinor,
     Value<String?>? entryMode,
+    Value<String?>? lineIds,
     Value<int>? rowid,
   }) {
     return PaymentsCompanion(
@@ -4923,6 +4976,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       cashbackMinor: cashbackMinor ?? this.cashbackMinor,
       gratuityMinor: gratuityMinor ?? this.gratuityMinor,
       entryMode: entryMode ?? this.entryMode,
+      lineIds: lineIds ?? this.lineIds,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4960,6 +5014,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     if (entryMode.present) {
       map['entry_mode'] = Variable<String>(entryMode.value);
     }
+    if (lineIds.present) {
+      map['line_ids'] = Variable<String>(lineIds.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4979,6 +5036,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
           ..write('cashbackMinor: $cashbackMinor, ')
           ..write('gratuityMinor: $gratuityMinor, ')
           ..write('entryMode: $entryMode, ')
+          ..write('lineIds: $lineIds, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -11457,6 +11515,7 @@ typedef $$PaymentsTableCreateCompanionBuilder =
       Value<int> cashbackMinor,
       Value<int> gratuityMinor,
       Value<String?> entryMode,
+      Value<String?> lineIds,
       Value<int> rowid,
     });
 typedef $$PaymentsTableUpdateCompanionBuilder =
@@ -11471,6 +11530,7 @@ typedef $$PaymentsTableUpdateCompanionBuilder =
       Value<int> cashbackMinor,
       Value<int> gratuityMinor,
       Value<String?> entryMode,
+      Value<String?> lineIds,
       Value<int> rowid,
     });
 
@@ -11547,6 +11607,11 @@ class $$PaymentsTableFilterComposer
 
   ColumnFilters<String> get entryMode => $composableBuilder(
     column: $table.entryMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lineIds => $composableBuilder(
+    column: $table.lineIds,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -11628,6 +11693,11 @@ class $$PaymentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get lineIds => $composableBuilder(
+    column: $table.lineIds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$OrdersTableOrderingComposer get orderId {
     final $$OrdersTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -11696,6 +11766,9 @@ class $$PaymentsTableAnnotationComposer
   GeneratedColumn<String> get entryMode =>
       $composableBuilder(column: $table.entryMode, builder: (column) => column);
 
+  GeneratedColumn<String> get lineIds =>
+      $composableBuilder(column: $table.lineIds, builder: (column) => column);
+
   $$OrdersTableAnnotationComposer get orderId {
     final $$OrdersTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -11758,6 +11831,7 @@ class $$PaymentsTableTableManager
                 Value<int> cashbackMinor = const Value.absent(),
                 Value<int> gratuityMinor = const Value.absent(),
                 Value<String?> entryMode = const Value.absent(),
+                Value<String?> lineIds = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PaymentsCompanion(
                 id: id,
@@ -11770,6 +11844,7 @@ class $$PaymentsTableTableManager
                 cashbackMinor: cashbackMinor,
                 gratuityMinor: gratuityMinor,
                 entryMode: entryMode,
+                lineIds: lineIds,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -11784,6 +11859,7 @@ class $$PaymentsTableTableManager
                 Value<int> cashbackMinor = const Value.absent(),
                 Value<int> gratuityMinor = const Value.absent(),
                 Value<String?> entryMode = const Value.absent(),
+                Value<String?> lineIds = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PaymentsCompanion.insert(
                 id: id,
@@ -11796,6 +11872,7 @@ class $$PaymentsTableTableManager
                 cashbackMinor: cashbackMinor,
                 gratuityMinor: gratuityMinor,
                 entryMode: entryMode,
+                lineIds: lineIds,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
