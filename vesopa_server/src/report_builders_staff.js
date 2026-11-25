@@ -115,8 +115,10 @@ function staffBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
     let where = 'o.email = ? AND o.closed_at BETWEEN ? AND ?';
     if (terminal === UNKNOWN_TERMINAL) where += " AND (o.terminal IS NULL OR o.terminal = '')";
     else if (terminal) {
-      where += ' AND o.terminal = ?';
-      params.push(terminal);
+      where += Array.isArray(terminal)
+        ? ` AND o.terminal IN (${terminal.map(() => '?').join(', ')})`
+        : ` AND o.terminal = ?`;
+      params.push(...[].concat(terminal));
     }
     const [sales] = await pool.query(
       `SELECT DATE(o.closed_at) AS d, COALESCE(SUM(o.total_minor), 0) AS total_minor
@@ -181,8 +183,10 @@ function staffBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
     let where = 'o.email = ? AND o.closed_at BETWEEN ? AND ?';
     if (terminal === UNKNOWN_TERMINAL) where += " AND (o.terminal IS NULL OR o.terminal = '')";
     else if (terminal) {
-      where += ' AND o.terminal = ?';
-      params.push(terminal);
+      where += Array.isArray(terminal)
+        ? ` AND o.terminal IN (${terminal.map(() => '?').join(', ')})`
+        : ` AND o.terminal = ?`;
+      params.push(...[].concat(terminal));
     }
     if (clerk) {
       where += ' AND o.clerk_name = ?';
@@ -225,8 +229,10 @@ function staffBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
     let where = 'o.email = ? AND o.closed_at BETWEEN ? AND ? AND o.customer_id IS NOT NULL';
     if (terminal === UNKNOWN_TERMINAL) where += " AND (o.terminal IS NULL OR o.terminal = '')";
     else if (terminal) {
-      where += ' AND o.terminal = ?';
-      params.push(terminal);
+      where += Array.isArray(terminal)
+        ? ` AND o.terminal IN (${terminal.map(() => '?').join(', ')})`
+        : ` AND o.terminal = ?`;
+      params.push(...[].concat(terminal));
     }
     const [rows] = await pool.query(
       `SELECT o.id, o.closed_at, o.customer_id, o.customer_name, o.total_minor, o.discount_minor,

@@ -587,10 +587,17 @@ function programmingRoutes({ pool, broadcast, secret }) {
    * Compared trimmed and case-insensitively: "Booth 3" and "booth 3 " are the
    * same table to everybody except a database.
    */
-  async function nameClash(officeId, name, exceptId) {
+  async function nameClash(officeId, name, exceptId, roomId) {
     const clean = (name == null ? '' : String(name)).trim();
     if (!clean || officeId == null) return null;
 
+    // Within one room (Pontardawe RFC, 2026-11-25: "Table 1, table 2 etc to
+    // be created in different locations e.g. Bar 1, Bar 2, Lounge 1, Lounge
+    // 2"): the till calls a table by its room as well, so the same name in
+    // two rooms is two different tables to everybody.
+    const params = [officeId, clean];
+    if (exceptId != null) params.push(exceptId);
+    if (roomId != null) params.push(roomId);
     const [[row]] = await pool.query(
       'SELECT t.id, r.name AS room' +
         '  FROM floor_tables t' +
@@ -598,8 +605,9 @@ function programmingRoutes({ pool, broadcast, secret }) {
         ' WHERE t.office_id = ?' +
         '   AND LOWER(TRIM(t.name)) = LOWER(?)' +
         (exceptId == null ? '' : ' AND t.id <> ?') +
+        (roomId == null ? '' : ' AND t.room_id = ?') +
         ' LIMIT 1',
-      exceptId == null ? [officeId, clean] : [officeId, clean, exceptId]
+      params
     );
     if (!row) return null;
     return row.room
@@ -735,7 +743,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
     try {
       const officeId = await floorOfficeId(req);
       const [[table]] = await pool.query(
-        'SELECT id, office_id FROM floor_tables WHERE id = ?',
+        'SELECT id, office_id, room_id FROM floor_tables WHERE id = ?',
         [req.params.id]
       );
       if (!table) return res.status(404).json({ error: 'Table not found.' });
@@ -744,7 +752,12 @@ function programmingRoutes({ pool, broadcast, secret }) {
       }
 
       if (req.body.name !== undefined) {
-        const clash = await nameClash(table.office_id, cleanTableName(req.body.name), table.id);
+        const clash = await nameClash(
+          table.office_id,
+          cleanTableName(req.body.name),
+          table.id,
+          req.body.room_id ?? table.room_id
+        );
         if (clash) return res.status(409).json({ error: clash });
       }
 
@@ -842,12 +855,10 @@ function programmingRoutes({ pool, broadcast, secret }) {
         return res.status(403).json({ error: 'That room is not yours.' });
       }
 
-      // A name has to be unique across the whole venue, not merely within the
-      // room. The customer-facing menu says "Table 12" and a runner carries
-      // food to it; two tables answering to that name in one building is a
-      // plate going to the wrong people, and the rooms they are in does not
-      // help anybody holding it.
-      const clash = await nameClash(officeId, cleanTableName(t.name), null);
+      // A name is unique within its room (2026-11-25; before, across the whole
+      // venue). The tills call a table by its room too: "Bar Window" and
+      // "Lounge Window" are two tables nobody mixes up.
+      const clash = await nameClash(officeId, cleanTableName(t.name), null, t.room_id);
       if (clash) return res.status(409).json({ error: clash });
 
       const [r] = await pool.execute(
@@ -911,7 +922,12 @@ function programmingRoutes({ pool, broadcast, secret }) {
       if (t.name === undefined) continue;
       const clean = cleanTableName(t.name);
       if (!clean) continue;
-      const key = clean.toLowerCase();
+      let roomId = t.room_id;
+      if (roomId == null && t.id != null) {
+        const [[row]] = await pool.query('SELECT room_id FROM floor_tables WHERE id = ?', [t.id]);
+        roomId = row ? row.room_id : null;
+      }
+      const key = `${roomId ?? ''}:${clean.toLowerCase()}`;
       if (seen.has(key)) {
         return res.status(409).json({
           error: 'Two tables in this layout are both called "' + clean + '".',
@@ -919,7 +935,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
       }
       seen.set(key, t.id);
 
-      const clash = await nameClash(officeId, clean, t.id);
+      const clash = await nameClash(officeId, clean, t.id, roomId);
       if (clash) return res.status(409).json({ error: clash });
     }
 

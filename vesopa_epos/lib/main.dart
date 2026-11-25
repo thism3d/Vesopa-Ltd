@@ -20,6 +20,7 @@ import 'data/branding.dart';
 import 'data/staff_drinks.dart';
 import 'data/commerce.dart';
 import 'data/floor_repository.dart';
+import 'data/table_names.dart';
 import 'data/kitchen_printing.dart';
 import 'data/kitchen_screens.dart';
 import 'data/customer_display.dart';
@@ -59,7 +60,7 @@ import 'payments/teya_provider.dart';
 import 'payments/dojo_office_sync.dart';
 import 'payments/dojo_native.dart';
 import 'payments/payment_provider.dart';
-import 'ui/widgets/keyboard_dock.dart' show KeyboardInsets;
+import 'ui/widgets/keyboard_dock.dart' show KeyboardAutoAsk, KeyboardInsets;
 import 'ui/idle_screen.dart';
 import 'ui/gym_greeting.dart';
 import 'ui/shell.dart';
@@ -330,6 +331,13 @@ final floorPlanProvider = FutureProvider<List<FloorRoom>>((ref) async {
 
   final repo = await ref.watch(floorRepositoryProvider.future);
   return repo.load();
+});
+
+/// What a table is called: its own name, "Bar 1" in a venue with rooms, else
+/// "Table 1" (data/table_names.dart; Pontardawe RFC, 2026-11-24).
+final tableNamerProvider = Provider<String Function(int? number, {int? roomId})>((ref) {
+  final rooms = ref.watch(floorPlanProvider).value ?? const <FloorRoom>[];
+  return (number, {roomId}) => tableName(rooms, number, roomId: roomId);
 });
 
 /// The floor plan repository, which can now write as well as read.
@@ -1156,6 +1164,9 @@ Future<void> main() async {
   await restoreTerminalSettings(apiBase: Api.base, version: VesopaBrand.appVersion, fingerprint: fingerprint);
 
   await _lockWindowToKiosk();
+  // Every text box opens the till's keyboard, not only the ones built for it
+  // (Pontardawe RFC, 2026-11-24: Settings and custom text had none).
+  KeyboardAutoAsk.install();
   runApp(
     ProviderScope(
       overrides: [startupRepairProvider.overrideWithValue(repair)],

@@ -122,6 +122,8 @@ class PrintService {
     required List<OrderLine> lines,
     required List<Payment> payments,
     PrintTarget target = PrintTarget.customerReceipt,
+    List<GiftCardBalance> giftCards = const [],
+    String? tableName,
   }) async {
     final printer = setup.deviceFor(target);
     if (printer == null) {
@@ -140,6 +142,8 @@ class PrintService {
         // The venue's copy is marked as such, so a stack of them on the desk
         // cannot be mistaken for receipts that were never handed over.
         heading: target == PrintTarget.merchantCopy ? 'MERCHANT COPY' : null,
+        giftCards: giftCards,
+        tableName: tableName,
       ),
     );
   }

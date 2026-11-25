@@ -462,8 +462,10 @@ function stockBuilders({ col, section, money, grouped, sqlDateTime }) {
     let where = 'o.email = ? AND l.plu_id = ? AND o.closed_at BETWEEN ? AND ?';
     if (terminal === '__unknown__') where += " AND (o.terminal IS NULL OR o.terminal = '')";
     else if (terminal) {
-      where += ' AND o.terminal = ?';
-      params.push(terminal);
+      where += Array.isArray(terminal)
+        ? ` AND o.terminal IN (${terminal.map(() => '?').join(', ')})`
+        : ` AND o.terminal = ?`;
+      params.push(...[].concat(terminal));
     }
     const [lines] = await pool.query(
       `SELECT o.id, o.closed_at, o.clerk_name, o.terminal, l.quantity,

@@ -366,6 +366,18 @@ async function main() {
     assert.match(clash.body.error, /already a table called/i);
   });
 
+  // Pontardawe RFC, 2026-11-25: "Bar 1, Bar 2, Lounge 1, Lounge 2". A name is
+  // unique within its room; the tills call a table by its room too.
+  await check('the same table name is allowed in another room', async () => {
+    const room = await call(base, 'POST', '/api/floor/rooms', { token: alpha, body: { name: 'Lounge' } });
+    assert.strictEqual(room.status, 201);
+    const other = await call(base, 'POST', '/api/floor/tables', {
+      token: alpha,
+      body: { room_id: room.body.id, table_number: 5, name: 'Window' },
+    });
+    assert.strictEqual(other.status, 201);
+  });
+
   await check('renaming and renumbering a table leaves its address alone', async () => {
     const res = await call(base, 'PUT', '/api/floor/tables/' + tableId, {
       token: alpha,

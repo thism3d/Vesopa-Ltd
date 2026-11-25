@@ -380,6 +380,8 @@ class ReceiptBuilder {
     String? footer,
     Uint8List? logo,
     String? heading,
+    List<GiftCardBalance> giftCards = const [],
+    String? tableName,
   }) {
     final bytes = _begin();
 
@@ -424,7 +426,8 @@ class ReceiptBuilder {
     if (order.tableNumber != null) {
       bytes.addAll(
         _text(
-          'Table ${order.tableNumber}',
+          // "Bar 1" in a venue with rooms (data/table_names.dart).
+          tableName ?? 'Table ${order.tableNumber}',
           styles: const PosStyles(align: PosAlign.center),
         ),
       );
@@ -506,6 +509,19 @@ class ReceiptBuilder {
     final change = paid - order.totalMinor;
     if (change > 0) {
       bytes.addAll(_row('CHANGE', _money(change)));
+    }
+
+    // Gift cards topped up or spent on this bill, and what each holds now
+    // (Pontardawe RFC, 2026-11-25: "When we top up or redeem a gift card can
+    // we have an automatic receipt please").
+    if (giftCards.isNotEmpty) {
+      bytes.addAll(_hr());
+      for (final g in giftCards) {
+        bytes.addAll(_text('GIFT CARD ${GiftCardBalance.masked(g.code)}', styles: const PosStyles(bold: true)));
+        if (g.loadedMinor > 0) bytes.addAll(_row('  Topped up', _money(g.loadedMinor)));
+        if (g.spentMinor > 0) bytes.addAll(_row('  Spent', _money(g.spentMinor)));
+        if (g.balanceMinor != null) bytes.addAll(_row('  Balance now', _money(g.balanceMinor!)));
+      }
     }
 
     if (footer != null) {
@@ -1652,3 +1668,27 @@ String _tenderName(String method) => switch (method) {
       'account' => 'On account',
       _ => method.isEmpty ? 'Other' : '${method[0].toUpperCase()}${method.substring(1)}',
     };
+
+/// A gift card a bill topped up or spent, for the receipt.
+class GiftCardBalance {
+  const GiftCardBalance({
+    required this.code,
+    this.loadedMinor = 0,
+    this.spentMinor = 0,
+    this.balanceMinor,
+  });
+
+  final String code;
+  final int loadedMinor;
+  final int spentMinor;
+
+  /// What the card holds after this bill; null when it could not be read.
+  final int? balanceMinor;
+
+  /// The card's number as a receipt shows it: the last four only, so a
+  /// receipt left on a table cannot be used to spend the card.
+  static String masked(String code) {
+    final c = code.trim();
+    return c.length <= 4 ? c : '****${c.substring(c.length - 4)}';
+  }
+}

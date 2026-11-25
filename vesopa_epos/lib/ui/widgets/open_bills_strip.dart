@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/database.dart';
+import '../../main.dart' show tableNamerProvider;
 import '../tables_page.dart' show parkedOrdersProvider;
 import '../theme.dart';
 import 'basket_panel.dart' show money;
@@ -44,6 +45,7 @@ class OpenBillsStrip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final booked = ref.watch(parkedOrdersProvider).value ?? const <Order>[];
+    final name = ref.watch(tableNamerProvider);
 
     // The current bill is shown first when it is not itself one of the booked
     // tables (i.e. a fresh walk-in, or a table just recalled onto the till).
@@ -56,7 +58,7 @@ class OpenBillsStrip extends ConsumerWidget {
         if (!currentIsBooked)
           OrderChip(
             label: currentOrder?.tableNumber != null
-                ? 'Table ${currentOrder!.tableNumber}'
+                ? name(currentOrder!.tableNumber, roomId: currentOrder!.roomId)
                 : 'Current',
             total: currentOrder?.totalMinor ?? 0,
             active: true,
@@ -64,7 +66,7 @@ class OpenBillsStrip extends ConsumerWidget {
           ),
         for (final o in booked)
           OrderChip(
-            label: 'Table ${o.tableNumber}',
+            label: name(o.tableNumber, roomId: o.roomId),
             total: o.totalMinor,
             active: o.id == currentOrderId,
             onTap: () => onSwitch(o.id),

@@ -123,6 +123,13 @@ const whatsNewByVersion = <String, List<String>>{
     'After a share is paid, Leave on table saves the table and clears the till, with no need to press Save Table.',
     'Tables part-paid on the last version are tidied the next time they are paid on.',
   ],
+  '1.16.59': [
+    'Every text box opens the till\'s keyboard again, including Settings and custom text; number boxes get the number pad.',
+    'Gift cards: topping up or paying with one always prints a receipt, with what the card holds now.',
+    'Tables in rooms are called by the room: Bar 1, Lounge 1. Table names can repeat in different rooms.',
+    'The tills\' tables stay in step: an older copy from the cloud no longer replaces a newer one from the other till.',
+    'Settings > Local network > Independent: a till that shares nothing with the others, for venues that need no sharing.',
+  ],
 };
 
 /// The notes to show once after an update to [VesopaBrand.appVersion], or

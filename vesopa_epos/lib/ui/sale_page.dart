@@ -900,6 +900,7 @@ class SalePage extends ConsumerWidget {
                                         ),
                                     branding: ref.watch(brandingProvider),
                                     tableNumber: order?.tableNumber,
+                                    tableLabel: ref.watch(tableNamerProvider)(order?.tableNumber, roomId: order?.roomId),
                                     covers: order?.covers,
                                     customer: BillCustomer.of(order),
                                     onChangeCustomer: () =>
@@ -1071,7 +1072,7 @@ class SalePage extends ConsumerWidget {
                       PosAction(
                         label: order?.tableNumber == null
                             ? 'Save Table'
-                            : 'Save to Table ${order!.tableNumber}',
+                            : 'Save to ${ref.watch(tableNamerProvider)(order!.tableNumber, roomId: order.roomId)}',
                         icon: Icons.table_restaurant,
                         onTap: () => _saveTable(context, ref, order),
                         onLongPress: order?.tableNumber == null

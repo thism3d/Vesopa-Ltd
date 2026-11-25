@@ -78,15 +78,56 @@ class LanService {
   String _mode = 'auto';
   String get mode => _mode;
 
+  /// A till on its own (owner, 2026-11-25, for venues that share nothing):
+  /// not on the venue's local network, and its tables are not shared through
+  /// the cloud either. Sales still reach the back office as always.
+  bool get independent => _role == 'till' && _mode == 'independent';
+
+  Future<void> _stopNode() async {
+    _report?.cancel();
+    _refresh?.cancel();
+    _retry?.cancel();
+    await _nodeChanges?.cancel();
+    await _nodeReady?.cancel();
+    final old = _node;
+    _node = null;
+    _key = null;
+    await old?.dispose();
+  }
+
   /// Choose this till's place on the link. A master is also pinned in the
   /// back office, so older tills and the screens agree on who it is.
   Future<void> setMode(String mode) async {
-    if (!const {'auto', 'master', 'slave'}.contains(mode)) return;
+    if (!const {'auto', 'master', 'slave', 'independent'}.contains(mode)) return;
+    final was = _mode;
     _mode = mode;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_modeKey, mode);
     } catch (_) {}
+    if (mode == 'independent') {
+      // Off the venue's network altogether: no main till, no link.
+      await _stopNode();
+      _changed();
+      unawaited(sendReport());
+      return;
+    }
+    if (was == 'independent') {
+      // Back on: join again with what it was last configured with.
+      _changed();
+      final base = _apiBase;
+      if (base != null && _deviceId.isNotEmpty) {
+        await configure(
+          apiBase: base,
+          token: _token,
+          deviceId: _deviceId,
+          name: _name,
+          version: _version,
+          role: _role,
+          force: true,
+        );
+      }
+    }
     final n = _node;
     if (n != null) {
       n.identity.mode = n.identity.canHost ? mode : 'auto';
@@ -122,9 +163,10 @@ class LanService {
     required String version,
     required String role,
     http.Client? client,
+    bool force = false,
   }) async {
     if (client != null) _client = client;
-    final same = apiBase == _apiBase && token == _token && deviceId == _deviceId && role == _role;
+    final same = !force && apiBase == _apiBase && token == _token && deviceId == _deviceId && role == _role;
     _apiBase = apiBase;
     _token = token;
     _deviceId = deviceId;
@@ -148,6 +190,9 @@ class LanService {
       _mode = prefs.getString(_modeKey) ?? 'auto';
       _knownHosts = prefs.getStringList(_knownKey) ?? const [];
     } catch (_) {}
+
+    // Set to stand alone: remembered, and nothing joined.
+    if (independent) return;
 
     final key = await _readKey(fresh: true);
     if (key == null) {
