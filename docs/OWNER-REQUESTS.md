@@ -87,7 +87,7 @@ secrets only).
 | Remove demo sites from the back office drop-down (Nicky, 2026-11-24) | Back office: practice venues are left out of the Site menu (the one you are in stays listed); Settings > Practice venue has Open practice venue, and the banner inside one goes back |
 | Super user for tech support with access to all sites (Nicky, 2026-11-24: "can't find how to enable it") | It existed (a login on the support list sees every company), but the list was database-only. Back office: Administration > Support logins (platform admin) adds and removes them and lists the companies support opened. support@vesopa.com and muzahid@vesopa.com are on it; Nicky signs in with the email on the list |
 | Terminals in reports: Terminal 1, Terminal 2, rename, name or hide Vesopa Go (Nicky, 2026-11-24) | Back office: reports call a till by the name given in Dashboard > Sites, else its terminal number (Terminal 1, Vesopa Go 3), not the computer name; a terminal whose PC was replaced is one entry; Sites has an In reports tick to hide a device. Test: `test/report-terminals.test.js` |
-| Release 1.16.59 to admin (unsigned) and the Store; back office deploy | in progress |
+| Release 1.16.59 to admin (unsigned) and the Store; back office deploy | done 2026-11-25: till 1.16.59 unsigned on admin.vesopa.com/downloads; the Microsoft Store upload failed again (MS_STORE secret still needed). Back office deployed live (Back office - patch, 11 files, healthy) except src/server.js: the live server.js is an older version (36adc98f) than git, so the patch refused it; until a full back office deploy, the till's own floor editor still refuses a table name used in another room (the back office designer allows it) |
 
 ## Loughor RFC (`LoughorRFC/`)
 
