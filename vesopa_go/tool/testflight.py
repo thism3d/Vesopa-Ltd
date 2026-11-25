@@ -54,11 +54,7 @@ STORE = {
         "contact_email": "info@vesopasoftware.com",
         # The owner's number for Apple's reviewers (2026-10-27).
         "contact_phone": "+447848494341",
-        "notes": "Vesopa Go is the phone app for venues that use Vesopa EPOS: orders at the table and "
-                 "the counter, sent to the kitchen, paid by card or cash. A venue signs in with its Vesopa "
-                 "account. To review it, tap Continue with Vesopa and sign in with the account in Sign-in "
-                 "information: The Vesopa Kitchen, Vesopa's own test venue on Dojo's sandbox (no real money "
-                 "moves), then sign on with the staff PIN given there.",
+        "notes": "Vesopa Go is the phone and tablet app for venues that use Vesopa EPOS: orders at the table and the counter, sent to the kitchen, paid by card, QR code or cash, with every sale in the venue's Vesopa back office. No sign-in is needed to review it: on the first screen tap Try the demo, then sign on with staff PIN 1111 (Sam, a manager; 2222 and 3333 are staff). The demo venue runs on the device alone and its payments are pretend, so no real money moves. A real venue signs in with its Vesopa account (Continue with Vesopa) or registers in the app (Register a new venue), where Stripe checks the owner's identity and business. Card payments in a real venue are taken by the venue's payment provider: Tap to Pay on iPhone through Stripe Terminal where it is switched on for the venue, or the venue's Dojo, Stripe or Teya card machine. The app never reads or stores card numbers.",
     },
 }
 DESCRIPTION = ("Vesopa Go: take orders and payments anywhere in a Vesopa EPOS venue, at the counter or "
