@@ -59,13 +59,7 @@ Google Play: https://play.google.com/store/apps/details?id=com.vesopaepos.lougho
 
 ## X (`x-1600x900.jpg`)
 
-Loughor RFC has an app 🏉💙
-
-Loughor RFC's members' card, discount and every fixture, on your phone.
-Built by Vesopa Software.
+Loughor RFC now has its own app. The members' card, the discount at the bar,
+and club news and fixtures, all on members' phones. Built by Vesopa Software.
 
 https://play.google.com/store/apps/details?id=com.vesopaepos.loughorrfc
-
-#LoughorRFC #WelshRugby
-
-(About 175 characters, with the link counted as 23.)
