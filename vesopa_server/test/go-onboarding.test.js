@@ -355,6 +355,8 @@ function signed(event) {
     ok(mails6.length === 1 && mails6[0].text.includes('https://go.vesopa.com/signup/#licence') && mails6[0].html.includes('add a card for the licence'), 'welcome carries the card link');
     r = await call(s6, 'POST', '/api/go/onboarding/licence/trial', { token: phone });
     ok(r.status === 200 && fake6.calls.filter((c) => c[0] === 'licence').length === 1, 'started once');
+    for (let i = 0; i < 8; i += 1) await call(s6, 'POST', '/api/go/onboarding/licence/trial', { token: phone });
+    ok((await call(s6, 'POST', '/api/go/onboarding/licence/trial', { token: phone })).status === 429, 'too many tries: 429');
     // Three days before the end, Stripe says so: the reminder, once.
     const willEnd = signed({ type: 'customer.subscription.trial_will_end', data: { object: { id: 'sub_1', status: 'trialing', trial_end: 1900000000, default_payment_method: null, metadata: { office: OFFICE, purpose: 'vesopa_go_licence' } } } });
     await call(s6, 'POST', '/api/stripe/webhook', willEnd);

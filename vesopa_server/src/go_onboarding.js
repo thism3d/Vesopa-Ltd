@@ -892,8 +892,20 @@ function goOnboardingRoutes({
    * go.vesopa.com/signup lands on it; without one Stripe cancels it when the
    * trial ends. The welcome email and a reminder carry the card link.
    */
+  // A few tries a venue in ten minutes is plenty: it makes one subscription.
+  const trialTries = new Map();
+  function trialLimited(office) {
+    const t = now();
+    const recent = (trialTries.get(office) || []).filter((at) => t - at < 10 * 60000);
+    recent.push(t);
+    trialTries.set(office, recent);
+    if (trialTries.size > 5000) trialTries.clear();
+    return recent.length > 10;
+  }
+
   router.post('/go/onboarding/licence/trial', who, async (req, res, next) => {
     try {
+      if (trialLimited(req.office)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
       const row = await rowFor(req.office);
       if (!row || !row.business_type) throw new OnboardingError(409, 'Tell us about the business first.');
       if (!licenceOk(row)) {
