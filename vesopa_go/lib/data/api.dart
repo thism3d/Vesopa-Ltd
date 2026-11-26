@@ -302,8 +302,14 @@ class TapApi {
   /// session for Stripe's own onboarding screens.
   Future<Map<String, dynamic>> stripeOnboardingSession() => _send('POST', '/api/go/onboarding/stripe');
 
-  /// The licence's SetupIntent: 14 days free, then £29 a month.
+  /// The licence's SetupIntent (the website's card step; the app uses [licenceTrial]).
   Future<Map<String, dynamic>> licenceSession() => _send('POST', '/api/go/onboarding/licence');
+
+  /// The app's licence step (owner, 2026-11-26): the 14-day trial starts with
+  /// no card, and nothing is paid in the app (App Store 3.1.1, Google Play's
+  /// payments policy). Vesopa emails the owner about the licence; the website
+  /// sign-up still takes a card. Returns the sign-up's status.
+  Future<Map<String, dynamic>> licenceTrial() => _send('POST', '/api/go/onboarding/licence/trial');
 
   /// Leave a sign-up step for later (identity, stripe), or come back to it.
   /// The venue stays capped until it is done (go_onboarding.js).

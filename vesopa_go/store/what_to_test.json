@@ -1,6 +1,6 @@
 {
   "_comment": "One place for what testers read on each build: TestFlight's What to Test (tool/testflight.py) and Play's release notes (tool/play_upload.py). Change it with the version in pubspec.yaml; a build whose version is not this one says so in its notes instead of repeating an old release's.",
-  "version": "1.2.73",
-  "what_to_test": "TV and screens: 1. Every Android TV and Google TV can install it now (Play no longer asks for a camera, Bluetooth or GPS). 2. On a TV, settings ask for the manager's PIN with the remote itself: the number buttons, or Up/Down to pick a digit, Right to add, OK to unlock. No on-screen keyboard. 3. A TV shows no Tap member card or Scan your pass buttons (no touch, camera or NFC). 4. The first screen's colours: the one the remote is on grows with a white ring; OK picks it. Phone or tablet as the TV's remote: 5. More (or Settings > Screens and TVs) > Control a screen or TV, choose the TV: arrows, OK, Back, Previous/Next advert, Reload adverts, and Settings after a manager's PIN on the phone.",
-  "release_notes": "Vesopa Go on your TV: the kitchen board lays tickets out side by side on Android TV and Google TV, and everything works with the remote. Tap a member's phone or watch to find them: Go reads the members' card by NFC."
+  "version": "1.2.74",
+  "what_to_test": "Sign-up and account: 1. Register a new venue: the last step is now Start free trial. The 14 days start at once and the app asks for no card or payment. 2. More > Delete my Vesopa account explains what it removes, then opens Vesopa's account deletion page. 3. On iPhone, Tap to Pay on iPhone is not offered until Apple switches it on for Vesopa Go: the card button goes to the card machine, with QR Pay beside it. Android is unchanged.",
+  "release_notes": "Start your free trial straight from the app, with nothing to pay up front, and delete your Vesopa account from More whenever you want to."
 }

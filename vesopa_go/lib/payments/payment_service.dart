@@ -12,8 +12,10 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:uuid/uuid.dart';
 
+import '../config/constants.dart' show iosTapToPayGranted;
 import '../data/api.dart';
 import '../ui/pages/card_machine_page.dart' show deviceMachine;
 
@@ -26,6 +28,12 @@ class PaymentOutcome {
   final String? message;
   bool get paid => result == PayResult.paid;
 }
+
+/// Whether Tap to Pay may be offered on this device at all: everywhere but an
+/// iPhone or iPad built without Apple's Tap to Pay entitlement
+/// ([iosTapToPayGranted]). Where it is false, Go shows no Tap to Pay button,
+/// card or set-up screen (App Review 2.1: nothing that cannot work).
+bool get tapToPayOnThisPlatform => kIsWeb || defaultTargetPlatform != TargetPlatform.iOS || iosTapToPayGranted;
 
 /// Where a step of the payment has got to, for the screen.
 enum PayStep { preparing, activating, linking, waitingForCard, onMachine, pin, signature, cancelling, confirming, done }

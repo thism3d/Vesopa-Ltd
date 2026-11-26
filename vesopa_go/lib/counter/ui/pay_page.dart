@@ -858,7 +858,9 @@ class _PayPageState extends ConsumerState<PayPage> {
     // Apple (review 5.1, 5.2; HIG): on an iPhone, Tap to Pay on iPhone is the
     // first payment option, named so, whether or not it is set up yet (the
     // button sets it up); the card machine is the second.
-    final iPhoneTap = defaultTargetPlatform == TargetPlatform.iOS && !_isIpad(context) && !teya;
+    // Without Apple's Tap to Pay entitlement in this build, an iPhone offers
+    // the card machine and QR Pay instead (tapToPayOnThisPlatform).
+    final iPhoneTap = defaultTargetPlatform == TargetPlatform.iOS && !_isIpad(context) && !teya && tapToPayOnThisPlatform;
     final via = iPhoneTap ? 'tap' : cardVia(settings, config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600);
     final other = via == 'tap' ? 'machine' : 'tap';
     final notes = CashNote.listFrom(config.cashNotes);
@@ -874,7 +876,9 @@ class _PayPageState extends ConsumerState<PayPage> {
         cardLabel: iPhoneTap ? 'Tap to Pay on iPhone' : 'Card',
         // Tap to Pay on iPhone is not in iPadOS (Apple's guidelines): an
         // iPad offers it only as a test venue's pretend payment.
-        otherCard: teya || (other == 'tap' && _isIpad(context) && !config.testVenue) ? null : (amount) => _card(other, amount: amount),
+        otherCard: teya || (other == 'tap' && (_isIpad(context) || !tapToPayOnThisPlatform) && !config.testVenue)
+            ? null
+            : (amount) => _card(other, amount: amount),
         otherCardLabel: other == 'machine' ? 'Card machine' : (_isIpad(context) ? 'Test payment' : 'Tap to Pay'),
         qrPay: _qr,
         googlePay: _googlePay != null || _debugShowGooglePay ? _takeGooglePay : null,

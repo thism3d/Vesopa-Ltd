@@ -180,9 +180,13 @@ jobs:
         working-directory: vesopa_go
         env:
           BUILD_NUMBER: ${{ steps.asc.outputs.build }}
+          # Tap to Pay on iPhone only where Apple has granted it to the App ID
+          # (testflight.py prepare), or in a development build for test iPhones.
+          TAP_TO_PAY: ${{ inputs.adhoc && 'true' || steps.asc.outputs.taptopay || 'false' }}
         run: |
           flutter pub get
-          flutter build ios --release --no-codesign --build-number="$BUILD_NUMBER"
+          echo "Tap to Pay on iPhone in this build: $TAP_TO_PAY"
+          flutter build ios --release --no-codesign --build-number="$BUILD_NUMBER" --dart-define=IOS_TAP_TO_PAY="$TAP_TO_PAY"
 
       # As ios-venue-app.yml: a distribution certificate and App Store profile
       # made for this run, in a keychain of the run's own.

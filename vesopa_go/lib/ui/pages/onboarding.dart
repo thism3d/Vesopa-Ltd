@@ -21,6 +21,7 @@ import 'package:stripe_onboarding/stripe_onboarding.dart';
 
 import '../../data/api.dart';
 import '../../data/session.dart';
+import '../../payments/payment_service.dart' show tapToPayOnThisPlatform;
 import '../theme.dart';
 
 String _pounds(num minor) {
@@ -170,15 +171,12 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     return null;
   }
 
+  /// The licence step: the 14-day trial starts, with nothing to pay in the
+  /// app (owner, 2026-11-26; App Store 3.1.1 and Google Play's payments
+  /// policy). StripeOnboarding.collectCard is no longer used by the app.
   Future<String?> _licence() async {
-    final s = await _api.licenceSession();
-    if (s['done'] == true) return null;
-    final r = await StripeOnboarding.collectCard(
-      publishableKey: s['publishable_key'] as String? ?? '',
-      setupIntentClientSecret: s['setup_intent_client_secret'] as String,
-      merchantName: s['merchant_name'] as String? ?? 'Vesopa Software Ltd',
-    );
-    if (r.end == StripeFlowEnd.failed) return r.message ?? 'The card was not saved. Try again.';
+    final s = await _api.licenceTrial();
+    if (mounted) setState(() => _status = s);
     return null;
   }
 
@@ -347,6 +345,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
         return _State.todo;
       case 3:
         if (licence == 'trialing' || licence == 'active') return _State.done;
+        // A trial started in the app, before any card (the server's own word).
+        if ((s['licence'] as Map?)?['ok'] == true) return _State.done;
         if (licence == 'past_due' || licence == 'unpaid') return _State.problem;
         return _State.todo;
       default:
@@ -461,27 +461,27 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           ],
         );
       case 3:
-        final status = licence['status'] as String?;
+        // Nothing about paying here: the stores' payment rules (owner,
+        // 2026-11-26). The trial's end date once it has started.
+        final ends = licence['trial_end'];
         return _StepPage(
           icon: Icons.workspace_premium_rounded,
           title: 'Start your free trial',
-          body: switch (status) {
-            'trialing' => 'Free until ${_date(licence['trial_end'])}, then ${_pounds(licence['amount_minor'] ?? 2900)} a month. Cancel any time.',
-            'active' => 'Your licence is active: ${_pounds(licence['amount_minor'] ?? 2900)} a month.',
-            'past_due' || 'unpaid' => 'The last payment did not go through. Add another card.',
-            _ => '${licence['trial_days'] ?? 14} days free, then ${_pounds(licence['amount_minor'] ?? 2900)} a month. '
-                'Add a card now; nothing is taken until the free days end.',
-          },
+          body: state == _State.done
+              ? (ends != null ? 'Your free trial runs until ${_date(ends)}.' : 'Your free trial has started.')
+              : state == _State.problem
+                  ? 'There is a problem with this venue\'s licence. Email support@vesopasoftware.com and we will sort it out.'
+                  : '${licence['trial_days'] ?? 14} days free, with everything below open. Start it now.',
           state: state,
           error: _error,
-          bullets: state == _State.done ? null : const [
+          bullets: state == _State.done ? null : [
             (Icons.point_of_sale_rounded, 'EPOS on your phones and tablets'),
             (Icons.soup_kitchen_rounded, 'Kitchen screens and customer displays on any screen or TV'),
-            (Icons.contactless_rounded, 'Card payments with Vesopa Tap to Pay and card readers'),
+            (Icons.contactless_rounded, tapToPayOnThisPlatform ? 'Card payments with Vesopa Tap to Pay and card readers' : 'Card payments with card readers and QR Pay'),
           ],
-          primary: state == _State.done ? 'Continue' : 'Add a card or wallet',
+          primary: state == _State.done ? 'Continue' : 'Start free trial',
           busy: _busy == 'licence',
-          onPrimary: _busy != null || !businessDone
+          onPrimary: _busy != null || !businessDone || state == _State.problem
               ? null
               : state == _State.done
                   ? () => setState(() => _page = 4)
