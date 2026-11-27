@@ -38,6 +38,9 @@ String spokenLinkCode(String code) => code.length == 8 ? '${code.substring(0, 4)
 
 /// The code out of whatever was scanned or typed: the QR's link, or the
 /// letters themselves with or without the space.
+/// What a new screen's QR holds: Vesopa Go's own link for the code.
+String qrLinkFor(String code) => 'vesopago://link?c=$code';
+
 String? linkCodeFrom(String scanned) {
   final text = scanned.trim();
   final uri = Uri.tryParse(text);
@@ -155,11 +158,11 @@ class _LinkScreenPageState extends ConsumerState<LinkScreenPage> {
       const SizedBox(height: 10),
       Text('Use a phone or tablet that is already signed in to your venue.', style: t.titleMedium?.copyWith(color: context.goMuted, height: 1.35)),
       const SizedBox(height: 22),
-      const _Step(1, 'Point your phone\'s camera at this code. Vesopa Go opens by itself.'),
+      const _Step(1, 'Point your phone\'s camera at this code and tap Open in Vesopa Go. No web page opens.'),
       const _Step(2, 'Or in Vesopa Go: Settings, Connect a screen or TV, and scan it.'),
       const _Step(3, 'Choose what this screen is for. It opens a few seconds later.'),
       const SizedBox(height: 18),
-      Text('No phone to hand? Type the code on Terminals in the back office.', style: t.bodyMedium?.copyWith(color: context.goMuted)),
+      Text('No phone to hand? Type the code on Terminals in the back office. No Vesopa Go yet? Get it at go.vesopa.com/install.', style: t.bodyMedium?.copyWith(color: context.goMuted)),
       if (_error != null) ...[
         const SizedBox(height: 14),
         Text(_error!, style: t.bodyMedium?.copyWith(color: Tp.danger)),
@@ -186,7 +189,11 @@ class _LinkScreenPageState extends ConsumerState<LinkScreenPage> {
             child: Center(child: _error == null ? const CircularProgressIndicator() : const Icon(Icons.wifi_off_rounded, size: 56, color: Tp.ink)),
           )
         else
-          QrImageView(data: _url!, size: 260, padding: EdgeInsets.zero, semanticsLabel: 'Code to connect this screen'),
+          // The app's own link, not a web address (owner, 2026-11-27: "do
+          // not open url after opening the Vesopa Go app ... use deeplink
+          // url"): the camera offers Vesopa Go straight away and no browser
+          // opens. Go's own scanner reads the same code.
+          QrImageView(data: qrLinkFor(code), size: 260, padding: EdgeInsets.zero, semanticsLabel: 'Code to connect this screen'),
         const SizedBox(height: 16),
         Text(
           _joining ? 'Connecting' : (code == null ? (_error == null ? 'Getting a code' : 'No connection') : spokenLinkCode(code)),

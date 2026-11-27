@@ -42,6 +42,8 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // The venue's screens finding each other on the Wi-Fi (GoNsd.kt).
+        GoNsd(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
         // This device's settings (lib/ui/device_prefs.dart, lib/ui/tv.dart).
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.vesopa.go/device").setMethodCallHandler { call, result ->
             when (call.method) {

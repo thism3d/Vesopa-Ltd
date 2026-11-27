@@ -604,6 +604,10 @@ class _RemotePadPageState extends ConsumerState<RemotePadPage> {
                 ]),
               ],
               const SizedBox(height: 18),
+              ListTile(leading: const Icon(Icons.network_check_rounded), title: const Text('Connection check'), subtitle: const Text('How keys reach this screen, and why not'), onTap: () {
+                Navigator.pop(c);
+                _check(s);
+              }),
               ListTile(leading: const Icon(Icons.info_outline_rounded), title: const Text('About this screen'), onTap: () {
                 Navigator.pop(c);
                 _about(s);
@@ -625,6 +629,108 @@ class _RemotePadPageState extends ConsumerState<RemotePadPage> {
           ),
         ),
       );
+
+  /// What is wrong, in one line, above the remote: a TV that cannot be
+  /// reached the way keys are sent.
+  Widget _health(LinkedScreen s) {
+    final diag = s.state?['diag'] is Map ? Map<String, dynamic>.from(s.state!['diag'] as Map) : null;
+    String? problem;
+    if (!s.reachable) {
+      problem = 'Vesopa has not heard from this screen for 30 s. Is Vesopa Go open on it?';
+    } else if (!s.local && !s.polling && (s.app == null || _older(s.app!, '1.2.77'))) {
+      problem = 'This TV runs Vesopa Go ${s.app ?? 'older than 1.2.77'}: update it from Google Play, then keys arrive by Wi-Fi and through Vesopa.';
+    } else if (!s.local && !s.polling) {
+      problem = 'The TV is not collecting keys from Vesopa just now (${diag?['poll'] ?? 'no answer'}). Tap for the connection check.';
+    }
+    if (problem == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Tp.danger.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _check(s),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              const Icon(Icons.warning_amber_rounded, color: Tp.danger),
+              const SizedBox(width: 10),
+              Expanded(child: Text(problem)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static bool _older(String a, String b) {
+    List<int> v(String x) => x.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+    final x = v(a), y = v(b);
+    for (var i = 0; i < 3; i++) {
+      final p = i < x.length ? x[i] : 0, q = i < y.length ? y[i] : 0;
+      if (p != q) return p < q;
+    }
+    return false;
+  }
+
+  /// Every road from this phone to the screen, tested now, and the log of
+  /// what was tried (owner, 2026-11-27: "add logs ... to find out why it's not
+  /// working").
+  Future<void> _check(LinkedScreen s) async {
+    unawaited(RemoteLink.check(ref.read(apiProvider), ref.read(tapProvider.notifier).deviceId, s.id));
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (c) => ValueListenableBuilder<Map<String, LinkedScreen>>(
+        valueListenable: RemoteLink.screens,
+        builder: (c, all, _) {
+          final x = all[s.id] ?? s;
+          final diag = x.state?['diag'] is Map ? Map<String, dynamic>.from(x.state!['diag'] as Map) : const <String, dynamic>{};
+          Widget row(String k, String v, bool ok) => ListTile(
+                dense: true,
+                leading: Icon(ok ? Icons.check_circle_rounded : Icons.error_rounded, color: ok ? Tp.green : Tp.danger),
+                title: Text(k),
+                subtitle: Text(v),
+              );
+          return SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(c).height * 0.85),
+              child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), shrinkWrap: true, children: [
+                Text('Connection check · ${x.name}', style: Theme.of(c).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                row('Vesopa (Live)', x.live ? 'The TV said hello in the last 30 s' : 'No hello from the TV for 30 s', x.live),
+                row('TV collecting keys from Vesopa', x.polling ? 'Yes, every 1.5 s' : 'No${diag['poll'] != null ? ': ${diag['poll']}' : ''}', x.polling),
+                row('Same Wi-Fi (Local)',
+                    x.local
+                        ? 'Yes, at ${x.localAddr}:${x.localPort}'
+                        : (x.localIps.isEmpty ? 'The TV gave no Wi-Fi address${diag['local'] != null ? ' (${diag['local']})' : ''}' : 'Tried ${x.localIps.join(', ')}: no answer'),
+                    x.local),
+                row('TV app', 'Vesopa Go ${diag['app'] ?? x.app ?? 'unknown (older than 1.2.77)'}', x.app != null && !_older(x.app!, '1.2.77')),
+                row('Last key the TV received', '${diag['last_key'] ?? 'none yet'}${diag['key_count'] != null ? ' (${diag['key_count']} in all)' : ''}', diag['last_key'] != null),
+                const SizedBox(height: 8),
+                Text('What this phone tried', style: Theme.of(c).textTheme.titleMedium),
+                const SizedBox(height: 4),
+                for (final line in x.log.reversed) Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: SelectableText(line, style: const TextStyle(fontFamily: 'monospace', fontSize: 12))),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: () => RemoteLink.check(ref.read(apiProvider), ref.read(tapProvider.notifier).deviceId, s.id),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Check again'),
+                ),
+                TextButton.icon(
+                  onPressed: () => Clipboard.setData(ClipboardData(text: x.log.join('\n'))),
+                  icon: const Icon(Icons.copy_rounded),
+                  label: const Text('Copy the log'),
+                ),
+              ]),
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -666,10 +772,14 @@ class _RemotePadPageState extends ConsumerState<RemotePadPage> {
             ],
           ),
           body: SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
+            child: LayoutBuilder(builder: (context, box) {
+              // Phone: one column. Tablet (iPad landscape): the remote on the
+              // left, the screen's panels and its mirror on the right, as
+              // Google TV's remote does on a tablet (owner, 2026-11-27).
+              final wide = box.maxWidth >= 900;
+              final leftChildren = <Widget>[
+                _health(s),
+
                   if (_switching) const LinearProgressIndicator(),
                   if (_pane != _Pane.keyboard)
                     Align(
@@ -718,6 +828,8 @@ class _RemotePadPageState extends ConsumerState<RemotePadPage> {
                       Text('${volume!['level']}%', style: t.titleSmall),
                     ],
                   ]),
+              ];
+              final rightChildren = <Widget>[
                   const SizedBox(height: 20),
                   if (kitchen)
                     _Panel(title: 'Kitchen', children: [
@@ -752,9 +864,25 @@ class _RemotePadPageState extends ConsumerState<RemotePadPage> {
                     ]),
                   const SizedBox(height: 16),
                   _mirror(s),
-                ]),
-              ),
-            ),
+              ];
+              if (!wide) {
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [...leftChildren, ...rightChildren]),
+                  ),
+                );
+              }
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1200),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(flex: 5, child: ListView(padding: const EdgeInsets.fromLTRB(24, 8, 12, 24), children: leftChildren)),
+                    Expanded(flex: 6, child: ListView(padding: const EdgeInsets.fromLTRB(12, 16, 24, 24), children: rightChildren)),
+                  ]),
+                ),
+              );
+            }),
           ),
         );
       },

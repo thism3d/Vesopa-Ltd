@@ -102,6 +102,8 @@ function goRemoteRoutes({ secret, broadcast, now = () => Date.now() }) {
       stateAt: was ? was.stateAt : undefined,
       keys: was ? was.keys : [],
       local: localOf(body.local),
+      app: clamp(body.app, 24),
+      polledAt: was ? was.polledAt : undefined,
       name: clamp(body.name, 80) || 'Screen',
       mode: MODES.has(mode) ? mode : 'display',
       live: body.live !== false,
@@ -117,6 +119,7 @@ function goRemoteRoutes({ secret, broadcast, now = () => Date.now() }) {
     res.set('Cache-Control', 'no-store');
     if (!screen) return res.json({ keys: [], seq });
     screen.seen = now();
+    screen.polledAt = now();
     const after = Number(req.query.after) || 0;
     res.json({ keys: screen.keys.filter((k) => k.seq > after), seq });
   });
@@ -151,7 +154,13 @@ function goRemoteRoutes({ secret, broadcast, now = () => Date.now() }) {
     const mine = clamp(req.query.device_id, 64);
     const list = [...screensOf(req.office)]
       .filter(([id, s]) => id !== mine && t - s.seen <= ALIVE_MS)
-      .map(([id, s]) => ({ device_id: id, name: s.name, mode: s.mode, live: s.live, tv: s.tv, local: s.local || null }))
+      .map(([id, s]) => ({
+        device_id: id, name: s.name, mode: s.mode, live: s.live, tv: s.tv, local: s.local || null,
+        // For the phone's connection check: the screen's Vesopa Go version,
+        // and whether it is asking for its keys (1.2.77 and later).
+        app: s.app || null,
+        polling: s.polledAt != null && t - s.polledAt <= 10 * 1000,
+      }))
       .sort((a, b) => a.name.localeCompare(b.name));
     res.json({ screens: list });
   });
@@ -176,7 +185,7 @@ function goRemoteRoutes({ secret, broadcast, now = () => Date.now() }) {
     broadcast(msg, { office: req.office });
     screen.keys.push(msg);
     if (screen.keys.length > QUEUE) screen.keys.splice(0, screen.keys.length - QUEUE);
-    res.json({ ok: true, seq });
+    res.json({ ok: true, seq, live: screen.live, polling: screen.polledAt != null && now() - screen.polledAt <= 10 * 1000 });
   });
 
   return router;

@@ -1,6 +1,6 @@
 {
   "_comment": "One place for what testers read on each build: TestFlight's What to Test (tool/testflight.py) and Play's release notes (tool/play_upload.py). Change it with the version in pubspec.yaml; a build whose version is not this one says so in its notes instead of repeating an old release's.",
-  "version": "1.2.77",
-  "what_to_test": "Finding and controlling TVs: 1. On a TV, open Vesopa Go as Customer display or Kitchen. 2. On a phone or iPad on the same Wi-Fi: More > Screens and TVs > Control a screen. The TV is listed and shows Local (allow Local Network when iOS asks). 3. Turn the phone's Wi-Fi off (mobile data): the TV still shows, Live, and the keys still work. 4. Scan a new TV's QR with the iPad camera: Vesopa Go opens at Connect this screen; if a browser opens instead, it hands over to Vesopa Go. 5. On the till, Settings > Customer displays > Disconnect a TV: confirm, and the TV goes back to its QR code.",
+  "version": "1.2.78",
+  "what_to_test": "TVs and the remote: 1. Update Vesopa Go on the TV AND the phone/iPad to 1.2.78. 2. Open the TV in Customer display or Kitchen. 3. On the phone: More > Screens and TVs > Control a screen: the TV appears by itself on the same Wi-Fi (Local; allow Local Network on iOS). 4. If a key does nothing: More > Connection check shows Vesopa, key collection, Wi-Fi and the TV's last key, with a log to copy. 5. A new TV's QR opens Vesopa Go straight away, no web page. 6. On the TV, the focus ring follows each button's shape (circle, pill, card) and glides between them.",
   "release_notes": "Start your free trial straight from the app with nothing to pay up front, delete your Vesopa account from More, and control your kitchen TV and customer display from your phone like a Google TV remote."
 }

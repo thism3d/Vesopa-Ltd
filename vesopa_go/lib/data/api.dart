@@ -141,7 +141,7 @@ class TapApi {
   /// A TV or screen (Kitchen, Customer display): "I am here", for the remote
   /// on a phone or tablet (src/go_remote.js).
   Future<Map<String, dynamic>> screenHello({required String deviceId, required String name, required String mode, bool live = true, bool tv = false, Map<String, Object?>? local}) =>
-      _send('POST', '/api/go/screen/hello', {'device_id': deviceId, 'name': name, 'mode': mode, 'live': live, 'tv': tv, 'local': ?local});
+      _send('POST', '/api/go/screen/hello', {'device_id': deviceId, 'name': name, 'mode': mode, 'live': live, 'tv': tv, 'local': ?local, 'app': goAppVersion});
 
   /// The keys pressed on this screen after [after], through the back office.
   Future<Map<String, dynamic>> screenKeys(String deviceId, int after) =>

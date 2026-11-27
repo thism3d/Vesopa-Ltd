@@ -331,6 +331,8 @@ class _FocusRing extends StatefulWidget {
 
 class _FocusRingState extends State<_FocusRing> {
   Rect? _rect;
+  ShapeBorder _shape = const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12)));
+  bool _shown = false;
   bool _alive = true;
   bool _queued = false;
 
@@ -354,26 +356,72 @@ class _FocusRingState extends State<_FocusRing> {
     });
   }
 
+  /// The shape the focused control is drawn with (owner, 2026-11-27: "focus
+  /// outline ... not matching the border buttons and circular buttons"): the
+  /// button's own Material (a circle, a pill, a rounded card), or its
+  /// InkWell's border; the box itself when it has none.
+  (Rect, ShapeBorder)? _shapeOf(BuildContext c, RenderBox mine) {
+    final box = c.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+    Rect rectOf(RenderBox b) => b.localToGlobal(Offset.zero, ancestor: mine) & b.size;
+    final own = rectOf(box);
+    ShapeBorder? shape;
+    Rect rect = own;
+    var levels = 0;
+    c.visitAncestorElements((e) {
+      if (++levels > 12) return false;
+      final w = e.widget;
+      final r = e.renderObject;
+      if (w is InkWell && w.customBorder != null) {
+        shape = w.customBorder;
+      } else if (w is InkWell && w.borderRadius != null) {
+        shape = RoundedRectangleBorder(borderRadius: w.borderRadius!);
+      } else if (w is Material && r is RenderBox && r.attached && r.hasSize) {
+        final mr = rectOf(r);
+        // Only the Material this control is drawn on, not the card or page
+        // a whole list sits on.
+        if (mr.width * mr.height <= own.width * own.height * 1.8) {
+          rect = mr;
+          shape ??= w.shape ??
+              (w.type == MaterialType.circle
+                  ? const CircleBorder()
+                  : (w.borderRadius != null ? RoundedRectangleBorder(borderRadius: w.borderRadius!) : null));
+        }
+        return false;
+      }
+      return true;
+    });
+    final side = rect.shortestSide;
+    shape ??= RoundedRectangleBorder(borderRadius: BorderRadius.circular(side >= 64 ? 14 : side / 4));
+    return (rect, shape!);
+  }
+
   void _measure() {
-    Rect? r;
     if (!GoDevice.remote.value) {
-      if (_rect != null) setState(() => _rect = null);
+      if (_shown) setState(() => _shown = false);
       return;
     }
     final focus = FocusManager.instance.primaryFocus;
     final c = focus?.context;
-    if (focus != null && focus is! FocusScopeNode && c != null && c.mounted) {
-      final box = c.findRenderObject();
-      final mine = context.findRenderObject();
-      if (box is RenderBox && box.attached && box.hasSize && mine is RenderBox && mine.attached) {
-        final topLeft = box.localToGlobal(Offset.zero, ancestor: mine);
-        r = topLeft & box.size;
-        // A field's focus node can be the whole page's: a box that fills the
-        // screen is not drawn.
-        if (r.width * r.height > mine.size.width * mine.size.height * 0.8) r = null;
-      }
+    final mine = context.findRenderObject();
+    (Rect, ShapeBorder)? got;
+    if (focus != null && focus is! FocusScopeNode && c != null && c.mounted && mine is RenderBox && mine.attached) {
+      got = _shapeOf(c, mine);
+      // A field's focus node can be the whole page's: a box that fills the
+      // screen is not drawn.
+      if (got != null && got.$1.width * got.$1.height > mine.size.width * mine.size.height * 0.8) got = null;
     }
-    if (r != _rect) setState(() => _rect = r);
+    if (got == null) {
+      if (_shown) setState(() => _shown = false);
+      return;
+    }
+    if (got.$1 != _rect || got.$2 != _shape || !_shown) {
+      setState(() {
+        _rect = got!.$1;
+        _shape = got.$2;
+        _shown = true;
+      });
+    }
   }
 
   @override
@@ -384,26 +432,77 @@ class _FocusRingState extends State<_FocusRing> {
     super.dispose();
   }
 
+  static const _gap = 5.0;
+  static const _move = Duration(milliseconds: 140);
+
   @override
   Widget build(BuildContext context) {
     final r = _rect;
     if (r == null) return const SizedBox.shrink();
+    // The ring glides to the next control and fades in and out, as on Google
+    // TV; it follows the control's own outline, a little outside it.
     return Stack(children: [
-      Positioned(
-        left: r.left - 5,
-        top: r.top - 5,
-        width: r.width + 10,
-        height: r.height + 10,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Tp.lime, width: 4),
-            boxShadow: [BoxShadow(color: Tp.lime.withValues(alpha: 0.45), blurRadius: 18)],
-          ),
+      AnimatedPositioned(
+        duration: _move,
+        curve: Curves.easeOutCubic,
+        left: r.left - _gap,
+        top: r.top - _gap,
+        width: r.width + _gap * 2,
+        height: r.height + _gap * 2,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          opacity: _shown ? 1 : 0,
+          child: CustomPaint(painter: _RingPainter(_shape, _gap)),
         ),
       ),
     ]);
   }
+}
+
+class _RingPainter extends CustomPainter {
+  _RingPainter(this.shape, this.gap);
+  final ShapeBorder shape;
+  final double gap;
+
+  /// The control's outline grown by [gap] all round: a circle stays a
+  /// circle, a pill a pill, a card's corners a little rounder.
+  Path _outline(Rect r) {
+    final inner = r.deflate(gap);
+    final s = shape;
+    if (s is CircleBorder || inner.width == inner.height && s is StadiumBorder) return Path()..addOval(r);
+    if (s is StadiumBorder) return Path()..addRRect(RRect.fromRectAndRadius(r, Radius.circular(r.shortestSide / 2)));
+    if (s is RoundedRectangleBorder) {
+      final br = s.borderRadius.resolve(TextDirection.ltr);
+      Radius grow(Radius x) => Radius.elliptical(x.x + gap, x.y + gap);
+      return Path()
+        ..addRRect(RRect.fromRectAndCorners(r,
+            topLeft: grow(br.topLeft), topRight: grow(br.topRight), bottomLeft: grow(br.bottomLeft), bottomRight: grow(br.bottomRight)));
+    }
+    return s.getOuterPath(r);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = _outline(Offset.zero & size);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Tp.lime.withValues(alpha: 0.35)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 8
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Tp.lime
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.5,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter old) => old.shape != shape || old.gap != gap;
 }
 
 /// Move the focus; where it cannot move, scroll what is under it instead.
