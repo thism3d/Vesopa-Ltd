@@ -60,6 +60,10 @@ class Shell extends ConsumerStatefulWidget {
 }
 
 class _ShellState extends ConsumerState<Shell> {
+  /// A phone on its side (iPhone or Android): the header folds away behind
+  /// a small tab at the top so the work has the whole screen; a tap brings
+  /// it back, its own arrow puts it away (owner, 2026-11-26).
+  bool _headerOpen = false;
   // Apple: configure again each time the app becomes frontmost.
   late final AppLifecycleListener _life = AppLifecycleListener(onResume: () {
     if (!mounted || kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
@@ -150,9 +154,20 @@ class _ShellState extends ConsumerState<Shell> {
     ref.listen(clerkSaleOfferProvider, (_, id) => id == null ? null : _offerClerkSale(id));
     final pages = _pagesFor(s);
     final i = ref.watch(shellPageProvider).clamp(0, pages.length - 1);
-    final body = pages[i].$3();
+    final page = pages[i].$3();
+    final size = MediaQuery.sizeOf(context);
+    final side = size.shortestSide < 600 && size.width > size.height && size.height < 560;
+    final folded = side && !_headerOpen;
+    final body = !side
+        ? page
+        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (folded) _HeaderTab(onTap: () => setState(() => _headerOpen = true)),
+            Expanded(child: page),
+          ]);
     return Scaffold(
-      appBar: AppBar(
+      appBar: folded
+          ? null
+          : AppBar(
         titleSpacing: 0,
         title: i == 0 ? const GoLockup(size: 22) : Text(pages[i].$2),
         actions: [
@@ -174,6 +189,12 @@ class _ShellState extends ConsumerState<Shell> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: const ClerkChip(),
           ),
+          if (side)
+            IconButton(
+              tooltip: 'Hide the header',
+              icon: const Icon(Icons.keyboard_arrow_up_rounded),
+              onPressed: () => setState(() => _headerOpen = false),
+            ),
         ],
       ),
       drawer: NavigationDrawer(
@@ -192,6 +213,40 @@ class _ShellState extends ConsumerState<Shell> {
         ],
       ),
       body: body,
+    );
+  }
+}
+
+/// The folded header of a phone on its side: a slim pull tab at the top,
+/// clear of the notch, that brings the header back.
+class _HeaderTab extends StatelessWidget {
+  const _HeaderTab({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      bottom: false,
+      child: SizedBox(
+        height: 22,
+        child: Center(
+          child: Material(
+            color: scheme.surfaceContainerHighest,
+            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(11)),
+            child: InkWell(
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(11)),
+              onTap: onTap,
+              child: Semantics(
+                button: true,
+                label: 'Show the header',
+                excludeSemantics: true,
+                child: const SizedBox(width: 96, height: 22, child: Icon(Icons.keyboard_arrow_down_rounded, size: 20)),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -569,12 +624,15 @@ class _AccentPicker extends ConsumerWidget {
     final current = ref.watch(accentProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Colour', style: Theme.of(context).textTheme.titleSmall),
+      // Centred, title and swatches alike, each row of colours in the middle
+      // of the page at any width (owner, 2026-11-26: "colors in the settings
+      // are not center").
+      child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        Text('Colour', textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 2),
-        Text(current.name, style: TextStyle(color: context.goMuted)),
+        Text(current.name, textAlign: TextAlign.center, style: TextStyle(color: context.goMuted)),
         const SizedBox(height: 10),
-        const Align(alignment: Alignment.centerLeft, child: AccentSwatches()),
+        const SizedBox(width: double.infinity, child: AccentSwatches(alignment: WrapAlignment.center)),
       ]),
     );
   }

@@ -14,7 +14,9 @@
  *     GET  /api/go/screens             the venue's screens awake now
  *     POST /api/go/screens/:id/key     press a key on one: up, down, left,
  *                                      right, ok, back, next, previous,
- *                                      settings, refresh
+ *                                      settings, refresh, mode; on a
+ *                                      kitchen screen also bump, recall,
+ *                                      tickets, finished, orders, board
  *
  * A key is passed on at once over the venue's live connection (the /ws
  * socket every Go device keeps, office-scoped by `broadcast`) as
@@ -31,7 +33,12 @@ const express = require('express');
 const { requireTerminal } = require('./auth');
 
 const ALIVE_MS = 30 * 1000;
-const KEYS = new Set(['up', 'down', 'left', 'right', 'ok', 'back', 'next', 'previous', 'settings', 'refresh']);
+// 2026-11-26: 'mode' (the screen reads its mode again, after a manager made it
+// a kitchen screen or a customer display from the phone, /api/go/mode/change),
+// and the kitchen's own: the front ticket done, the last one back, which tab,
+// which board.
+const KEYS = new Set(['up', 'down', 'left', 'right', 'ok', 'back', 'next', 'previous', 'settings', 'refresh',
+  'mode', 'bump', 'recall', 'tickets', 'finished', 'orders', 'board']);
 const MODES = new Set(['kitchen', 'display', 'epos', 'terminal']);
 const clamp = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
 

@@ -95,6 +95,34 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
       unawaited(ref.read(kitchenSessionProvider.notifier).refreshProfile());
       return true;
     }
+    // The kitchen's own keys on the phone's remote (owner, 2026-11-26: "proper
+    // options" for a TV used as the Kitchen screen).
+    final onTop = ModalRoute.of(context)?.isCurrent ?? true;
+    final profile = ref.read(kitchenSessionProvider).value?.screen ?? ScreenProfile.allStations;
+    final board = ref.read(ticketBoardProvider.notifier);
+    switch (key) {
+      case 'bump':
+        // The ticket at the front of the queue (rushed first, then oldest).
+        final open = ref.read(ticketBoardProvider).open(profile);
+        if (open.isNotEmpty) {
+          unawaited(board.bump(open.first));
+          HapticFeedback.mediumImpact();
+        }
+        return true;
+      case 'recall':
+        // The ticket finished last comes back to the board.
+        final done = ref.read(ticketBoardProvider).completed(profile);
+        if (done.isNotEmpty) unawaited(board.recall(done.first));
+        return true;
+      case 'tickets' || 'finished' || 'orders':
+        if (onTop) {
+          setState(() => _tab = switch (key) { 'finished' => _Tab.done, 'orders' => _Tab.orders, _ => _Tab.open });
+        }
+        return true;
+      case 'board':
+        if (onTop) unawaited(_pickBoard());
+        return true;
+    }
     return false;
   }
 
