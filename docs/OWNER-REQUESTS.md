@@ -60,6 +60,16 @@ secrets only).
   debug symbols", version code 1000010): the build zips each bundle's native
   libraries (`<bundle>-symbols.zip`) and tool/play_upload.py uploads them for
   that version code.
+- **Loughor RFC Wear OS build, 2026-11-27:** the watch module no longer
+  names the Kotlin plugin (Flutter applies it), which removed Flutter's
+  "applies the Kotlin Gradle Plugin, which will cause build failures in
+  future versions of Flutter". The remaining "Deprecated
+  'org.jetbrains.kotlin.android' plugin usage" and "android.builtInKotlin=false
+  is deprecated" lines come from Flutter's own template and its plugins
+  (url_launcher, shared_preferences ...) and go when Flutter moves to AGP's
+  built-in Kotlin. The watch bundle's only native library is Compose's
+  prebuilt libandroidx.graphics.path.so (no symbols inside it); its symbols
+  zip goes up with each release.
 - **Decisions:** "Go on, finish all the tasks. Full consent given. Do pick
   the best decisions." Ask the owner straight away when something is
   genuinely theirs to decide.
