@@ -67,3 +67,13 @@ test('only known keys, only awake screens, only the same venue', async () => {
     assert.equal(sent.length, 0);
   });
 });
+
+test('a TV made a kitchen screen from the phone: mode, then the kitchen keys', async () => {
+  await withServer(async (call, sent) => {
+    await call('kitchen@x', 'POST', '/api/go/screen/hello', { device_id: 'tv2', name: 'Bar TV', mode: 'display', tv: true });
+    for (const key of ['mode', 'bump', 'recall', 'tickets', 'finished', 'orders', 'board']) {
+      assert.equal((await call('kitchen@x', 'POST', '/api/go/screens/tv2/key', { key })).status, 200, key);
+    }
+    assert.deepEqual(sent.map((s) => s.msg.key), ['mode', 'bump', 'recall', 'tickets', 'finished', 'orders', 'board']);
+  });
+});

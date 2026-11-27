@@ -198,11 +198,13 @@ class _TablesPageState extends ConsumerState<TablesPage> {
     );
   }
 
+  // Scrolls when a phone on its side is too short for every number.
   Future<int?> _askCovers(TableInfo table) => showModalBottomSheet<int>(
         context: context,
         showDragHandle: true,
+        isScrollControlled: true,
         builder: (c) => SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Text('How many at ${table.name}?', style: Theme.of(c).textTheme.titleLarge),

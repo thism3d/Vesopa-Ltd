@@ -46,9 +46,21 @@ class _SellPageState extends ConsumerState<SellPage> {
 
   /// Notices never cover Pay: above the phone's sale bar, and on a tablet
   /// under the items only, clear of the sale column.
-  EdgeInsets get _noticeMargin => MediaQuery.of(context).size.width >= 840
-      ? const EdgeInsets.fromLTRB(96, 0, 380 + 12, 12)
-      : EdgeInsets.fromLTRB(12, 0, 12, 128 + MediaQuery.of(context).padding.bottom);
+  EdgeInsets get _noticeMargin {
+    final size = MediaQuery.sizeOf(context);
+    final pad = MediaQuery.paddingOf(context);
+    // A phone on its side: over the items, clear of the sale column on the
+    // left, the notch, and the floating Pay at the bottom right.
+    if (formOf(context) == 'phone' && _phoneOnItsSide(BoxConstraints.tight(size))) {
+      return EdgeInsets.fromLTRB(pad.left + _sideSaleWidth(size) + 16, 0, pad.right + 12, pad.bottom + 64);
+    }
+    return size.width >= 840
+        ? const EdgeInsets.fromLTRB(96, 0, 380 + 12, 12)
+        : EdgeInsets.fromLTRB(12, 0, 12, 128 + pad.bottom);
+  }
+
+  /// The sale column's width on a phone on its side.
+  static double _sideSaleWidth(Size size) => size.width < 700 ? 230 : 270;
 
   Future<void> _press(Product p) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -158,6 +170,14 @@ class _SellPageState extends ConsumerState<SellPage> {
 
   /// The programmed screen on show, once the clerk has left the home screen.
   int? _screenId;
+
+  /// A phone on its side: the top bar tucked behind a tab on the right until
+  /// tapped (owner, 2026-11-26).
+  bool _topOpen = false;
+
+  /// And the bottom keys but Pay, behind a tab at the bottom right; Pay is
+  /// then under the sale's total, always in reach.
+  bool _bottomOpen = false;
 
   /// One of the venue's own pages, over the sale screen, with a way back.
   void _open(String title, Widget page) => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -375,21 +395,25 @@ class _SellPageState extends ConsumerState<SellPage> {
           onFunction: _function,
           payEnabled: hasLines,
           payLabel: payLabel,
-          reflowColumns: phone ? 3 : null,
+          reflowColumns: phone ? (_phoneOnItsSide(BoxConstraints.tight(MediaQuery.sizeOf(context))) ? 5 : 3) : null,
           navFallback: home,
+          // On its side the products scroll clear of the floating Pay.
+          bottomPad: _phoneOnItsSide(BoxConstraints.tight(MediaQuery.sizeOf(context))) ? 64 : 0,
         ),
       ),
     );
     final arrange = config.go.allowRearrange && (s.clerk?.can(TillPermission.isManager) ?? false);
     // The top bar slim, its keys' icons beside their names (the owner,
     // 2026-10-30); the bottom bar full height, where the thumb works.
-    Widget bar(TillScreen? b, {bool slim = false}) => b == null || !barHasKeys(b)
+    // On its side (short) the bottom keys are their icons alone, every one in
+    // a single row with no arrow; Pay keeps its words (owner, 2026-11-26).
+    Widget bar(TillScreen? b, {bool slim = false, bool short = false}) => b == null || !barHasKeys(b)
         ? const SizedBox.shrink()
         : Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
             child: SizedBox(
-              height: slim ? 44 : (phone ? 56 : 64),
-              child: ProgrammedStrip(bar: b, actions: actions, minKey: phone ? 92 : 104, inline: slim),
+              height: slim ? 44 : (short ? 48 : (phone ? 56 : 64)),
+              child: ProgrammedStrip(bar: b, actions: actions, minKey: phone ? 92 : 104, inline: slim, iconsOnly: short),
             ),
           );
     final open = _openBills(s, saleId);
@@ -415,7 +439,8 @@ class _SellPageState extends ConsumerState<SellPage> {
           ),
       ]),
     );
-    if (phone) {
+    final side = phone && _phoneOnItsSide(BoxConstraints.tight(MediaQuery.sizeOf(context)));
+    if (phone && !side) {
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         bar(top, slim: true),
         heading,
@@ -426,13 +451,16 @@ class _SellPageState extends ConsumerState<SellPage> {
       ]);
     }
     final scheme = Theme.of(context).colorScheme;
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      bar(top, slim: true),
+    final tucked = side && top != null && barHasKeys(top);
+    bool isPay(ScreenButton k) => k.kind == ScreenButtonKind.function && k.functionKey == 'pay';
+    final tuckBottom = side && bottom != null && keysInOrder(bottom).any((k) => !isPay(k));
+    final layout = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (!tucked) bar(top, slim: true),
       Expanded(
         child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           // The sale on the left, as on the till.
           Container(
-            width: MediaQuery.sizeOf(context).width >= 1100 ? 380 : 330,
+            width: side ? _sideSaleWidth(MediaQuery.sizeOf(context)) : (MediaQuery.sizeOf(context).width >= 1100 ? 380 : 330),
             margin: const EdgeInsets.fromLTRB(8, 8, 0, 0),
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
@@ -440,20 +468,90 @@ class _SellPageState extends ConsumerState<SellPage> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: scheme.outlineVariant),
             ),
-            child: SalePanel(onPay: keyedPay ? null : _pay),
+            // On its side Pay floats at the bottom right instead, so the
+            // sale's lines keep the whole column (owner, 2026-11-26).
+            child: SalePanel(onPay: side || keyedPay ? null : _pay),
           ),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              heading,
+              // On its side every line counts: the screen's name only when
+              // there are bills to switch between or a way home to show.
+              if (!side || open.isNotEmpty || (_screenId != null && _screenId != home.id)) heading,
               Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(8, 6, 8, 0), child: grid)),
             ]),
           ),
         ]),
       ),
-      bar(bottom),
+      if (!tuckBottom) bar(bottom, short: side),
       const SizedBox(height: 8),
     ]);
+    if (!side) return layout;
+    // On its side, clear of an iPhone's notch and home bar, with the top bar
+    // tucked behind a tab at the right: a tap slides it out over the keys, its
+    // arrow (or any of its keys) slides it back.
+    return SafeArea(
+      top: false,
+      child: Stack(children: [
+              layout,
+              // Pay, floating at the bottom right beside the tab, in the
+              // device's own colour, whenever there is something to pay.
+              if (hasLines && !(tuckBottom && _bottomOpen))
+                Positioned(
+                  bottom: 8,
+                  right: tuckBottom ? 38 : 8,
+                  child: _FloatingPay(label: 'Pay ${money(bill!.dueMinor)}', onPay: _pay),
+                ),
+              if (tuckBottom)
+                Positioned(
+                  bottom: 8,
+                  right: 0,
+                  left: _bottomOpen ? _sideSaleWidth(MediaQuery.sizeOf(context)) + 16 : null,
+                  child: _EdgeTab(
+                    open: _bottomOpen,
+                    what: 'the other keys',
+                    onToggle: () => setState(() => _bottomOpen = !_bottomOpen),
+                    bar: SizedBox(
+                      height: 48,
+                      child: ProgrammedStrip(
+                        bar: bottom,
+                        actions: actions,
+                        minKey: 92,
+                        iconsOnly: true,
+                        // Pay at the end of the row, where it always is.
+                        withoutPay: !hasPay(bottom),
+                        onKeyDone: () => setState(() => _bottomOpen = false),
+                      ),
+                    ),
+                  ),
+                ),
+              if (tucked)
+              Positioned(
+                top: 8,
+                right: 0,
+                left: _topOpen ? 8 : null,
+                child: _EdgeTab(
+                  open: _topOpen,
+                  what: 'the top keys',
+                  onToggle: () => setState(() => _topOpen = !_topOpen),
+                  bar: SizedBox(
+                    height: 44,
+                    child: ProgrammedStrip(
+                      bar: top,
+                      actions: actions,
+                      minKey: 92,
+                      inline: true,
+                      onKeyDone: () => setState(() => _topOpen = false),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+    );
   }
+
+  /// A phone turned on its side: wider than tall, and too short for the
+  /// upright layout's tiles and bar (an iPhone is 320 to 440 points high).
+  static bool _phoneOnItsSide(BoxConstraints box) => box.maxWidth > box.maxHeight && box.maxHeight < 560;
 
   /// The bills open on this device: the current sale, and every table with
   /// something on it, for the chips.
@@ -501,6 +599,41 @@ class _SellPageState extends ConsumerState<SellPage> {
       final wide = box.maxWidth >= 840;
       final tablet = form == 'tablet';
       final iphone = !tablet && defaultTargetPlatform == TargetPlatform.iOS;
+      // A phone on its side (owner, 2026-11-26: "fix iphone landscape pages"):
+      // the upright layout's two big tiles and floating bar left room for half
+      // a row. As the till: categories down the left, three or more items a
+      // row, and the sale in its own column on the right with Pay under it,
+      // clear of the notch and the home bar.
+      if (!tablet && _phoneOnItsSide(box)) {
+        final saleWidth = box.maxWidth >= 800 ? 300.0 : 270.0;
+        return SafeArea(
+          top: false,
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            PhotoRail(categories: categories, selected: selected, onSelect: pick, width: 84),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, inner) => PhotoGrid(
+                  items: items,
+                  tint: colour,
+                  columns: (inner.maxWidth / 150).floor().clamp(3, 5),
+                  onPress: _press,
+                  onLongPress: longPress,
+                ),
+              ),
+            ),
+            SizedBox(
+              width: saleWidth,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainer,
+                  border: Border(left: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
+                ),
+                child: SalePanel(onPay: _pay),
+              ),
+            ),
+          ]),
+        );
+      }
       if (iphone) {
         final cat = categories.firstWhere((c) => c.id == selected);
         return Stack(children: [
@@ -540,6 +673,84 @@ class _SellPageState extends ConsumerState<SellPage> {
       ]);
     });
   }
+}
+
+/// The top bar of a phone on its side: a slim tab at the right edge, or the
+/// bar itself slid out from the right with an arrow to put it away.
+class _EdgeTab extends StatelessWidget {
+  const _EdgeTab({required this.open, required this.onToggle, required this.bar, required this.what});
+  final bool open;
+  final String what;
+  final VoidCallback onToggle;
+  final Widget bar;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tab = Material(
+      color: scheme.surfaceContainerHighest,
+      elevation: 4,
+      borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+      child: InkWell(
+        borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+        onTap: onToggle,
+        child: Semantics(
+          button: true,
+          label: open ? 'Hide $what' : 'Show $what',
+          excludeSemantics: true,
+          child: SizedBox(
+            width: 30,
+            height: 48,
+            child: Icon(open ? Icons.chevron_right_rounded : Icons.chevron_left_rounded, size: 24),
+          ),
+        ),
+      ),
+    );
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.centerRight,
+      child: open
+          ? Material(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              elevation: 6,
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Row(children: [Expanded(child: bar), const SizedBox(width: 6), tab]),
+              ),
+            )
+          : Align(alignment: Alignment.centerRight, child: tab),
+    );
+  }
+}
+
+/// Pay on a phone on its side: a pill at the bottom right, in the colour
+/// chosen in Settings, over the keys (which scroll clear of it).
+class _FloatingPay extends StatelessWidget {
+  const _FloatingPay({required this.label, required this.onPay});
+  final String label;
+  final VoidCallback onPay;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 48,
+        child: FilledButton.icon(
+          key: const ValueKey('floating-pay'),
+          style: FilledButton.styleFrom(
+            backgroundColor: Tp.lime,
+            foregroundColor: Tp.onLime,
+            elevation: 6,
+            shadowColor: Colors.black,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: 17, fontWeight: FontWeight.w800),
+          ),
+          onPressed: onPay,
+          icon: const Icon(Icons.credit_card_rounded),
+          label: Text(label),
+        ),
+      );
 }
 
 /// The phone's bottom bar: the last thing rung up, then View Sale and Pay.

@@ -53,9 +53,10 @@ class _SalePanelState extends ConsumerState<SalePanel> {
     final session = ref.read(tapProvider.notifier);
 
     if (bill == null || bill.lines.isEmpty) {
+      // Scrolls rather than overflows in a short panel (a phone on its side).
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -70,11 +71,16 @@ class _SalePanelState extends ConsumerState<SalePanel> {
       );
     }
 
-    return Column(
+    // A phone on its side gives the panel little more than 300 points: the
+    // count and subtotal step aside so the lines and Pay keep their room
+    // (owner, 2026-11-26: iPhone landscape).
+    return LayoutBuilder(builder: (context, box) {
+      final short = box.maxHeight < 420;
+      return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+          padding: EdgeInsets.fromLTRB(16, short ? 4 : 8, 8, short ? 2 : 4),
           child: Row(
             children: [
               Expanded(
@@ -91,11 +97,18 @@ class _SalePanelState extends ConsumerState<SalePanel> {
                     ),
                 ]),
               ),
-              TextButton.icon(
-                onPressed: bill.paidMinor > 0 ? null : () => _discount(bill),
-                icon: const Icon(Icons.percent_rounded, size: 18),
-                label: const Text('Discount'),
-              ),
+              if (short)
+                IconButton(
+                  tooltip: 'Discount',
+                  onPressed: bill.paidMinor > 0 ? null : () => _discount(bill),
+                  icon: const Icon(Icons.percent_rounded),
+                )
+              else
+                TextButton.icon(
+                  onPressed: bill.paidMinor > 0 ? null : () => _discount(bill),
+                  icon: const Icon(Icons.percent_rounded, size: 18),
+                  label: const Text('Discount'),
+                ),
               IconButton(
                 tooltip: 'Clear the sale',
                 onPressed: bill.paidMinor > 0 || bill.lines.any((l) => l.sent) ? null : () => _clear(),
@@ -256,13 +269,13 @@ class _SalePanelState extends ConsumerState<SalePanel> {
         ),
         const Divider(height: 1),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          padding: EdgeInsets.fromLTRB(16, short ? 6 : 10, 16, 0),
           child: Column(
             children: [
               // The till's tender: how many, the subtotal, every deal and
               // discount by name, the service charge, then the total.
-              _Row('Items', bill.lines.fold<int>(0, (n, l) => n + l.quantity), count: true),
-              _Row('Subtotal', bill.subtotalMinor),
+              if (!short) _Row('Items', bill.lines.fold<int>(0, (n, l) => n + l.quantity), count: true),
+              if (!short) _Row('Subtotal', bill.subtotalMinor),
               if (bill.discountMinor > 0) ...[
                 // Each mix & match deal by name, as the till lists them.
                 for (final d in bill.dealsApplied.deals) _Row(d.times > 1 ? '${d.name} ×${d.times}' : d.name, -d.savingMinor),
@@ -277,13 +290,14 @@ class _SalePanelState extends ConsumerState<SalePanel> {
         ),
         if (widget.onPay != null)
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: short ? const EdgeInsets.fromLTRB(12, 8, 12, 10) : const EdgeInsets.all(16),
             child: FilledButton(key: const ValueKey('panel-pay'), onPressed: widget.onPay, child: Text('Pay ${money(bill.dueMinor)}')),
           )
         else
-          const SizedBox(height: 16),
+          SizedBox(height: short ? 8 : 16),
       ],
     );
+    });
   }
 
   void _clear() async {

@@ -630,6 +630,93 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
   });
 
   /** The online menu shows the product's new photo too (its dine-in items for that PLU). */
+  // ---- Every back-office report on Go (owner, 2026-11-26: "Vesopa Go should
+  // be capable to do everything ... without touching the back office") -------
+  //
+  // The back office's own report engine (reports.js runReport), for the venue
+  // the terminal token proves: the same reports, periods, terminals and
+  // filters as Reports in the back office, answered in the same JSON. Run by a
+  // member of staff whose PIN is checked here, not only on the phone: a
+  // manager, one whose group may read the X report, or anyone when the venue
+  // lets clerks open Reports (Vesopa Go options).
+  async function reportReader(office, body) {
+    const b = body || {};
+    let clerk = null;
+    try {
+      [[clerk]] = await pool.query(
+        `SELECT c.clark_name AS name, c.pin_code AS pin, c.permission_group_id AS grp, g.is_manager, g.can_x_report
+           FROM bo_clarks c
+           LEFT JOIN epos_permission_groups g ON g.id = c.permission_group_id AND g.email = c.email
+          WHERE c.id = ? AND c.email = ? AND COALESCE(c.active, 1) = 1`,
+        [Number(b.clerk_id) || 0, office]);
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      [[clerk]] = await pool.query(
+        'SELECT clark_name AS name, pin_code AS pin, NULL AS grp, 1 AS is_manager, 1 AS can_x_report FROM bo_clarks WHERE id = ? AND email = ?',
+        [Number(b.clerk_id) || 0, office]);
+    }
+    if (!clerk || String(clerk.pin) !== String(b.pin || '')) throw new TapError(403, 'Sign on again to read the reports.');
+    const allowed = clerk.grp == null || Number(clerk.is_manager) || Number(clerk.can_x_report)
+      || (await goOptionsFor(pool, office)).reports_clerks;
+    if (!allowed) throw new TapError(403, 'Reports are for managers at this venue.');
+    return clerk;
+  }
+
+  router.get('/api/tap/reports/catalogue', terminal, async (req, res, next) => {
+    try {
+      const r = require('./reports');
+      const office = req.office;
+      res.set('Cache-Control', 'no-store');
+      res.json({
+        groups: Object.entries(r.GROUPS).map(([key, label]) => ({ key, label })),
+        reports: Object.entries(r.REPORTS).map(([key, v]) => ({ key, label: v.label, description: v.description, group: v.group, filters: v.filters || [] })),
+        ranges: Object.entries(r.RANGES).map(([key, v]) => ({ key, label: v.label })),
+        terminals: await r.terminalsInUse({ pool, office }).catch(() => []),
+        clerks: await r.clerksInUse({ pool, office }).catch(() => []),
+        departments: await r.departmentsOf({ pool, office }).catch(() => []),
+      });
+    } catch (e) { send(res, e, next); }
+  });
+
+  router.post('/api/tap/reports/run', terminal, express.json(), async (req, res, next) => {
+    try {
+      const r = require('./reports');
+      const b = req.body || {};
+      await reportReader(req.office, b);
+      const [[o]] = await pool.query('SELECT name FROM offices WHERE contact_email = ?', [req.office]);
+      let report;
+      try {
+        report = await r.runReport({
+          pool,
+          office: req.office,
+          siteName: (o && o.name) || req.office,
+          report: b.report,
+          period: b.period,
+          from: b.from,
+          to: b.to,
+          terminal: b.terminal,
+          filters: b.filters || {},
+        });
+      } catch (e) {
+        if (/No such report|date range/.test(e.message)) throw new TapError(400, e.message);
+        throw e;
+      }
+      res.json({
+        ...report,
+        from: report.from.toISOString(),
+        to: report.to.toISOString(),
+        generatedAt: report.generatedAt.toISOString(),
+        header: r.reportHeader(report),
+        sections: report.sections.map((part) => ({
+          title: part.title,
+          columns: part.columns,
+          rows: part.rows.map((row) => ({ values: part.columns.map((c) => r.formatCell(row, c)) })),
+          total: part.total ? { values: part.columns.map((c) => r.formatCell(part.total, c)) } : null,
+        })),
+      });
+    } catch (e) { send(res, e, next); }
+  });
+
   // ---- Today across the venue (owner, 2026-10-28: live reports on Go) ---------
   //
   // Every till's and every Go device's closed sales today, as the back

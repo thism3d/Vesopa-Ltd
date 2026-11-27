@@ -1,0 +1,47 @@
+/* Vesopa Passport: the Go site's colours (style.css), its own layout.
+   Phone first: one column, big thumbs-reach buttons; wider screens get two. */
+.pp-hero { padding: 48px 0 28px; }
+.pp-hero .wrap { display: grid; gap: 36px; align-items: center; }
+.pp-hero h1 { font-size: clamp(38px, 8vw, 72px); line-height: 1.02; letter-spacing: -.04em; margin: 14px 0 16px; font-weight: 900; }
+.pp-hero .lead { margin-bottom: 26px; max-width: 34em; }
+.pp-cta { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
+.pp-cta .btn { justify-content: center; min-height: 56px; font-size: 18px; }
+.pp-fine { color: var(--muted); font-size: 14px; margin-top: 14px; }
+
+/* The passport card itself: drawn, not a photo. */
+.pp-card { position: relative; max-width: 440px; width: 100%; margin: 0 auto; aspect-ratio: 1.586; border-radius: 22px; padding: 22px 24px;
+  background: radial-gradient(120% 140% at 100% 0%, rgba(var(--lime-rgb), .32), transparent 55%), linear-gradient(160deg, #1d211a, #0f120d);
+  border: 1px solid rgba(var(--lime-rgb), .35); box-shadow: 0 30px 80px -30px rgba(var(--lime-rgb), .45), inset 0 1px 0 rgba(255,255,255,.06);
+  display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
+.pp-card::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(115deg, transparent 0 18px, rgba(255,255,255,.018) 18px 19px); pointer-events: none; }
+.pp-card .top { display: flex; align-items: center; justify-content: space-between; font-weight: 800; letter-spacing: .14em; font-size: 12px; color: var(--muted); }
+.pp-card .top img { width: 30px; height: 30px; border-radius: 8px; }
+.pp-card .mid { display: flex; align-items: center; gap: 18px; }
+.pp-card .face { width: 74px; height: 88px; border-radius: 14px; background: linear-gradient(180deg, rgba(var(--lime-rgb), .55), rgba(var(--lime-rgb), .15)); position: relative; flex: none; }
+.pp-card .face::before { content: ""; position: absolute; left: 50%; top: 16px; width: 30px; height: 30px; margin-left: -15px; border-radius: 50%; background: rgba(11,13,10,.55); }
+.pp-card .face::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 54px; height: 30px; margin-left: -27px; border-radius: 27px 27px 0 0; background: rgba(11,13,10,.55); }
+.pp-card .lines i { display: block; height: 9px; border-radius: 9px; background: rgba(255,255,255,.12); margin: 9px 0; }
+.pp-card .lines i:nth-child(1) { width: 150px; background: rgba(255,255,255,.28); }
+.pp-card .lines i:nth-child(2) { width: 110px; } .pp-card .lines i:nth-child(3) { width: 130px; }
+.pp-card .seal { display: flex; align-items: center; gap: 8px; font-weight: 800; color: var(--lime); font-size: 14px; }
+.pp-card .seal b { width: 26px; height: 26px; border-radius: 50%; background: var(--lime); color: var(--on-lime); display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
+
+.pp-steps { display: grid; gap: 14px; margin: 18px 0 8px; padding: 0; list-style: none; counter-reset: s; }
+.pp-steps li { counter-increment: s; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 18px 18px 64px; position: relative; }
+.pp-steps li::before { content: counter(s); position: absolute; left: 18px; top: 18px; width: 32px; height: 32px; border-radius: 50%; background: rgba(var(--lime-rgb), .16); color: var(--lime); font-weight: 900; display: flex; align-items: center; justify-content: center; }
+.pp-steps h3 { margin: 0 0 4px; font-size: 18px; }
+.pp-steps p { margin: 0; color: var(--muted); font-size: 15px; }
+.pp-sec { padding: 26px 0 40px; }
+.pp-sec h2 { font-size: clamp(24px, 4vw, 34px); letter-spacing: -.02em; margin: 0 0 6px; }
+.pp-trust { display: grid; gap: 12px; margin-top: 18px; }
+.pp-trust div { display: flex; gap: 12px; align-items: flex-start; border-top: 1px solid var(--line); padding-top: 12px; color: var(--muted); font-size: 15px; }
+.pp-trust strong { color: var(--text); display: block; }
+.pp-trust .ic { width: 28px; height: 28px; border-radius: 8px; background: rgba(var(--lime-rgb), .14); color: var(--lime); flex: none; display: flex; align-items: center; justify-content: center; font-weight: 900; }
+
+@media (min-width: 880px) {
+  .pp-hero { padding: 80px 0 40px; }
+  .pp-hero .wrap { grid-template-columns: 1.1fr .9fr; }
+  .pp-cta { flex-direction: row; max-width: none; }
+  .pp-steps { grid-template-columns: repeat(3, 1fr); }
+  .pp-trust { grid-template-columns: repeat(3, 1fr); }
+}

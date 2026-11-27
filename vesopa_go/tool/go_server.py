@@ -31,7 +31,8 @@ What `staging` and `live` do, in order, stopping at the first thing wrong:
   5. auth    vesopa_auth/schema/schema_028_vesopa_go_client.sql: Go's own client,
              a copy of the till's (adds rows only; nothing if it is there), and
              VESOPA_AUTH_GO_CLIENT_ID in the app's .env; then schema_029: the
-             return address of go.vesopa.com/signup on that client.
+             return address of go.vesopa.com/signup on that client, and
+             schema_030: passport.vesopa.com/flow's.
   6. restart by name, then /health, /api/tap/config (401: wants a phone) and
              /api/go/vesopa/enabled must answer. If not, the files and .env go
              back from the backup and it restarts again.
@@ -59,6 +60,8 @@ SERVER_DIR = REPO / "vesopa_server"
 AUTH_SQL = REPO / "vesopa_auth" / "schema" / "schema_028_vesopa_go_client.sql"
 # go.vesopa.com/signup's return address on Go's client (2026-11-17), run after 028.
 AUTH_SIGNUP_SQL = REPO / "vesopa_auth" / "schema" / "schema_029_vesopa_go_web_signup.sql"
+# Vesopa Passport's return address on the same client (2026-11-26), run after 029.
+AUTH_PASSPORT_SQL = REPO / "vesopa_auth" / "schema" / "schema_030_vesopa_passport.sql"
 HOST = os.environ.get("VESOPA_SSH_HOST", "root@34.63.118.67")
 IP = "34.63.118.67"
 USER = "vesopasoftware"
@@ -351,6 +354,10 @@ fi""")
     out = text(f"{db(auth)} -N < /tmp/schema_029_vesopa_go_web_signup.sql; rm -f /tmp/schema_029_vesopa_go_web_signup.sql")
     m = re.search(r"web sign-up redirects=(\d+)", out)
     note(f"  go.vesopa.com/signup on Go's client: {m.group(1) if m else '?'} address(es)")
+    sh("cat > /tmp/schema_030_vesopa_passport.sql", data=AUTH_PASSPORT_SQL.read_bytes())
+    out = text(f"{db(auth)} -N < /tmp/schema_030_vesopa_passport.sql; rm -f /tmp/schema_030_vesopa_passport.sql")
+    m = re.search(r"passport redirects=(\d+)", out)
+    note(f"  passport.vesopa.com/flow on Go's client: {m.group(1) if m else '?'} address(es)")
     return client
 
 

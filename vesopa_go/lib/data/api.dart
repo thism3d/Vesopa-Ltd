@@ -539,6 +539,30 @@ class TapApi {
   /// Today across the venue: every till and device (vesopa_server tap.js).
   Future<Map<String, dynamic>> today() => _send('GET', '/api/tap/today');
 
+  /// Every back-office report (owner, 2026-11-26: "Vesopa Go should be
+  /// capable to do everything"): what can be run, and over what.
+  Future<Map<String, dynamic>> reportCatalogue() => _send('GET', '/api/tap/reports/catalogue');
+
+  /// One report, run by a member of staff whose PIN the server checks.
+  Future<Map<String, dynamic>> runReport({
+    required String report,
+    required String period,
+    String? from,
+    String? to,
+    String? terminal,
+    required int clerkId,
+    required String pin,
+  }) =>
+      _send('POST', '/api/tap/reports/run', {
+        'report': report,
+        'period': period,
+        'from': ?from,
+        'to': ?to,
+        'terminal': ?terminal,
+        'clerk_id': clerkId,
+        'pin': pin,
+      });
+
   /// The venue's banknote keys and their pictures (back office, as the till's).
   Future<List<dynamic>> cashNotes() async => (await _send('GET', '/till/denominations?office=$_o'))['items'] as List? ?? const [];
 

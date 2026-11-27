@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/api.dart';
 import '../data/models.dart' show VenueMode;
 import '../data/session.dart';
+import '../remote/go_remote.dart';
 import '../ui/tv.dart';
 
 enum DeviceMode {
@@ -65,7 +66,20 @@ class DeviceModeController extends Notifier<DeviceModeState> {
   String? _loadedFor;
 
   @override
-  DeviceModeState build() => const DeviceModeState();
+  DeviceModeState build() {
+    // A manager made this screen a kitchen screen or a customer display from
+    // their phone's remote (owner, 2026-11-26): the back office has the new
+    // mode already, so read it now and open in it, without a restart.
+    GoRemote.listen(_remoteKey);
+    ref.onDispose(() => GoRemote.forget(_remoteKey));
+    return const DeviceModeState();
+  }
+
+  bool _remoteKey(String key) {
+    if (key != 'mode') return false;
+    load(again: true);
+    return true;
+  }
 
   /// Read the device's choice and ask the back office, once per venue (and
   /// again when [again]). Offline, the last answer stands.

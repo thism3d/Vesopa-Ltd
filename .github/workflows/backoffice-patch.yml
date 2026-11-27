@@ -49,7 +49,7 @@ on:
       run:
         description: After the deploy, run one of the server's set-up tools (back office targets only)
         type: choice
-        options: [none, kitchen-display-adverts, pontardawe-force-update, pontardawe-till-soft-update]
+        options: [none, kitchen-display-adverts, pontardawe-force-update, pontardawe-till-soft-update, go-stripe-live]
         default: none
       confirm:
         description: Type deploy to change the live server
@@ -239,6 +239,20 @@ jobs:
             kitchen-display-adverts)
               [ "$SRC" = vesopa_server ] || { echo "::error::$RUN_TOOL is a back office tool"; exit 1; }
               R "su - $APP_USER -c 'cd $app && node tool/kitchen-display-adverts.js'"
+              ;;
+            go-stripe-live)
+              # The Vesopa Kitchen on live Stripe for Vesopa Go, and the ID
+              # check opened again for owners sent to step 3 while Stripe
+              # would not run Identity (owner, 2026-11-26). Copy
+              # tool/go-stripe-live.js with the files box the first time.
+              [ "$TARGET" = live ] || { echo "::error::$RUN_TOOL is for the live back office"; exit 1; }
+              R "su - $APP_USER -c 'cd $app && node tool/go-stripe-live.js --apply'" | tee "$RUNNER_TEMP/go-stripe-live.out"
+              [ "${PIPESTATUS[0]}" = 0 ] || { echo "::error::go-stripe-live stopped (see above)"; exit 1; }
+              if grep -q '^restart: yes' "$RUNNER_TEMP/go-stripe-live.out"; then
+                restart > /dev/null
+                sleep 6
+                curl -fsS --max-time 10 "https://$DOMAIN/health" > /dev/null && echo "Restarted with the new .env: healthy"
+              fi
               ;;
             pontardawe-force-update|pontardawe-till-soft-update)
               # Pontardawe RFC to the newest installers on admin.vesopa.com
