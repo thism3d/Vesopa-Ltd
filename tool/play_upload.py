@@ -110,15 +110,36 @@ class Play:
         return self.call("POST", f"{API}/{self.package}/edits", {})["id"]
 
     def commit(self, edit):
+        """Commit the edit; True when Google took it for review, False when
+        it is saved but waits for "Send for review" in Play Console."""
         try:
             self.call("POST", f"{API}/{self.package}/edits/{edit}:commit")
+            return True
         except PlayError as e:
             # Some changes (a listing on an app under review) must be sent
             # for review from the Play Console's Publishing overview.
             if "changesNotSentForReview" not in str(e):
                 raise
             self.call("POST", f"{API}/{self.package}/edits/{edit}:commit?changesNotSentForReview=true")
-            print("   committed; send the changes for review in Play Console > Publishing overview")
+            print("   committed but NOT sent for review: Play Console > Publishing overview > Send for review")
+            return False
+
+    def reviews(self, tracks):
+        """Google's own state of each release (owner, 2026-11-27: the watch
+        app "not getting on review"): draft, in review, approved but not
+        published, published, rejected. The edits API says only
+        "completed", which also covers a release Google never got."""
+        out = {}
+        for t in tracks:
+            try:
+                r = self.call("GET", f"{API}/{self.package}/tracks/{urllib.parse.quote(t, safe='')}/releases")
+            except Exception as e:  # noqa: BLE001 - a readout; never stops the run
+                out[t] = [f"review state unknown ({str(e)[:70]})"]
+                continue
+            out[t] = [f"{x.get('releaseName', '?')}: {x.get('releaseLifecycleState', '?')}"
+                      + (f" (codes {', '.join(str(c) for a in x.get('activeArtifacts', []) for c in ([a.get('versionCode')] if a.get('versionCode') else []))})" if x.get('activeArtifacts') else "")
+                      for x in r.get("releases", [])] or ["no releases"]
+        return out
 
 
 def raise_play(e):
@@ -297,7 +318,11 @@ def main():
             for r in rels:
                 frac = f" {round(100 * float(r['userFraction']))}% of users" if r.get("userFraction") else ""
                 print(f"  {t['track']:<22} {r.get('name', '?'):<16} {r.get('status', '?'):<11}{frac}  codes {', '.join(r.get('versionCodes', []))}  [{reach.get(t['track'], '?')}]")
-        print("  (completed = sent to Google; a new app's first release stays a draft until it is rolled out in Play Console)")
+        print("  (completed = the edit holds it; Google's own state follows)")
+        print("Google's review state of each release:")
+        for t, lines in play.reviews([t["track"] for t in tracks if t.get("releases")]).items():
+            for line in lines:
+                print(f"  {t:<22} {line}")
         return
     if "--next-build" in sys.argv:
         print(next_build(play, int(v["build"])))
@@ -326,14 +351,21 @@ def main():
         if not seen:
             sys.exit(f"   ! version code {code} is not on any track")
         source, r = seen
+        # Moving a release onto the track that already holds it changes
+        # nothing, so Google gets nothing to review (2026-11-27: 1000008
+        # "from wear:production onto wear:production" made no submission).
+        if source == track:
+            play.call("DELETE", f"{API}/{play.package}/edits/{edit}")
+            sys.exit(f"   ! version code {code} is already on {track}: nothing new to send for review. "
+                     f"Build a new one onto it instead (mode full, part wear/phone, track {track}).")
         rel = {"name": r.get("name") or code, "versionCodes": [code], "status": "completed",
                "releaseNotes": r.get("releaseNotes") or [{"language": p["language"], "text": p["release_notes"]}]}
         # The track then holds only this release: an earlier one there (Play's
         # "superseded by another version", or a halted first release) is
         # replaced. Committing sends it to Google's review.
         play.call("PUT", f"{API}/{play.package}/edits/{edit}/tracks/{track}", {"track": track, "releases": [rel]})
-        play.commit(edit)
-        print(f"   version code {code} ({rel['name']}) from {source} onto the {track} track, sent for review")
+        sent = play.commit(edit)
+        print(f"   version code {code} ({rel['name']}) from {source} onto the {track} track" + (", sent for review" if sent else ""))
         return
     print(f"{p['title']} ({p['package']}) as {who}")
 

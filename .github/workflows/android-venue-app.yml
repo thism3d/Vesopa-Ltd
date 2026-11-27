@@ -282,7 +282,12 @@ jobs:
           [ -n "$TRACK" ] && set -- "$@" --track "$TRACK"
           [ "$PART" != "all" ] && set -- "$@" --only "$PART"
           [ "$DRAFT" = "true" ] && set -- "$@" --draft
-          "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@"
+          rc=0
+          "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@" || rc=$?
+          # Every track afterwards, with Google's own review state of each
+          # release (in review, published, rejected), not only "completed".
+          [ "$MODE" = "listing" ] || "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$VENUE" --status || true
+          exit $rc
 
       - name: Remove the keys
         if: always()
