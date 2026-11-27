@@ -63,6 +63,10 @@ on:
         description: With mode promote, the version code to move onto 'track', or latest:<track> (e.g. latest:wear:beta); no build
         required: false
         default: ''
+      wear_version_code:
+        description: The watch bundle's versionCode by hand (empty = 1000000 + the build number)
+        required: false
+        default: ''
       draft:
         description: Leave the release as a draft to roll out by hand in Play Console
         type: boolean
@@ -241,7 +245,16 @@ jobs:
       - name: Wear OS bundle
         if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         working-directory: ${{ inputs.venue }}/build/app/android
-        run: ./gradlew --no-daemon :wear:bundleRelease
+        env:
+          WEAR_CODE: ${{ inputs.wear_version_code }}
+        run: |
+          case "$WEAR_CODE" in *[!0-9]*) echo "::error::wear_version_code must be a number"; exit 1;; esac
+          if [ -n "$WEAR_CODE" ]; then
+            echo "Wear OS versionCode set by hand: $WEAR_CODE"
+            ./gradlew --no-daemon :wear:bundleRelease -PwearVersionCode="$WEAR_CODE"
+          else
+            ./gradlew --no-daemon :wear:bundleRelease
+          fi
 
       - name: Gather the bundles
         if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
