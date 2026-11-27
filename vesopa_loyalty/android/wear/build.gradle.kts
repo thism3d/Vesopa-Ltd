@@ -15,7 +15,13 @@ import java.util.Properties
  */
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    // No id("org.jetbrains.kotlin.android") here (2026-11-27): Flutter's
+    // Gradle plugin applies Kotlin to every Android module that does not name
+    // it, while android.builtInKotlin=false (Flutter's own template, in
+    // gradle.properties). Naming it made Flutter warn "Your Android app
+    // project ... applies the Kotlin Gradle Plugin, which will cause build
+    // failures in future versions of Flutter" (an application module with
+    // KGP in its plugins block, i.e. this one).
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -130,9 +136,9 @@ val phoneIcons = tasks.register<Sync>("phoneIcons") {
 android.sourceSets["main"].res.srcDir(phoneIconsDir)
 tasks.named("preBuild") { dependsOn(phoneIcons) }
 
-kotlin {
+extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension> {
     compilerOptions {
-        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
