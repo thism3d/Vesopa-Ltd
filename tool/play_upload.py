@@ -166,6 +166,18 @@ def release(play, edit, aab: pathlib.Path, track, name, notes, lang):
     bundle = play.call("POST", f"{UPLOAD}/{play.package}/edits/{edit}/bundles?uploadType=media",
                        data=aab.read_bytes(), ctype="application/octet-stream")
     code = bundle["versionCode"]
+    # The native libraries' symbols beside the bundle (<bundle>-symbols.zip,
+    # made by the build), uploaded for this version code: Play Console warned
+    # "This App Bundle contains native code, and you've not uploaded debug
+    # symbols" on every Loughor RFC watch bundle (owner, 2026-11-27).
+    sym = aab.with_name(aab.stem + "-symbols.zip")
+    if sym.is_file():
+        try:
+            play.call("POST", f"{UPLOAD}/{play.package}/edits/{edit}/apks/{code}/deobfuscationFiles/nativeCode?uploadType=media",
+                      data=sym.read_bytes(), ctype="application/octet-stream")
+            print(f"   native debug symbols: {sym.name} ({max(1, sym.stat().st_size // 1_000_000)} MB) uploaded")
+        except PlayError as e:
+            print(f"   ! native debug symbols not taken: {e}")
     # --draft: the release waits in Play Console for the owner to roll it out
     # (owner, 2026-10-24: "I'll press the production release myself").
     rel = {"name": name, "versionCodes": [str(code)], "status": "draft" if ("--draft" in sys.argv or DRAFT_ONLY[0]) else "completed",
