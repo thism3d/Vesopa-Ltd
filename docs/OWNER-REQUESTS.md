@@ -52,6 +52,14 @@ secrets only).
   Android - venue app, LoughorRFC, mode full, part `wear`, track `internal`
   (goes to `wear:internal`). Nothing to Wear OS open testing or production
   until the owner says so.
+- **Loughor RFC, later on 2026-11-27 (owner):** "release the both Android and
+  wear os app to the open testing": phone and watch 1.1.0 to open testing
+  (Android - venue app, LoughorRFC, mode full, part `apps`, track `beta`).
+  Every bundle now goes up with its native debug symbols (Play Console's
+  warning "This App Bundle contains native code, and you've not uploaded
+  debug symbols", version code 1000010): the build zips each bundle's native
+  libraries (`<bundle>-symbols.zip`) and tool/play_upload.py uploads them for
+  that version code.
 - **Decisions:** "Go on, finish all the tasks. Full consent given. Do pick
   the best decisions." Ask the owner straight away when something is
   genuinely theirs to decide.

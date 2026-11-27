@@ -251,13 +251,32 @@ jobs:
           stem="$VENUE-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}"
           cp "$VENUE/build/app/build/app/outputs/bundle/release/app-release.aab" "$out/$stem.aab"
           cp "$VENUE/build/app/build/wear/outputs/bundle/release/wear-release.aab" "$out/$stem-wear.aab"
+          # Each bundle's native libraries, as built before stripping, zipped
+          # by ABI (lib/<abi>/*.so) for Play's "native debug symbols" upload
+          # (tool/play_upload.py sends <bundle>-symbols.zip with the release).
+          symbols() {
+            dir=$(find "$1" -type d -path '*merged_native_libs/release*' -name lib 2>/dev/null | head -1)
+            if [ -n "$dir" ] && [ -n "$(find "$dir" -name '*.so' | head -1)" ]; then
+              (cd "$dir" && zip -qr "$2" .)
+              echo "$(basename "$2"): $(cd "$dir" && find . -name '*.so' | sort | tr '\n' ' ')"
+            else
+              echo "$(basename "$2"): no native libraries found under $1"
+            fi
+          }
+          symbols "$VENUE/build/app/build/app/intermediates" "$out/$stem-symbols.zip"
+          symbols "$VENUE/build/app/build/wear/intermediates" "$out/$stem-wear-symbols.zip"
+          for f in "$out"/*.aab; do
+            echo "$(basename "$f"): $(unzip -l "$f" | grep -c 'BUNDLE-METADATA/com.android.tools.build.debugsymbols/') debug symbol files inside"
+          done
           ls -la "$out"
 
       - uses: actions/upload-artifact@v4
         if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         with:
           name: ${{ inputs.venue }}-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}
-          path: ${{ runner.temp }}/android-builds/*.aab
+          path: |
+            ${{ runner.temp }}/android-builds/*.aab
+            ${{ runner.temp }}/android-builds/*-symbols.zip
           retention-days: 30
 
       - name: Upload to Google Play
