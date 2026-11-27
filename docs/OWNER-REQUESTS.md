@@ -75,6 +75,11 @@ secrets only).
   LoughorRFC, mode `build` (signed with the upload key, nothing sent to
   Play); the run's artifact holds `LoughorRFC-1.1.1-<n>-wear.aab` and its
   symbols zip for the owner to upload in Play Console.
+- **Watch versionCode by hand (owner, 2026-11-27):** "change the wear os
+  build with 100013 not 1000013": Android - venue app input
+  `wear_version_code` (Gradle -PwearVersionCode); empty keeps 1000000 + build.
+  Play only offers a watch the highest versionCode across its tracks, so a
+  bundle below 1000012 (already on Wear OS open testing) is superseded there.
 - **Decisions:** "Go on, finish all the tasks. Full consent given. Do pick
   the best decisions." Ask the owner straight away when something is
   genuinely theirs to decide.

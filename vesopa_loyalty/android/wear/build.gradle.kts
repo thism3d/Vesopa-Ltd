@@ -57,7 +57,10 @@ android {
         // oldest Google still takes new apps for.
         minSdk = 30
         targetSdk = 36
-        versionCode = 1_000_000 + (pubspecVersion.getOrNull(1)?.toIntOrNull() ?: 1)
+        // -PwearVersionCode=N sets it by hand (owner, 2026-11-27: a watch
+        // bundle built as 100013 to upload in Play Console themselves).
+        versionCode = (project.findProperty("wearVersionCode") as String?)?.toIntOrNull()
+            ?: (1_000_000 + (pubspecVersion.getOrNull(1)?.toIntOrNull() ?: 1))
         versionName = pubspecVersion[0]
     }
 
