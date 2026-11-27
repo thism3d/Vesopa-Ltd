@@ -148,8 +148,17 @@ class TapApi {
       _send('GET', '/api/go/screens?device_id=${Uri.encodeQueryComponent(deviceId)}');
 
   /// Press a key on a screen: up, down, left, right, ok, back, next, previous, settings, refresh.
-  Future<Map<String, dynamic>> screenKey(String deviceId, String key) =>
-      _send('POST', '/api/go/screens/${Uri.encodeComponent(deviceId)}/key', {'key': key});
+  Future<Map<String, dynamic>> screenKey(String deviceId, String key, {String? id, int? index, String? text}) =>
+      _send('POST', '/api/go/screens/${Uri.encodeComponent(deviceId)}/key', {'key': key, 'id': ?id, 'index': ?index, 'text': ?text});
+
+  /// What a screen shows now, for the phone's mirror of it.
+  Future<Map<String, dynamic>> screenStateOf(String deviceId) =>
+      _send('GET', '/api/go/screens/${Uri.encodeComponent(deviceId)}/state');
+
+  /// This screen's state, for the phones controlling it.
+  Future<void> screenState(String deviceId, Map<String, Object?> state) async {
+    await _send('POST', '/api/go/screen/state', {'device_id': deviceId, 'state': state});
+  }
 
   Future<Map<String, dynamic>> terminalHello({required String deviceId, required String name, String? gateway, bool ready = true, String? why}) =>
       _send('POST', '/api/go/terminal/hello', {'device_id': deviceId, 'name': name, 'gateway': ?gateway, 'ready': ready, 'why': ?why});

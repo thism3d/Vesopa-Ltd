@@ -58,6 +58,14 @@ class MainActivity : FlutterFragmentActivity() {
                     "camera" to packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY),
                     "nfcHardware" to packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_NFC),
                     "touch" to packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN),
+                    // For the phone's remote, "About this screen" (owner, 2026-11-27):
+                    // the Android version, and the name the TV was given in its own
+                    // settings (Settings > Device Preferences > About > Device name).
+                    "release" to android.os.Build.VERSION.RELEASE,
+                    "deviceName" to (try {
+                        android.provider.Settings.Global.getString(contentResolver, "device_name")
+                    } catch (_: Exception) { null }),
+                    "brand" to android.os.Build.BRAND,
                 ))
                 "isIgnoringBatteryOptimizations" -> {
                     val power = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
@@ -70,6 +78,29 @@ class MainActivity : FlutterFragmentActivity() {
                 "androidId" -> result.success(
                     android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ANDROID_ID)
                 )
+                // The TV's own volume, from Vesopa Go on a phone (owner,
+                // 2026-11-27: "mute, sound options" as Google TV's remote): up,
+                // down or mute on the media stream, with the system's own bar.
+                "volume" -> {
+                    val audio = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                    val stream = android.media.AudioManager.STREAM_MUSIC
+                    val direction = when (call.argument<String>("action")) {
+                        "up" -> android.media.AudioManager.ADJUST_RAISE
+                        "down" -> android.media.AudioManager.ADJUST_LOWER
+                        "mute" -> android.media.AudioManager.ADJUST_TOGGLE_MUTE
+                        else -> android.media.AudioManager.ADJUST_SAME
+                    }
+                    try {
+                        audio.adjustStreamVolume(stream, direction, android.media.AudioManager.FLAG_SHOW_UI)
+                    } catch (_: SecurityException) {
+                        // Do Not Disturb can refuse a mute; the level still answers.
+                    }
+                    val max = audio.getStreamMaxVolume(stream).coerceAtLeast(1)
+                    result.success(mapOf(
+                        "level" to (audio.getStreamVolume(stream) * 100 / max),
+                        "muted" to audio.isStreamMute(stream),
+                    ))
+                }
                 else -> result.notImplemented()
             }
         }

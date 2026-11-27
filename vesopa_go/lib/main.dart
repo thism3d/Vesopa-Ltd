@@ -13,6 +13,8 @@
 /// straight into the demo venue, with no sign-in to a real one.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -44,6 +46,7 @@ import 'ui/pages/onboarding.dart' show OnboardingPage, onboardingGateProvider, h
 import 'ui/pages/setup.dart';
 import 'ui/theme.dart';
 import 'ui/tv.dart';
+import 'ui/resume_cover.dart';
 
 const demoOnly = bool.fromEnvironment('GO_DEMO_ONLY');
 
@@ -123,7 +126,10 @@ class GoApp extends ConsumerWidget {
       builder: (context, child) => TvRemote(
         // A screen's QR, opened with the phone's camera (ui/deep_links.dart).
         child: GoLinks(
-          child: GoSplash(child: !signup && phase == Phase.ready && (!modes || device.mode == DeviceMode.epos) ? GoFrame(child: child!) : child!),
+          child: ResumeCover(
+            onResume: () => unawaited(ref.read(tapProvider.notifier).refresh().catchError((Object _) {})),
+            child: GoSplash(child: !signup && phase == Phase.ready && (!modes || device.mode == DeviceMode.epos) ? GoFrame(child: child!) : child!),
+          ),
         ),
       ),
       title: appName,
@@ -133,7 +139,14 @@ class GoApp extends ConsumerWidget {
       darkTheme: tvFocusTheme(Tp.theme(Brightness.dark, font: ref.watch(venueFontProvider).value)),
       // Light, dark or the device's own (Settings, Appearance).
       themeMode: ref.watch(appearanceProvider),
-      home: AnimatedSwitcher(
+      // On a TV, Back on the first screen asks before Go closes (owner,
+      // 2026-11-27): a screen on the wall is not closed by a stray key.
+      home: PopScope(
+        canPop: !GoDevice.isTv,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) unawaited(askToQuit());
+        },
+        child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 250),
         child: signup
             ? const OnboardingPage(key: ValueKey('signup'), gate: true)
@@ -150,6 +163,7 @@ class GoApp extends ConsumerWidget {
           // Beside tills, the sale also goes to any customer display following this device.
           Phase.ready => orMode(modes ? const GoDisplayFeed(key: ValueKey('ready'), child: Shell()) : const Shell(key: ValueKey('ready'))),
         },
+      ),
       ),
     ));
   }

@@ -7,6 +7,8 @@
 /// the choice, which a manager can change in Settings.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +17,10 @@ import '../data/api.dart';
 import '../data/models.dart' show VenueMode;
 import '../data/session.dart';
 import '../remote/go_remote.dart';
+import '../ui/accent.dart';
+import '../ui/appearance.dart';
+import '../ui/go_frame.dart';
+import '../ui/theme.dart';
 import '../ui/tv.dart';
 
 enum DeviceMode {
@@ -76,8 +82,24 @@ class DeviceModeController extends Notifier<DeviceModeState> {
   }
 
   bool _remoteKey(String key) {
+    // The screen's colour and Day or Night, from the phone (owner,
+    // 2026-11-27: "colors or the theme can be changed from the Vesopa Go
+    // mobile app").
+    if (key.startsWith('theme:')) {
+      unawaited(ref.read(accentProvider.notifier).set(GoPalette.byId(key.substring(6))));
+      return true;
+    }
+    if (key.startsWith('appearance:')) {
+      final m = switch (key.substring(11)) { 'dark' => ThemeMode.dark, 'light' => ThemeMode.light, _ => ThemeMode.system };
+      unawaited(ref.read(appearanceProvider.notifier).set(m));
+      return true;
+    }
     if (key != 'mode') return false;
-    load(again: true);
+    // Whatever was open over the old screen (settings, a ticket, a dialog)
+    // goes first, so the new one is what shows (owner, 2026-11-27: the TV
+    // "not changing the display immediately ... screen freeze").
+    goNavigator.currentState?.popUntil((r) => r.isFirst);
+    unawaited(load(again: true));
     return true;
   }
 
@@ -130,7 +152,10 @@ class DeviceModeController extends Notifier<DeviceModeState> {
       mode = null;
       fixed = false;
     }
+    final was = state;
     state = DeviceModeState(mode: mode, fixed: fixed, loaded: true);
+    // Another mode: nothing of the old one stays on top of the new screen.
+    if (was.loaded && was.mode != mode) goNavigator.currentState?.popUntil((r) => r.isFirst);
     if (mode != null) _report(mode);
   }
 

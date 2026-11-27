@@ -143,6 +143,22 @@ secrets only).
 | passport.vesopa.com: Vesopa Passport, "Connect with Vesopa", verification and account opening only, responsive | vesopa_go/web/passport (landing and /flow/, the sign-up steps), deployed by Go - site (site passport or both; vesopa_go/tool/passport_site.py adds the web domain as a panel user beside go.vesopa.com). go.vesopa.com/signup and Get started now send people there. Its sign-in return address is on Go's Vesopa Auth client (schema_030, applied by Go - server live) |
 | Go does everything: analytics without the back office | first step in 1.2.74: Reports > All reports runs every back-office report (any period, custom dates, any terminal) with the PIN checked on the server (/api/tap/reports). Next: Vesopa admin's view across venues, and the rest of the back office's screens |
 
+## Vesopa Go TV and remote, 2026-11-27
+
+| Ask | Status |
+| --- | --- |
+| Loughor RFC Wear OS straight to production (owner promotes nothing else); clear "superseded" | Android - venue app, mode promote, promote_from latest:wear:beta, track wear:production: wear:production holds 1.0.0 (8) (code 1000008, sent to Google). If Play Console still shows it unavailable, Publishing overview > Publish changes (managed publishing), or Google's first Wear OS production review |
+| Kitchen ↔ Customer display switch not immediate, TV freezes | Go 1.2.75: a mode change closes every sheet, dialog and page left over the old screen |
+| D-pad, settings and customer display options not working with the remote; focus box not visible | 1.2.75: the first key always gives the focus to the first item (nothing focused was why keys went nowhere); a thick ring in the venue's colour round whatever has focus; phone keys scroll it into view |
+| Kitchen: tabs easier (Open, Closed, other); new order sound and full screen 10 s, changeable | 1.2.75: Open / Closed / Phone orders; Back from the tickets goes up to the tabs; new order card for 10 s with the chime, set in Settings or from the phone (0, 5, 10, 15, 30 s) |
+| Phone remote like Google TV: TVs by name on the same Wi-Fi, Local or Live, Connected bar, several screens, D-pad and swipe pad, keyboard, mute, volume, power | 1.2.75: screens heard on the venue's network (Local) and through Vesopa (Live), merged; keys go both ways with one id; Connected bar across Go; the TV's own volume and mute (Android AudioManager); power blanks the screen |
+| Show what is on the TV in the phone, interactively; type into its fields | 1.2.75: the TV sends its page and every focusable item (label, kind, value, focused); the phone shows them as chips, tap presses, a text item opens the keyboard and types into it |
+| Colours/theme of the TV from the phone | 1.2.75: More > Colour on the screen, Day / Night |
+| Voice commands | 1.2.75: the remote's microphone (on-device speech). Kitchen: "show the last order", "show the oldest order", "mark it done" / "bump" / "it's ready", "recall", "show open / closed / phone orders", "choose the board", "pop up new orders for 15 seconds" / "pop up off". Customer display: "next advert", "previous advert", "keep this advert for 5 minutes" (seconds, minutes, hours), "resume adverts", "reload adverts". Any screen: "switch to kitchen / customer display", "volume up / down", "mute", "screen off", "wake up", "colour pink" (lime, volt, neon, mint, aqua, pink, pearl), "dark mode" / "light mode", "settings", "home", "back", "up/down/left/right", "OK", "type Pass two". Two at once with "and". "Hey Google, open Vesopa Go" opens the app by its name |
+| TV details on the phone (device id, resolution, name set on the TV, Android version) | 1.2.75: More > About this screen |
+| Quit dialog on the TV; refresh cover when coming back | 1.2.75: Back on the first TV screen asks "Quit Vesopa Go?"; back from the background after 8 s or more, the Vesopa mark and a loading bar while the venue refreshes. Android does not let an app keep itself in the foreground |
+| Same layout on every TV (resolution and ratio) | 1.2.75: every TV draws on a 540-point-high canvas as wide as its panel's ratio, scaled evenly to its real pixels |
+
 ## Pontardawe RFC (`PontardaweRFC/`)
 
 | Ask | Status |

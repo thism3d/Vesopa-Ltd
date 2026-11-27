@@ -213,6 +213,8 @@ class _ShellState extends ConsumerState<Shell> {
         ],
       ),
       body: body,
+      // "Connected · Kitchen TV · Local", while this phone controls screens.
+      bottomNavigationBar: const ConnectedScreensBar(),
     );
   }
 }
