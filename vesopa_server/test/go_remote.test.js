@@ -124,3 +124,22 @@ test('a screen whose live socket dropped asks for its keys; its local address go
     assert.equal(again.body.screens.find((s) => s.device_id === 'tv2').local, null);
   });
 });
+
+test('the phone sees the screen\'s version and whether it is asking for its keys', async () => {
+  await withServer(async (call, sent, pass) => {
+    await call('kitchen@x', 'POST', '/api/go/screen/hello', { device_id: 'tv1', name: 'Bar TV', app: '1.2.78', live: false });
+    let list = await call('kitchen@x', 'GET', '/api/go/screens?device_id=phone');
+    assert.equal(list.body.screens[0].app, '1.2.78');
+    assert.equal(list.body.screens[0].polling, false);
+    await call('kitchen@x', 'GET', '/api/go/screen/keys?device_id=tv1&after=0');
+    list = await call('kitchen@x', 'GET', '/api/go/screens?device_id=phone');
+    assert.equal(list.body.screens[0].polling, true);
+    const key = await call('kitchen@x', 'POST', '/api/go/screens/tv1/key', { key: 'ok' });
+    assert.equal(key.body.polling, true);
+    assert.equal(key.body.live, false);
+    pass(11 * 1000);
+    await call('kitchen@x', 'POST', '/api/go/screen/hello', { device_id: 'tv1', name: 'Bar TV', app: '1.2.78' });
+    list = await call('kitchen@x', 'GET', '/api/go/screens?device_id=phone');
+    assert.equal(list.body.screens[0].polling, false);
+  });
+});

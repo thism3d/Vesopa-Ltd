@@ -211,6 +211,16 @@ secrets only).
 | Disconnect on the till does not bring the TV's QR back | Disconnect asks first, then a TV leaves the venue and shows its QR code to be connected again |
 | Hardware-level code, Bluetooth discovery | Not needed for this: plain sockets on both sides, the TV's volume already native. Bluetooth (BLE) discovery would need the TV to advertise, which many Android TVs cannot, plus Bluetooth permissions on every phone; proposed only if Wi-Fi + Vesopa still miss a TV |
 
+## Vesopa Go remote and TV, second pass, 2026-11-27 (Go 1.2.78)
+
+| Ask | Status |
+| --- | --- |
+| Remote "Live" but nothing works at The Vesopa Kitchen; add logs to find out why | More > Connection check on the remote: Vesopa (hello in 30 s), the TV collecting keys, same Wi-Fi, the TV's app version, the last key the TV received, and a log of every road the phone tried (copyable). A red line above the remote says what is wrong, e.g. the TV still on a Vesopa Go older than 1.2.77 (no key collection, no Wi-Fi server): the most likely cause, as 1.2.77 was only just in review. Server: hello carries the version; the list and every key say whether the TV is collecting keys |
+| Find the TV on the Wi-Fi by itself, using the hardware | Bonjour / DNS-SD: the TV announces `_vesopago._tcp` with Android NsdManager (GoNsd.kt); the phone browses with NsdManager (Android) or NetServiceBrowser (iOS, NSBonjourServices) and lists it as Local before Vesopa answers. Keys still need the key from Vesopa's list (nothing secret is announced) |
+| QR still opens the browser | The QR now holds Vesopa Go's own link `vesopago://link?c=CODE`: the camera offers Vesopa Go and no web page opens. Phones without Go: the TV says go.vesopa.com/install |
+| TV focus outline wrong on round and bordered buttons; fade | The ring takes the shape of the control's own Material or InkWell (circle, pill, rounded card), a little outside it, glides from control to control and fades in and out |
+| Remote layout | iPad / wide: the remote on the left, the screen's panels and mirror on the right |
+
 ## Pontardawe RFC (`PontardaweRFC/`)
 
 | Ask | Status |

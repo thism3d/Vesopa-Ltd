@@ -23,6 +23,7 @@ import '../config/constants.dart';
 import '../data/lan/lan_service.dart';
 
 import '../ui/go_frame.dart';
+import 'nsd.dart';
 import '../ui/tv.dart';
 
 class GoRemote {
@@ -46,6 +47,8 @@ class GoRemote {
   /// Live: through the back office).
   static DateTime? lastKeyAt;
   static String lastVia = '';
+  static String lastKey = '';
+  static int _count = 0;
 
   /// A message from the phone, by either road: `{device_id, key, id?,
   /// index?, text?}`.
@@ -62,6 +65,9 @@ class GoRemote {
     }
     lastKeyAt = DateTime.now();
     lastVia = via;
+    lastKey = '${msg['key'] ?? ''}';
+    _count++;
+    debugPrint('go.remote: key "$lastKey" via $via');
     final index = msg['index'] is num ? (msg['index'] as num).toInt() : null;
     final text = msg['text'] is String ? msg['text'] as String : null;
     press('${msg['key'] ?? ''}', index: index, text: text);
@@ -273,6 +279,27 @@ class ScreenMirror {
       if (_volume != null) 'volume': _volume,
       'via': GoRemote.lastVia,
       'device': _device(screen, view),
+      'diag': diag(),
+    };
+  }
+
+  /// How this screen hears the phone, for the remote's connection check
+  /// (owner, 2026-11-27: "add logs if needed to find out why it's not
+  /// working"). Coarse on purpose, so it changes only when something does.
+  static Map<String, Object?> diag() {
+    final now = DateTime.now();
+    String road(DateTime? ok, String error) => ok != null && now.difference(ok) < const Duration(seconds: 20)
+        ? 'ok'
+        : (error.isNotEmpty ? error : (ok == null ? 'not yet' : 'stopped'));
+    final local = LocalScreenServer.instance;
+    return {
+      'app': goAppVersion,
+      'hello': road(ScreenBeacon.helloOkAt, ScreenBeacon.helloError),
+      'poll': road(ScreenBeacon.pollOkAt, ScreenBeacon.pollError),
+      'local': local.info == null ? (local.error.isNotEmpty ? local.error : 'no Wi-Fi address') : 'ok ${local.ips.join(', ')}:${local.boundPort}',
+      'local_asked': local.asked > 0,
+      'last_key': GoRemote.lastKey.isEmpty ? null : '${GoRemote.lastKey} via ${GoRemote.lastVia}',
+      'key_count': GoRemote._count,
     };
   }
 
@@ -410,6 +437,13 @@ class ScreenBeacon {
 
   final Future<void> Function() _hello;
   final Future<Map<String, dynamic>> Function(int after)? poll;
+
+  /// For the phone's connection check: when this screen last said hello and
+  /// last heard from the key queue, and what went wrong if they failed.
+  static DateTime? helloOkAt;
+  static String helloError = '';
+  static DateTime? pollOkAt;
+  static String pollError = '';
   Timer? _timer;
   Timer? _keys;
   int _after = -1;
@@ -425,10 +459,21 @@ class ScreenBeacon {
   }
 
   Future<void> _beat() async {
+    // Announce this screen on the Wi-Fi (Bonjour / NSD), so a phone finds it
+    // by itself.
+    final m = ScreenMirror.current;
+    final port = LocalScreenServer.instance.boundPort;
+    if (m != null && port != null && !ScreenMirror._underTest) {
+      unawaited(GoNsd.advertise(id: m.deviceId, name: m.name(), mode: m.mode, port: port));
+    }
     try {
       await _hello();
-    } catch (_) {
+      helloOkAt = DateTime.now();
+      helloError = '';
+    } catch (e) {
       // Offline for a moment: the next beat says it again.
+      helloError = '$e';
+      debugPrint('go.remote: hello failed: $e');
     }
   }
 
@@ -451,8 +496,12 @@ class ScreenBeacon {
         }
       }
       if (_after < 0 && seq != null) _after = seq;
-    } catch (_) {
+      pollOkAt = DateTime.now();
+      pollError = '';
+    } catch (e) {
       // Offline for a moment: the next poll asks again.
+      if (pollError != '$e') debugPrint('go.remote: key poll failed: $e');
+      pollError = '$e';
     } finally {
       _polling = false;
     }
@@ -483,7 +532,10 @@ class LocalScreenServer {
   HttpServer? _server;
   final String key = List.generate(16, (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0')).join();
   List<String> _ips = const [];
+  List<String> get ips => _ips;
   bool _starting = false;
+  String error = '';
+  int asked = 0;
 
   /// What the back office passes to the venue's phones, or null.
   Map<String, Object?>? get info {
@@ -509,8 +561,10 @@ class LocalScreenServer {
       server.listen(_answer, onError: (Object _) {});
       await _readIps();
       Timer.periodic(const Duration(seconds: 30), (_) => unawaited(_readIps()));
-    } catch (_) {
+    } catch (e) {
       // No local network (or not allowed): the back office carries the keys.
+      error = '$e';
+      debugPrint('go.remote: local server not started: $e');
     } finally {
       _starting = false;
     }
@@ -528,19 +582,31 @@ class LocalScreenServer {
   }
 
   Future<void> _answer(HttpRequest req) async {
+    asked++;
     final res = req.response;
     try {
       res.headers.set('Cache-Control', 'no-store');
       res.headers.contentType = ContentType.json;
-      if (req.headers.value('x-go-key') != key) {
+      final path = '${req.method} ${req.uri.path}';
+      // Who this is may be asked by anyone on the Wi-Fi (a phone that found
+      // it by Bonjour before Vesopa answered); everything else needs the key.
+      if (path != 'GET /ping' && req.headers.value('x-go-key') != key) {
         res.statusCode = HttpStatus.forbidden;
         res.write('{"error":"key"}');
         return;
       }
       final mirror = ScreenMirror.current;
-      switch ('${req.method} ${req.uri.path}') {
+      switch (path) {
         case 'GET /ping':
-          res.write(jsonEncode({'ok': true, 'device_id': GoRemote.myId, 'name': mirror?.name(), 'mode': mirror?.mode}));
+          res.write(jsonEncode({
+            'ok': true,
+            'device_id': GoRemote.myId,
+            'name': mirror?.name(),
+            'mode': mirror?.mode,
+            // Whether the asker holds this run's key, so a phone knows its keys
+            // will be taken here (else it waits for Vesopa's list).
+            'keyed': req.headers.value('x-go-key') == key,
+          }));
         case 'GET /state':
           res.write(jsonEncode({'state': mirror?.snapshot()}));
         case 'POST /key':

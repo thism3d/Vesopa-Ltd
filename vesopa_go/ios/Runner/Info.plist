@@ -79,6 +79,10 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Vesopa Go finds and controls your venue's TVs and screens on the same Wi-Fi, and prints receipts on your venue's receipt printer.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_vesopago._tcp</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

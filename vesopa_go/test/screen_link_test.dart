@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vesopa_go/data/api.dart';
 import 'package:vesopa_go/remote/go_remote.dart';
+import 'package:vesopa_go/remote/nsd.dart';
 import 'package:vesopa_go/remote/remote_link.dart';
 
 class _Api extends TapApi {
@@ -107,6 +108,26 @@ void main() {
     await beacon.pollOnce();
     await beacon.pollOnce();
     expect(pressed, ['down', 'right']);
+  });
+
+  test('found on the Wi-Fi by itself (Bonjour): listed as Local before Vesopa answers', () async {
+    RemoteLink.foundOnWifi(NsdScreen(id: 'tv1', name: 'Bar TV', mode: 'display', host: '127.0.0.1', port: LocalScreenServer.instance.boundPort!));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    final s = RemoteLink.screens.value['tv1']!;
+    expect(s.via, 'Local');
+    expect(s.name, 'Bar TV');
+    // Then Vesopa's list brings the key, and keys go straight to it.
+    final api = _Api(local(), serverUp: false);
+    await RemoteLink.refresh(api, 'phone');
+    await RemoteLink.send(api, 'tv1', 'down');
+    expect(pressed, ['down']);
+  });
+
+  test('the TV\'s mirror carries what the connection check shows', () {
+    final d = ScreenMirror.diag();
+    expect(d['app'], isNotEmpty);
+    expect(d.containsKey('poll'), isTrue);
+    expect(d.containsKey('local'), isTrue);
   });
 
   test('a QR scanned in a browser hands over to Go: vesopago://link?c=', () {
