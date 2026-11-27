@@ -443,24 +443,35 @@ class _ReportTabs extends ConsumerStatefulWidget {
 
 class _ReportTabsState extends ConsumerState<_ReportTabs> {
   /// The whole venue first, except in the demo, which has no back office.
-  late bool _venue = !ref.read(tapProvider).demo;
+  /// 0: today across the venue, 1: every back-office report, 2: this device.
+  late int _tab = ref.read(tapProvider).demo ? 2 : 0;
 
   @override
-  Widget build(BuildContext context) => Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: SegmentedButton<bool>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: true, icon: Icon(Icons.storefront_rounded), label: Text('Whole venue')),
-              ButtonSegment(value: false, icon: Icon(Icons.phone_iphone_rounded), label: Text('This device')),
-            ],
-            selected: {_venue},
-            onSelectionChanged: (v) => setState(() => _venue = v.first),
-          ),
+  Widget build(BuildContext context) {
+    final demo = ref.watch(tapProvider.select((s) => s.demo));
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: SegmentedButton<int>(
+          showSelectedIcon: false,
+          segments: [
+            const ButtonSegment(value: 0, icon: Icon(Icons.storefront_rounded), label: Text('Today')),
+            if (!demo) const ButtonSegment(value: 1, icon: Icon(Icons.analytics_rounded), label: Text('All reports')),
+            const ButtonSegment(value: 2, icon: Icon(Icons.phone_iphone_rounded), label: Text('This device')),
+          ],
+          selected: {_tab},
+          onSelectionChanged: (v) => setState(() => _tab = v.first),
         ),
-        Expanded(child: _venue ? const _VenueBody() : _ReportBody(manager: widget.manager)),
-      ]);
+      ),
+      Expanded(
+        child: switch (_tab) {
+          0 => const _VenueBody(),
+          1 => const _AllReports(),
+          _ => _ReportBody(manager: widget.manager),
+        },
+      ),
+    ]);
+  }
 }
 
 /// Today across the venue, from /api/tap/today, asked again every 15
@@ -634,4 +645,264 @@ class RollingText extends StatelessWidget {
             child: Text(text[i], key: ValueKey('$i${text[i]}'), style: style),
           ),
       ]);
+}
+
+
+/// Every report the back office runs, on Go (owner, 2026-11-26: managers,
+/// and Vesopa, read every report here "without touching the back office"):
+/// the report, the period and the terminal, then its tables. The back office
+/// runs it (/api/tap/reports/run) and checks the PIN of whoever asks.
+class _AllReports extends ConsumerStatefulWidget {
+  const _AllReports();
+  @override
+  ConsumerState<_AllReports> createState() => _AllReportsState();
+}
+
+class _AllReportsState extends ConsumerState<_AllReports> {
+  Map<String, dynamic>? _catalogue;
+  Map<String, dynamic>? _result;
+  String? _error;
+  bool _busy = false;
+  String? _report;
+  String _period = 'today';
+  String? _terminal;
+  DateTimeRange? _custom;
+
+  /// Whoever runs it: the clerk signed on, or a manager who typed their PIN.
+  Clerk? _reader;
+
+  @override
+  void initState() {
+    super.initState();
+    _reader = ref.read(tapProvider).clerk;
+    _loadCatalogue();
+  }
+
+  Future<void> _loadCatalogue() async {
+    try {
+      final c = await ref.read(apiProvider).reportCatalogue();
+      if (!mounted) return;
+      final reports = (c['reports'] as List? ?? const []);
+      setState(() {
+        _catalogue = c;
+        _report ??= reports.isEmpty ? null : '${(reports.first as Map)['key']}';
+        _error = null;
+      });
+    } on TapApiError catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
+  }
+
+  String _day(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  Future<void> _run({bool askPin = false}) async {
+    final report = _report;
+    if (report == null || _busy) return;
+    var reader = _reader;
+    if (askPin || reader == null) {
+      reader = await _askReaderPin();
+      if (reader == null) return;
+      _reader = reader;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final r = await ref.read(apiProvider).runReport(
+            report: report,
+            period: _period,
+            from: _period == 'custom' && _custom != null ? _day(_custom!.start) : null,
+            to: _period == 'custom' && _custom != null ? _day(_custom!.end) : null,
+            terminal: _terminal,
+            clerkId: reader.id,
+            pin: reader.pin,
+          );
+      if (mounted) setState(() => _result = r);
+    } on TapApiError catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+      // Not allowed for this clerk: a manager's PIN, then the same report.
+      if (e.status == 403 && !askPin) {
+        setState(() => _busy = false);
+        return _run(askPin: true);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// A manager's PIN, typed here, matched to the venue's staff.
+  Future<Clerk?> _askReaderPin() async {
+    final staff = ref.read(tapProvider).staff;
+    final ctl = TextEditingController();
+    final pin = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Manager\'s PIN'),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          obscureText: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(hintText: 'PIN'),
+          onSubmitted: (v) => Navigator.pop(c, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, ctl.text), child: const Text('Run')),
+        ],
+      ),
+    );
+    if (pin == null || pin.isEmpty) return null;
+    final found = staff.where((c) => c.pin == pin).firstOrNull;
+    if (found == null && mounted) setState(() => _error = 'That PIN is not one of this venue\'s staff.');
+    return found;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final c = _catalogue;
+    if (c == null) {
+      return Center(
+        child: _error == null
+            ? const CircularProgressIndicator()
+            : Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(_error!, textAlign: TextAlign.center),
+                  const SizedBox(height: 12),
+                  OutlinedButton(onPressed: _loadCatalogue, child: const Text('Try again')),
+                ]),
+              ),
+      );
+    }
+    List<Map<String, dynamic>> list(String k) => [for (final x in (c[k] as List? ?? const [])) Map<String, dynamic>.from(x as Map)];
+    final groups = {for (final g in list('groups')) '${g['key']}': '${g['label']}'};
+    final reports = list('reports');
+    final ranges = list('ranges');
+    final terminals = list('terminals');
+    final r = _result;
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            DropdownButtonFormField<String>(
+              isExpanded: true,
+              initialValue: _report,
+              decoration: const InputDecoration(labelText: 'Report'),
+              items: [
+                for (final rep in reports)
+                  DropdownMenuItem(
+                    value: '${rep['key']}',
+                    child: Text('${groups['${rep['group']}'] ?? ''}${groups['${rep['group']}'] == null ? '' : ' · '}${rep['label']}', overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: (v) => setState(() => _report = v),
+            ),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final g in ranges)
+                ChoiceChip(
+                  label: Text('${g['label']}'),
+                  selected: _period == '${g['key']}',
+                  onSelected: (_) async {
+                    final key = '${g['key']}';
+                    if (key == 'custom') {
+                      final now = DateTime.now();
+                      final picked = await showDateRangePicker(
+                        context: context,
+                        firstDate: DateTime(now.year - 5),
+                        lastDate: now,
+                        initialDateRange: _custom ?? DateTimeRange(start: now.subtract(const Duration(days: 7)), end: now),
+                      );
+                      if (picked == null) return;
+                      _custom = picked;
+                    }
+                    setState(() => _period = key);
+                  },
+                ),
+            ]),
+            if (_period == 'custom' && _custom != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('${ddmmyy(_custom!.start)} to ${ddmmyy(_custom!.end)}', style: t.bodySmall),
+              ),
+            if (terminals.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String?>(
+                isExpanded: true,
+                initialValue: _terminal,
+                decoration: const InputDecoration(labelText: 'Terminal'),
+                items: [
+                  const DropdownMenuItem<String?>(value: null, child: Text('All terminals')),
+                  for (final term in terminals) DropdownMenuItem<String?>(value: '${term['value'] ?? term['key'] ?? term['label']}', child: Text('${term['label']}')),
+                ],
+                onChanged: (v) => setState(() => _terminal = v),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _busy || _report == null ? null : () => _run(),
+              icon: _busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.play_arrow_rounded),
+              label: Text(_busy ? 'Running…' : 'Run report'),
+            ),
+            if (_error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(_error!, style: t.bodyMedium?.copyWith(color: Tp.danger))),
+          ]),
+        ),
+      ),
+      if (r != null) ...[
+        const SizedBox(height: 12),
+        Text('${r['title'] ?? 'Report'}', style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+        Text('${r['terminalLabel'] ?? 'All terminals'}', style: t.bodySmall?.copyWith(color: context.goMuted)),
+        for (final sec in (r['sections'] as List? ?? const [])) _ReportTable(section: Map<String, dynamic>.from(sec as Map)),
+      ],
+    ]);
+  }
+}
+
+/// One table of a report: its columns, rows and total, scrolling sideways on
+/// a phone.
+class _ReportTable extends StatelessWidget {
+  const _ReportTable({required this.section});
+  final Map<String, dynamic> section;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final columns = [for (final c in (section['columns'] as List? ?? const [])) Map<String, dynamic>.from(c as Map)];
+    final rows = [for (final r in (section['rows'] as List? ?? const [])) [for (final v in ((r as Map)['values'] as List? ?? const [])) '${v ?? ''}']];
+    final total = section['total'] is Map ? [for (final v in ((section['total'] as Map)['values'] as List? ?? const [])) '${v ?? ''}'] : null;
+    bool numeric(Map<String, dynamic> c) => c['type'] == 'money' || c['type'] == 'number' || c['type'] == 'percent';
+    List<DataCell> cells(List<String> vs, {bool bold = false}) => [
+          for (var i = 0; i < columns.length; i++)
+            DataCell(Text(i < vs.length ? vs[i] : '', style: bold ? const TextStyle(fontWeight: FontWeight.w800) : null)),
+        ];
+    return Card(
+      margin: const EdgeInsets.only(top: 12),
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if ('${section['title'] ?? ''}'.isNotEmpty)
+          Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 4), child: Text('${section['title']}', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
+        if (rows.isEmpty)
+          const Padding(padding: EdgeInsets.all(16), child: Text('Nothing in this period.'))
+        else
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowHeight: 40,
+              dataRowMinHeight: 36,
+              dataRowMaxHeight: 48,
+              columns: [for (final c in columns) DataColumn(label: Text('${c['label'] ?? c['key']}'), numeric: numeric(c))],
+              rows: [
+                for (final r in rows) DataRow(cells: cells(r)),
+                if (total != null) DataRow(cells: cells(total, bold: true)),
+              ],
+            ),
+          ),
+      ]),
+    );
+  }
 }

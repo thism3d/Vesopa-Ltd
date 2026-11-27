@@ -68,19 +68,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Newest Xcode (the newest iOS SDK)
+      - name: Newest stable Xcode (never a beta)
         run: |
+          # Owner, 2026-11-26: "use the latest stable release build ... not the
+          # beta versions as App Store never publishes applications built with
+          # the beta Xcode versions". Only an Xcode whose name has no beta or
+          # release-candidate mark AND whose build number is a release build
+          # (Apple's beta builds end in a lowercase letter, e.g. 24B5055e) is
+          # chosen; the newest of those. With none, the build stops: it never
+          # falls back to the image's default, which may be a beta.
           ls -d /Applications/Xcode*.app || true
-          best=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|release_candidate|_rc' \
-            | sed -E 's#.*/Xcode_([0-9.]+)\.app#\1#' | sort -V | tail -1)
-          if [ -n "$best" ]; then sudo xcode-select -s "/Applications/Xcode_${best}.app"; fi
+          best=""; bestv=""
+          for app in /Applications/Xcode_*.app; do
+            [ -d "$app" ] || continue
+            case "$(basename "$app")" in *[Bb]eta*|*[Rr]elease_[Cc]andidate*|*_[Rr][Cc]*) continue ;; esac
+            build=$(defaults read "$app/Contents/version.plist" ProductBuildVersion 2>/dev/null || echo "")
+            case "$build" in ''|*[a-z]) echo "skip $(basename "$app") (build ${build:-unknown}: not a release)"; continue ;; esac
+            v=$(basename "$app" | sed -E 's#^Xcode_([0-9.]+)\.app$#\1#')
+            if [ -z "$bestv" ] || [ "$(printf '%s\n%s\n' "$bestv" "$v" | sort -V | tail -1)" = "$v" ]; then best="$app"; bestv="$v"; fi
+          done
+          [ -n "$best" ] || { echo "::error::No stable (release) Xcode on this runner. Not building with a beta."; exit 1; }
+          sudo xcode-select -s "$best"
           xcodebuild -version
+          case "$(xcodebuild -version | awk '/Build version/{print $3}')" in *[a-z]) echo "::error::The selected Xcode is a beta build."; exit 1 ;; esac
           sdk=$(xcrun --sdk iphoneos --show-sdk-version)
           echo "iOS SDK $sdk"
           case "$sdk" in
             1*|2[0-6].*) echo "::error::Only the iOS $sdk SDK here. App Store Connect needs the iOS 27 SDK (Xcode 27)."; exit 1 ;;
           esac
-          echo "### Xcode $(xcodebuild -version | head -1 | awk '{print $2}'), iOS SDK $sdk" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Xcode $(xcodebuild -version | head -1 | awk '{print $2}') ($(xcodebuild -version | awk '/Build version/{print $3}'), stable), iOS SDK $sdk" >> "$GITHUB_STEP_SUMMARY"
 
       # The Swift packages (Stripe and the rest) kept between runs, so they
       # are not fetched afresh on every build.
