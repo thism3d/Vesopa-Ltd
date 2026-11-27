@@ -11,6 +11,7 @@ status codes only. Nothing on the server is deleted: the site's folder is
 backed up first, and files are only added or replaced.
 """
 import io
+import re
 import subprocess
 import sys
 import tarfile
@@ -24,7 +25,19 @@ SITE = REPO / "vesopa_go" / "web" / "site"
 HOST = "root@34.63.118.67"
 DOMAIN = "go.vesopa.com"
 H = "export PATH=$PATH:/usr/local/hestia/bin; "
-PAGES = ["/", "/.well-known/apple-app-site-association", "/link/", "/get-started/", "/signup/", "/js/signup.js", "/js/signup-config.js", "/privacy/", "/terms/", "/support/", "/style.css", "/js/go.js", "/js/three.min.js", "/media/pay-iphone.mp4", "/img/og.jpg"]
+# Every page of the site (each folder's index.html), then the files the pages need.
+PAGES = ["/"] + sorted(f"/{p.parent.relative_to(SITE).as_posix()}/" for p in SITE.glob("*/index.html") if p.parent.name != "preview") + [
+    "/.well-known/apple-app-site-association", "/robots.txt", "/sitemap.xml",
+    "/js/signup.js", "/js/signup-config.js", "/style.css", "/css/premium.css",
+    "/js/go.js", "/js/premium.js", "/js/extras.js", "/js/three.min.js", "/media/pay-iphone.mp4",
+    "/img/og.jpg", "/img/shots/tv-02-kitchen.webp",
+]
+# The install page's version labels belong to publish_install.py, which stamps
+# them on the server with each build; an upload of the site keeps the server's.
+INSTALL_LABELS = {
+    "install/index.html": [r'<p class="version">[^<]*</p>', r'<p class="version-android">[^<]*</p>', r'<p class="version-tv">[^<]*</p>'],
+    "install/manifest.plist": [r"<key>bundle-version</key><string>[^<]*", r"<key>title</key><string>[^<]*"],
+}
 # --local: from the office PC through paramiko rather than the runner's ssh.
 LOCAL = "--local" in sys.argv
 
@@ -69,6 +82,27 @@ def status(url):
         return 0
 
 
+def page(url):
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "go-site"}), timeout=20) as r:
+            return r.read().decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def keep_live_labels(name, local, folder):
+    """The local file with the server's version labels put back in."""
+    live = sh(f"cat {folder}/{name} 2>/dev/null || true", check=False)
+    text = local.decode("utf-8")
+    kept = 0
+    for pattern in INSTALL_LABELS[name]:
+        m = re.search(pattern, live)
+        if m and re.search(pattern, text):
+            text = re.sub(pattern, lambda _: m.group(0), text, count=1)
+            kept += 1
+    return text.encode("utf-8"), kept
+
+
 def where():
     """The Hestia user and folder that serve the domain (exactly one)."""
     found = sh(f"ls -d /home/*/web/{DOMAIN}/public_html 2>/dev/null || true").split()
@@ -86,9 +120,16 @@ def main(mode):
     print(f"  served from a Hestia web domain (folder found, {sh(f'ls -A {folder} | wc -l')} entries now)")
     ssl = sh(H + f"v-list-web-domain {user} {DOMAIN} shell 2>/dev/null | awk '$1==\"SSL:\"{{print $2}}' || true")
     print(f"  HTTPS: {ssl or 'unknown'}")
-    for page in PAGES:
-        print(f"  https://{DOMAIN}{page}: {status(f'https://{DOMAIN}{page}')}")
+    bad = 0
+    for path in PAGES:
+        code = status(f"https://{DOMAIN}{path}")
+        bad += code != 200
+        print(f"  https://{DOMAIN}{path}: {code}")
+    shown = re.findall(r'<p class="version[^"]*">([^<]*)</p>', page(f"https://{DOMAIN}/install/"))
+    print(f"  /install shows: {' | '.join(shown) or 'no versions'} (iPhone | Android | Android TV)")
     if mode != "live":
+        if bad:
+            print(f"  ! {bad} of {len(PAGES)} did not answer 200: 'live' uploads what the repo has")
         return
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -99,7 +140,15 @@ def main(mode):
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         for p in files:
-            tar.add(p, arcname=p.relative_to(SITE).as_posix())
+            name = p.relative_to(SITE).as_posix()
+            if name in INSTALL_LABELS:
+                data, kept = keep_live_labels(name, p.read_bytes(), folder)
+                print(f"  {name}: {kept} version label(s) kept from the server")
+                info = tarfile.TarInfo(name)
+                info.size, info.mtime, info.mode = len(data), int(p.stat().st_mtime), 0o644
+                tar.addfile(info, io.BytesIO(data))
+            else:
+                tar.add(p, arcname=name)
     sh(f"cd {folder} && tar -xzf - --no-same-owner && chown -R {user}:{user} {folder} && find {folder} -type d -exec chmod 755 {{}} + && find {folder} -type f -exec chmod 644 {{}} +",
        data=buf.getvalue())
     print(f"== upload\n  {len(files)} files up")
@@ -111,10 +160,10 @@ def main(mode):
     time.sleep(3)
     print("== check")
     bad = 0
-    for page in PAGES:
-        code = status(f"https://{DOMAIN}{page}")
+    for path in PAGES:
+        code = status(f"https://{DOMAIN}{path}")
         bad += code != 200
-        print(f"  https://{DOMAIN}{page}: {code}")
+        print(f"  https://{DOMAIN}{path}: {code}")
     if bad:
         raise SystemExit(f"! {bad} pages did not answer 200")
 

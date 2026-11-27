@@ -43,6 +43,9 @@ function fakePool() {
       Object.assign(tables.bo_licence_limits.get(params[1]), { seats: 0, status: params[0] });
       return [{ affectedRows: 1 }, []];
     }
+    if (/^SELECT office FROM go_onboarding WHERE card_later = 1 AND licence_status = 'card_needed'/.test(one)) {
+      return [[...tables.go_onboarding.values()].filter((r) => Number(r.card_later) === 1 && r.licence_status === 'card_needed').map((r) => ({ office: r.office })), []];
+    }
     let m = one.match(/^SELECT \* FROM (\w+) WHERE office = \?/);
     if (m) return [[tables[m[1]].get(params[0])].filter(Boolean), []];
     m = one.match(/^SELECT \* FROM (\w+) WHERE account_id = \?/);
@@ -112,22 +115,26 @@ function fakeStripe(state) {
 }
 
 function appWith(pool, fake, extra = {}) {
+  let goRouter = null;
   const app = express();
   app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
   const stripeR = stripeRoutes({ pool, secret: SECRET, client: fake.stripeClient });
   const go = goOnboardingRoutes({
     pool,
     secret: SECRET,
+    sweepEveryHours: 0,
     stripeSettings: stripeR.settings,
     client: fake.onboarding,
     stripeClient: fake.stripeClient,
     ...extra,
   });
+  goRouter = go;
   stripeR.capCheck = go.capCheck;
   stripeR.onStripeEvent = go.onStripeEvent;
   app.use('/api', stripeR);
   app.use('/api', go);
   app.use((err, _req, res, _next) => res.status(500).json({ error: String(err && err.stack) }));
+  app.go = goRouter;
   return app;
 }
 
@@ -329,6 +336,82 @@ function signed(event) {
     r = await call(s4, 'POST', '/api/go/onboarding/identity', { token: phone, body: { mobile: true } });
     ok(r.status === 201 && r.body.id === 'vs_1', 'once Stripe opens Identity it is used');
     s4.close();
+
+    // The app's licence step (owner, 2026-11-26): the trial starts with no card,
+    // the app is asked for no payment, and the card link goes by email.
+    const mails6 = [];
+    const pool6 = fakePool();
+    const state6 = { card: 'inactive', payouts: 'inactive', due: 2 };
+    const fake6 = fakeStripe(state6);
+    const s6 = await listen(appWith(pool6, fake6, { sendWelcome: async (m) => { mails6.push(m); } }));
+    ok((await call(s6, 'POST', '/api/go/onboarding/licence/trial', { token: phone })).status === 409, 'app trial waits for the business');
+    await call(s6, 'PUT', '/api/go/onboarding/business', { token: phone, body: { business_type: 'sole_trader', legal_name: 'Ann Owner', expected_monthly_minor: 500000, average_sale_minor: 800 } });
+    await call(s6, 'POST', '/api/go/onboarding/skip', { token: phone, body: { step: 'identity' } });
+    await call(s6, 'POST', '/api/go/onboarding/skip', { token: phone, body: { step: 'stripe' } });
+    r = await call(s6, 'POST', '/api/go/onboarding/licence/trial', { token: phone });
+    ok(r.status === 200 && r.body.licence.ok === true && r.body.licence.card_later === true
+      && r.body.steps.licence === 'card_needed' && r.body.next === null && r.body.complete === true, 'app trial: no card, step done');
+    ok(fake6.calls.filter((c) => c[0] === 'licence').length === 1 && !('setup_intent_client_secret' in r.body), 'one subscription, no card asked');
+    ok(pool6.tables.bo_licence_limits.get(OFFICE).seats === 5, 'app trial opens Go: 5 seats');
+    ok(mails6.length === 1 && mails6[0].text.includes('https://go.vesopa.com/signup/#licence') && mails6[0].html.includes('add a card for the licence'), 'welcome carries the card link');
+    r = await call(s6, 'POST', '/api/go/onboarding/licence/trial', { token: phone });
+    ok(r.status === 200 && fake6.calls.filter((c) => c[0] === 'licence').length === 1, 'started once');
+    for (let i = 0; i < 8; i += 1) await call(s6, 'POST', '/api/go/onboarding/licence/trial', { token: phone });
+    ok((await call(s6, 'POST', '/api/go/onboarding/licence/trial', { token: phone })).status === 429, 'too many tries: 429');
+    // Three days before the end, Stripe says so: the reminder, once.
+    const willEnd = signed({ type: 'customer.subscription.trial_will_end', data: { object: { id: 'sub_1', status: 'trialing', trial_end: 1900000000, default_payment_method: null, metadata: { office: OFFICE, purpose: 'vesopa_go_licence' } } } });
+    await call(s6, 'POST', '/api/stripe/webhook', willEnd);
+    await call(s6, 'POST', '/api/stripe/webhook', willEnd);
+    const reminders = mails6.filter((m) => /free days end/.test(m.subject));
+    ok(reminders.length === 1 && reminders[0].text.includes('https://go.vesopa.com/signup/#licence') && /£29 a month/.test(reminders[0].text), 'reminder once, with the card link');
+    // The website still takes the card for the same subscription.
+    r = await call(s6, 'POST', '/api/go/onboarding/licence', { token: phone });
+    ok(r.status === 200 || r.status === 201, 'the website can still add the card');
+    // Card added on the website: the licence is a normal trial.
+    state6.cardSaved = true;
+    await call(s6, 'POST', '/api/stripe/webhook', signed({ type: 'customer.subscription.updated', data: { object: { id: 'sub_1', status: 'trialing', trial_end: 1900000000, default_payment_method: 'pm_1', metadata: { office: OFFICE, purpose: 'vesopa_go_licence' } } } }));
+    r = await call(s6, 'GET', '/api/go/onboarding', { token: phone });
+    ok(r.body.steps.licence === 'trialing' && r.body.licence.card_later === false && r.body.licence.ok === true, 'card added: an ordinary trial');
+    // No card by the end: Stripe cancels the subscription and the seats go back.
+    await call(s6, 'POST', '/api/stripe/webhook', signed({ type: 'customer.subscription.deleted', data: { object: { id: 'sub_1', status: 'canceled', trial_end: 1900000000, default_payment_method: null, metadata: { office: OFFICE, purpose: 'vesopa_go_licence' } } } }));
+    r = await call(s6, 'GET', '/api/go/onboarding', { token: phone });
+    ok(r.body.licence.ok === false && pool6.tables.bo_licence_limits.get(OFFICE).seats === 0, 'trial ended without a card: seats back');
+    // Without Stripe's events (the live webhook sends payment events only), the
+    // sweep sends the reminder and, after the end, gives the seats back.
+    let clock = Date.parse('2030-03-15T00:00:00Z');
+    const mails8 = [];
+    const pool8 = fakePool();
+    const state8 = { card: 'inactive', payouts: 'inactive', due: 2 };
+    const app8 = appWith(pool8, fakeStripe(state8), { sendWelcome: async (m) => { mails8.push(m); }, now: () => clock });
+    const s8 = await listen(app8);
+    await call(s8, 'PUT', '/api/go/onboarding/business', { token: phone, body: { business_type: 'sole_trader', legal_name: 'Ann Owner', expected_monthly_minor: 500000, average_sale_minor: 800 } });
+    await call(s8, 'POST', '/api/go/onboarding/skip', { token: phone, body: { step: 'identity' } });
+    await call(s8, 'POST', '/api/go/onboarding/skip', { token: phone, body: { step: 'stripe' } });
+    await call(s8, 'POST', '/api/go/onboarding/licence/trial', { token: phone });
+    const ends8 = new Date(pool8.tables.go_onboarding.get(OFFICE).trial_end).getTime();
+    clock = ends8 - 10 * 86400000;
+    await app8.go.sweepTrials();
+    ok(mails8.filter((m) => /free days end/.test(m.subject)).length === 0, 'no reminder ten days out');
+    clock = ends8 - 2 * 86400000;
+    await app8.go.sweepTrials();
+    await app8.go.sweepTrials();
+    ok(mails8.filter((m) => /free days end/.test(m.subject)).length === 1, 'sweep: reminder once, two days out');
+    clock = ends8 + 3600000;
+    state8.licence = 'canceled';
+    await app8.go.sweepTrials();
+    ok(pool8.tables.go_onboarding.get(OFFICE).licence_status === 'canceled' && pool8.tables.bo_licence_limits.get(OFFICE).seats === 0, 'sweep: ended without a card, seats back');
+    s8.close();
+
+    // A website sign-up without a card is still not done (the card step stays).
+    const pool7 = fakePool();
+    const s7 = await listen(appWith(pool7, fakeStripe({ card: 'inactive', payouts: 'inactive', due: 0 })));
+    await call(s7, 'PUT', '/api/go/onboarding/business', { token: phone, body: { business_type: 'sole_trader', legal_name: 'Ann Owner', expected_monthly_minor: 500000, average_sale_minor: 800 } });
+    await call(s7, 'POST', '/api/go/onboarding/skip', { token: phone, body: { step: 'identity' } });
+    await call(s7, 'POST', '/api/go/onboarding/skip', { token: phone, body: { step: 'stripe' } });
+    await call(s7, 'POST', '/api/go/onboarding/licence', { token: phone });
+    r = await call(s7, 'GET', '/api/go/onboarding', { token: phone });
+    ok(r.body.next === 'licence' && r.body.licence.ok === false && r.body.licence.card_later === false, 'website: the card is still needed');
+    s6.close(); s7.close();
 
     // The website: code exchanged on the server, a new email gets a sign-up token.
     const issued = [];

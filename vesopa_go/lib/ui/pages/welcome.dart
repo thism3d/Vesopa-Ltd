@@ -361,7 +361,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                   const SizedBox(width: 12),
                   Expanded(child: Text('Card payments go through Stripe. Next, Stripe checks your ID and your business: '
                       'have your passport, driving licence or ID card with you. Until then the app runs in test mode. '
-                      '14 days free, then £29 a month.', style: t.bodyMedium)),
+                      'Your first 14 days are free.', style: t.bodyMedium)),
                 ]),
               ),
             ),

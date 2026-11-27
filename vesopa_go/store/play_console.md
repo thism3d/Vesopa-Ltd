@@ -7,7 +7,7 @@ Play Console, in the order Play shows them, with the answer to give. Google's
 API can't fill these in, so they're typed by hand once. (Written 2026-10-27.)
 
 **Release rule (owner, 2026-10-27):** Android goes to **Internal testing** only,
-until the owner says otherwise. Vesopa Go has never been published, so Play
+until the owner says otherwise. (Since then 1.2.73 has been sent to production; it was in review on 2026-11-26.) Vesopa Go has never been published, so Play
 keeps it a **draft app** and every release arrives as a **draft**: open Testing >
 Internal testing and press **Review release > Start roll-out**.
 
@@ -42,73 +42,92 @@ Uploaded by the workflow; check it looks right.
 
 ## App content (Policy and programmes > App content)
 
-**Privacy policy:** https://go.vesopa.com/privacy/ (terms: https://go.vesopa.com/terms/, support: https://go.vesopa.com/support/)
+**Rewritten 2026-11-26 for Go 1.2.76 (voice commands, 1.2.75, added 2026-11-27).** The answers before this date predated
+the in-app sign-up (1.2.65), Stripe (1.2.68) and the demo's return, and said
+the app used no location, which no longer matched the app. Google rejects an
+app whose answers do not match what it does, so type these in as they are.
 
-**App access:** "All or some functionality is restricted". Add instructions:
-- Name: The Vesopa Kitchen (review venue)
-- Username: The Vesopa Kitchen's manager email (manager@vesopa.co.uk)
-- Password: its password, typed here by hand (never in this repo)
-- Any other information: "Tap Continue with Vesopa and sign in with the email and password above. The Vesopa Kitchen is Vesopa's own test venue: its card payments run on Dojo's sandbox, so no real money moves. Then sign on with staff PIN ____ (a manager)."
+**Privacy policy:** https://go.vesopa.com/privacy/
 
-The demo has been taken out of the store builds (2026-10-28). The Vesopa Kitchen
-is the review venue, and the only venue with Vesopa Go on its licence.
+**App access:** "All or some functionality is restricted". One set of
+instructions:
+- Name: Try the demo (no sign-in)
+- Username / Password: leave empty (not needed)
+- Any other information: "No account is needed to review Vesopa Go. On the
+  first screen tap **Try the demo**, then sign on with staff PIN **1111** (Sam,
+  a manager; 2222 and 3333 are staff). The demo venue runs on the device and
+  its card payments are pretend, so no real money moves. Register a new venue
+  shows the sign-up: the business, Stripe's identity and business checks, and a
+  14-day free trial that asks for no payment in the app."
 
-**Ads:** No, the app does not contain ads.
+**Ads:** No.
 
-**Content rating:** start the IARC questionnaire, category "All other app types"
-(a business and productivity app). Answer No to violence, sexuality, language,
-gambling, user-generated content shared between users, and location sharing.
-- "Does the app reference alcohol?" A bar's menu can show drink names, so answer
-  Yes to references to alcohol only if Play's wording covers a product list;
-  otherwise No. Expected: PEGI 3 / Everyone, or PEGI 12 / Teen. Either is fine.
-- "Does the app allow users to purchase digital goods?" No. Payments are the
-  venue's own sales of food, drink and tickets, taken through Dojo.
+**Content rating** (IARC, category "All other app types"): No to violence,
+sexuality, language, controlled substances, gambling, user content shared
+between users, sharing the user's location with others.
+- "Does the app allow users to purchase digital goods?" **No.** The licence is
+  not sold in the app (1.2.74); the payments in the app are the venue's own
+  sales of food, drink and tickets.
+- Menus can name drinks: if Play asks about references to alcohol, answer Yes
+  for a product list only. Expected rating: Everyone / PEGI 3 or Teen / PEGI 12.
 
-**Target audience and content:** 18 and over only (venue staff). "Could the app
-unintentionally appeal to children?" No.
+**Target audience and content:** 18 and over only (venue staff and owners).
+"Could the app unintentionally appeal to children?" No.
 
-**News app:** No.
+**News app:** No. **COVID-19, government, health apps:** No to each.
 
-**COVID-19, government, health:** No to each.
+**Financial features:** Yes. Choose the point-of-sale / payment acceptance
+option ("the app lets a business take payments from its customers").
+- What it does: the venue's own card payments, taken by the venue's payment
+  provider: Stripe (Tap to Pay on Android and Stripe card readers, through
+  Stripe's Terminal SDK, and QR Pay), or the venue's Dojo or Teya card
+  machine. Card details are read by the provider's certified software and go
+  straight to it; Vesopa never stores a card number.
+- Not a bank, a loan, crypto, a money transfer, a wallet or investments.
 
-**Financial features:** Yes, "Payments / point of sale for a business".
-- What it does: takes card payments for a venue's own sales, through Dojo (the
-  venue's card machine, a Dojo Pocket, or Tap to Pay on iPhone). The app never
-  reads or stores card numbers; Dojo's software does.
-- Not a bank, a loan, crypto, a money transfer or a wallet.
+**Advertising ID:** No. No ads or analytics SDK.
 
-**Advertising ID:** No, the app does not use an advertising ID. No analytics or
-ads SDK is included.
+**Data safety.** "Does your app collect or share any of the required user
+data types?" Yes. "Is all of the user data collected by your app encrypted in
+transit?" Yes. "Do you provide a way for users to request that their data is
+deleted?" Yes. Account deletion URL: **https://auth.vesopa.com/delete-account**
+(also in the app: More > Delete my Vesopa account).
 
-**Data safety:** collected, nothing sold, shared only with Dojo (card payments),
-everything encrypted in transit, users can ask for deletion.
+Shared: only where marked. Stripe, Dojo and Teya act as the venue's payment
+processors, and Stripe as Vesopa's identity checker.
 
-| Data type | Collected | Shared | Optional? | Purposes |
+| Data type | Collected | Shared | Required or optional | Purposes |
 |---|---|---|---|---|
-| Personal info: Name | Yes (staff, and customers the staff add) | No | Required | App functionality, Account management |
-| Personal info: Email address | Yes (staff sign-in; customers for receipts, tickets and memberships) | No | Optional | App functionality, Account management |
-| Personal info: Phone number | Yes (customers, for loyalty and memberships) | No | Optional | App functionality |
-| Personal info: User IDs (Vesopa account, staff ID, member number) | Yes | No | Required | App functionality, Account management |
-| Financial info: Purchase history (the venue's sales) | Yes | Yes, with Dojo for card payments | Required | App functionality |
-| Photos (staff photos shown at sign-on, set in the back office) | Yes | No | Optional | App functionality |
-| Device or other IDs (the device's own id for its till seat) | Yes | No | Required | App functionality |
-| App info and performance: Diagnostics | No | | | |
-| Location | No | | | |
-| Contacts, messages, audio, files, calendar, health | No | | | |
+| Location: Precise location | Yes (Tap to Pay on Android needs it while a payment is taken; Stripe's SDK) | No | Optional | App functionality; Fraud prevention, security and compliance |
+| Location: Approximate location | Yes (as above) | No | Optional | App functionality; Fraud prevention, security and compliance |
+| Personal info: Name | Yes (staff; the owner at sign-up; customers the staff add) | No | Required | App functionality; Account management |
+| Personal info: Email address | Yes (sign-in; customers' receipts, tickets, memberships) | No | Required | App functionality; Account management |
+| Personal info: Phone number | Yes (customers, for loyalty; the owner, in Stripe's checks) | No | Optional | App functionality; Fraud prevention, security and compliance |
+| Personal info: Address | Yes (the venue's and the business's address at sign-up) | No | Required | App functionality; Fraud prevention, security and compliance |
+| Personal info: User IDs | Yes (Vesopa account, staff, member number) | No | Required | App functionality; Account management |
+| Personal info: Other info | Yes (the owner's date of birth and ID details, in Stripe's identity check) | No | Optional | Fraud prevention, security and compliance |
+| Financial info: User payment info | Yes (customers' cards, read by Stripe's SDK for Tap to Pay and sent straight to Stripe) | No | Optional | App functionality |
+| Financial info: Purchase history | Yes (the venue's sales) | No | Required | App functionality |
+| Financial info: Other financial info | Yes (the payout bank account and expected takings, at sign-up) | No | Optional | App functionality; Fraud prevention, security and compliance |
+| Photos and videos: Photos | Yes (the owner's photo ID and selfie, in Stripe's identity check; staff photos set in the back office) | No | Optional | Fraud prevention, security and compliance; App functionality |
+| Device or other IDs | Yes (the device's id for its till seat) | No | Required | App functionality |
+| App activity, app info and performance, web browsing, contacts, messages, audio, files, calendar, health | No | | | |
 
-- The camera is used only to scan QR codes and barcodes on the device; no picture is kept or sent.
-- NFC reads staff cards and fobs; the card's id is matched on the device.
-- "Is all of the user data collected by your app encrypted in transit?" Yes.
-- "Do you provide a way for users to request that their data is deleted?" Yes.
-- Delete account URL: https://auth.vesopa.com/delete-account
+- The camera scans QR codes and barcodes; no picture is kept or sent, except
+  the photo ID and selfie that the owner takes in Stripe's identity check.
+- NFC reads staff cards, fobs and members' cards; ids are matched on the device.
+- The microphone (voice commands for a TV, 1.2.75) is used only while it is held, and speech is recognised on the device; no recording leaves the phone, so Audio is not collected.
 
-**Permissions declaration** (if Play asks when the bundle is reviewed):
+**Permissions declaration** (if Play asks):
 | Permission | Why |
 |---|---|
-| CAMERA | Scanning table QR codes, product barcodes, gift cards, member cards and event tickets |
-| NFC | Staff cards and fobs at sign-on, NFC tags on tables |
-| USE_BIOMETRIC | Fingerprint or face sign-in for staff on their own device |
-| INTERNET | The venue's back office, Vesopa sign-in and Dojo |
+| CAMERA | Scanning table QR codes, product barcodes, gift cards, member cards and tickets; the owner's ID check at sign-up |
+| NFC | Staff cards and fobs, members' cards, NFC tags on tables |
+| ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION | Tap to Pay on Android: Stripe's SDK needs the location while a card payment is taken (foreground only, never in the background) |
+| BLUETOOTH_SCAN, BLUETOOTH_CONNECT | Stripe card readers and receipt printers |
+| USE_BIOMETRIC | Fingerprint or face sign-in for staff |
+| RECORD_AUDIO | Voice commands for a kitchen screen or customer display, only while the microphone is held; recognised on the device |
+| INTERNET | The venue's back office, Vesopa sign-in and the payment provider |
 
 **Government apps:** No.
 

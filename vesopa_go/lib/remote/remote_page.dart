@@ -321,7 +321,9 @@ class _RemotePadPageState extends ConsumerState<RemotePadPage> {
       _heard = '';
     });
     await _speech.listen(
-      listenOptions: SpeechListenOptions(partialResults: true, cancelOnError: true, listenMode: ListenMode.confirmation),
+      // On the device only: no recording goes to Apple's or Google's speech
+      // servers, as the stores' privacy answers say (store/play_console.md).
+      listenOptions: SpeechListenOptions(partialResults: true, cancelOnError: true, listenMode: ListenMode.confirmation, onDevice: true),
       pauseFor: const Duration(seconds: 2),
       onResult: (r) {
         if (!mounted) return;

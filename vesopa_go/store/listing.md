@@ -36,12 +36,26 @@ Every box, with the answer to type: **`play_console.md`** beside this file. In s
 
 ## App Privacy (App Store Connect > Vesopa Go > App Privacy, by hand)
 
-Apple's API cannot answer these. Data collected, all **linked to the user**,
-**not used for tracking**:
+Apple's API cannot answer these, and Apple will not take the app for review
+until they are published (STATE_ERROR.APP_DATA_USAGES_REQUIRED, 2026-11-25).
+Since 1.2.68 the app has its own sign-up, with Stripe's native screens for the
+owner's identity, the business and bank checks and the licence card, so data
+collected by those screens counts too. Recommended answers, for the owner to
+confirm (the owner attests to them): "Yes, we collect data"; every type below
+is **linked to the user**, **not used for tracking**, purpose **App
+Functionality** only:
 
-- **Contact info: name, email address**: app functionality (staff sign-in).
-- **Identifiers: user ID**: app functionality (the Vesopa account).
-- **Purchases: purchase history**: app functionality (the venue's sales).
+- **Contact Info: Name, Email Address, Phone Number, Physical Address**: the
+  Vesopa account, staff names, the venue's and business's address (sign-up).
+- **Identifiers: User ID**: the Vesopa account.
+- **Financial Info: Payment Info**: the licence card, entered in Stripe's card
+  sheet (Apple Pay itself is not counted).
+- **Financial Info: Other Financial Info**: the bank account for payouts and the
+  expected card takings (sign-up, Stripe).
+- **User Content: Photos or Videos**: the owner's photo ID and selfie for
+  Stripe's identity check (sign-up only).
+- **Purchases: Purchase History**: the venue's sales and the licence.
 
-Card numbers are never collected by the app: Dojo's software reads cards.
-No advertising, no analytics SDKs, nothing sold or shared for tracking.
+Card numbers taken from customers are never collected by the app: the payment
+provider's software (Stripe Terminal, Dojo, Teya) reads cards. No advertising,
+no analytics SDKs, nothing sold or shared for tracking.

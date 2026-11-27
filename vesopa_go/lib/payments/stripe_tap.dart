@@ -110,6 +110,7 @@ class StripeTapToPay implements PaymentService {
 
   @override
   Future<String?> whyUnavailable() async {
+    if (!tapToPayOnThisPlatform) return 'Tap to Pay on iPhone is not in this version of Vesopa Go. Use the card machine or QR Pay.';
     try {
       final config = await api.stripeConfig();
       if (config['enabled'] != true || config['ready'] != true) {

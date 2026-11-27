@@ -276,7 +276,7 @@ const defaultClient = {
 };
 
 /** The welcome email: plain and HTML, in Vesopa's colours. */
-function welcomeEmail({ name, endText, later = [], capped }) {
+function welcomeEmail({ name, endText, later = [], capped, cardLater = false }) {
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const lines = [
     `Welcome to Vesopa Go, ${name}.`,
@@ -290,6 +290,7 @@ function welcomeEmail({ name, endText, later = [], capped }) {
     '',
     ...(later.length ? [`Still to do: ${later.join(' and ')}. Open Vesopa Go, Account checks.`, ''] : []),
     ...(capped ? ['Until Stripe has finished its checks, card payments are limited to £250 a payment and £1,000 a day.', ''] : []),
+    ...(cardLater ? [`To keep Vesopa Go after your free days, add a card for the licence${endText ? ` before ${endText}` : ''}: ${CARD_LINK} (sign in with your Vesopa account). Nothing is taken until the free days end.`, ''] : []),
     'Your menu, staff, reports and settings are in the back office: https://backoffice.vesopaepos.com',
     '',
     'Questions? Reply to this email or write to support@vesopa.com.',
@@ -310,10 +311,58 @@ ${li('Vesopa Go EPOS on your phones and tablets')}${li('Kitchen screen and custo
 </ul>
 ${later.length ? `<p style="font-size:15px;line-height:1.5;background:#2A2410;border-radius:12px;padding:12px 14px;color:#F5D36B;margin:0 0 14px">Still to do: ${esc(later.join(' and '))}. Open Vesopa Go, <b>Account checks</b>.</p>` : ''}
 ${capped ? '<p style="font-size:14px;line-height:1.5;color:#9AA592;margin:0 0 18px">Until Stripe has finished its checks, card payments are limited to £250 a payment and £1,000 a day.</p>' : ''}
+${cardLater ? `<p style="font-size:15px;line-height:1.5;color:#C9D1C2;margin:0 0 18px">To keep Vesopa Go after your free days, <a href="${CARD_LINK}" style="color:#B6E62E">add a card for the licence</a>${endText ? ` before <b>${esc(endText)}</b>` : ''}. Sign in with your Vesopa account; nothing is taken until the free days end.</p>` : ''}
 <a href="https://backoffice.vesopaepos.com" style="display:inline-block;background:#B6E62E;color:#0B0E0A;text-decoration:none;font-weight:800;border-radius:14px;padding:14px 22px;font-size:16px">Open the back office</a>
 <p style="font-size:13px;color:#7D8776;margin:26px 0 0">Questions? Reply to this email or write to support@vesopa.com.<br>Vesopa Software Ltd · company number 17362206</p>
 </td></tr></table></td></tr></table></body></html>`;
   return { text: lines.join('\n'), html };
+}
+
+/**
+ * Where the owner adds the licence card: the website's sign-up, which still
+ * takes a card (go.vesopa.com/signup, js/signup.js opens its licence step).
+ * Never shown in the app (owner, 2026-11-26: the stores' payment rules).
+ */
+const CARD_LINK = 'https://go.vesopa.com/signup/#licence';
+
+/** A trial started in the app with no card, a few days before it ends. */
+function cardReminderEmail({ name, endText }) {
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const when = endText ? `on ${endText}` : 'in a few days';
+  const text = [
+    `Your free days of Vesopa Go at ${name} end ${when}.`,
+    '',
+    `To keep using it, add a card for the licence (£29 a month): ${CARD_LINK}`,
+    'Sign in with your Vesopa account. Nothing is taken until the free days end, and you can cancel any time.',
+    '',
+    'Without a card, Vesopa Go stops on your devices when the free days end. Your back office, menu and sales are kept.',
+    '',
+    'Questions? Reply to this email or write to support@vesopa.com.',
+    '',
+    'Vesopa Software Ltd',
+  ].join('\n');
+  const html = `<!doctype html><html><body style="margin:0;background:#0B0E0A;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#F2F5EE">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0B0E0A;padding:32px 12px"><tr><td align="center">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" style="max-width:560px;background:#171B15;border-radius:20px;padding:32px">
+<tr><td>
+<div style="display:inline-block;background:#B6E62E;color:#0B0E0A;font-weight:800;border-radius:12px;padding:8px 14px;font-size:15px">Vesopa Go</div>
+<h1 style="font-size:24px;margin:22px 0 8px;color:#FFFFFF">Your free days end ${esc(when)}</h1>
+<p style="font-size:16px;line-height:1.5;color:#C9D1C2;margin:0 0 18px">To keep Vesopa Go at ${esc(name)}, add a card for the licence: £29 a month. Nothing is taken until the free days end, and you can cancel any time.</p>
+<a href="${CARD_LINK}" style="display:inline-block;background:#B6E62E;color:#0B0E0A;text-decoration:none;font-weight:800;border-radius:14px;padding:14px 22px;font-size:16px">Add a card</a>
+<p style="font-size:14px;line-height:1.5;color:#9AA592;margin:18px 0 0">Without a card, Vesopa Go stops on your devices when the free days end. Your back office, menu and sales are kept.</p>
+<p style="font-size:13px;color:#7D8776;margin:26px 0 0">Questions? Reply to this email or write to support@vesopa.com.<br>Vesopa Software Ltd · company number 17362206</p>
+</td></tr></table></td></tr></table></body></html>`;
+  return { text, html };
+}
+
+/**
+ * Whether the licence step is done. A trial started in the app has no card
+ * yet (card_later) and counts until it ends: Stripe cancels it then if no card
+ * was added (trial_settings.end_behavior), which takes the seats back.
+ */
+function licenceOk(row) {
+  const r = row || {};
+  return LICENCE_OK.has(r.licence_status) || (r.licence_status === 'card_needed' && Boolean(Number(r.card_later)));
 }
 
 // ---- The routes -------------------------------------------------------------------
@@ -331,6 +380,7 @@ function goOnboardingRoutes({
   pool, secret, stripeSettings, createVenue, verifyIdToken, goClient,
   client = {}, stripeClient = stripe, fetchImpl = fetch, broadcast = () => {},
   sendWelcome = (m) => (mailer.mailEnabled() ? mailer.sendMail(m) : Promise.resolve(console.warn(`[go_onboarding] mail off: welcome for ${m.to} not sent`))),
+  sweepEveryHours = 6, now = () => Date.now(),
 }) {
   client = { ...defaultClient, ...client };
   const sc = { ...stripe, ...stripeClient };
@@ -365,6 +415,9 @@ function goOnboardingRoutes({
       .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN skipped VARCHAR(64) NULL').catch(() => {}))
       .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN trial_seats TINYINT(1) NOT NULL DEFAULT 0').catch(() => {}))
       .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN welcome_sent TINYINT(1) NOT NULL DEFAULT 0').catch(() => {}))
+      // A trial started in the app with no card, and its reminder (2026-11-26).
+      .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN card_later TINYINT(1) NOT NULL DEFAULT 0').catch(() => {}))
+      .then(() => pool.query('ALTER TABLE go_onboarding ADD COLUMN card_reminder_sent TINYINT(1) NOT NULL DEFAULT 0').catch(() => {}))
       .catch((e) => { ready = null; throw e; });
     return ready;
   }
@@ -482,7 +535,7 @@ function goOnboardingRoutes({
    * trial's seats back.
    */
   async function trialSeats(office, row) {
-    const on = LICENCE_OK.has(row.licence_status);
+    const on = licenceOk(row);
     const ended = ['canceled', 'unpaid', 'incomplete_expired'].includes(row.licence_status);
     if (on === Boolean(Number(row.trial_seats)) && !ended) return;
     try {
@@ -516,6 +569,23 @@ function goOnboardingRoutes({
     }
   }
 
+  /** Before an app trial with no card ends: the card link, once. */
+  async function cardReminder(office) {
+    const row = await rowFor(office);
+    if (!row || row.licence_status !== 'card_needed' || !Number(row.card_later) || Number(row.card_reminder_sent)) return;
+    await save(office, { card_reminder_sent: 1 });
+    try {
+      const [[venue]] = await pool.query('SELECT name FROM offices WHERE contact_email = ?', [office]);
+      const name = (venue && venue.name) || row.legal_name || 'your venue';
+      const ends = row.trial_end ? new Date(row.trial_end) : null;
+      const endText = ends && !Number.isNaN(ends.getTime())
+        ? ends.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : null;
+      await sendWelcome({ to: office, subject: `Your Vesopa Go free days end ${endText ? `on ${endText}` : 'soon'}`, ...cardReminderEmail({ name, endText }) });
+    } catch (e) {
+      console.warn('[go_onboarding] card reminder not sent:', e.message);
+    }
+  }
+
   /** "You're set up": once, when every step is done or left for later. */
   async function welcome(office, row, v) {
     await save(office, { welcome_sent: 1 });
@@ -526,7 +596,8 @@ function goOnboardingRoutes({
       const endText = ends && !Number.isNaN(ends.getTime())
         ? ends.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : null;
       const later = (v.skipped || []).map((s) => ({ identity: 'verify your identity', stripe: "finish Stripe's business and bank checks" }[s])).filter(Boolean);
-      const mail = welcomeEmail({ name, endText, later, capped: v.mode !== 'live' });
+      const cardLater = row.licence_status === 'card_needed' && Boolean(Number(row.card_later));
+      const mail = welcomeEmail({ name, endText, later, capped: v.mode !== 'live', cardLater });
       await sendWelcome({ to: office, subject: `Welcome to Vesopa Go, ${name}`, ...mail });
     } catch (e) {
       console.warn('[go_onboarding] welcome email not sent:', e.message);
@@ -551,8 +622,9 @@ function goOnboardingRoutes({
     };
     const identityOk = steps.identity === IDENTITY_DONE
       || (steps.identity === IDENTITY_VIA_CONNECT && steps.stripe === 'complete');
+    const licenceDone = licenceOk(r);
     const verified = steps.business && identityOk && steps.stripe === 'complete'
-      && steps.bank === 'verified' && LICENCE_OK.has(steps.licence);
+      && steps.bank === 'verified' && licenceDone;
     const mode = card !== 'active' ? 'test' : verified ? 'live' : 'capped';
     const identityWaits = steps.identity !== IDENTITY_DONE && steps.identity !== 'processing' && steps.identity !== IDENTITY_VIA_CONNECT;
     const stripeWaits = steps.stripe === 'not_started' || steps.stripe === 'more_needed' || (steps.stripe === 'in_review' && Number(s.requirements_due));
@@ -560,7 +632,7 @@ function goOnboardingRoutes({
     const next = !steps.business ? 'business'
       : identityWaits && !skipped.includes('identity') ? 'identity'
         : stripeWaits && !skipped.includes('stripe') ? 'stripe'
-          : !LICENCE_OK.has(steps.licence) ? 'licence' : null;
+          : !licenceDone ? 'licence' : null;
     // What still needs the owner after sign-up, for Go's banner.
     const pending = [
       ...(identityWaits ? ['identity'] : []),
@@ -592,6 +664,10 @@ function goOnboardingRoutes({
       requirements_due: Number(s.requirements_due) || 0,
       licence: {
         status: r.licence_status || null,
+        // Done, card or not (a trial started in the app); card_later: the
+        // card is still to come, on the website.
+        ok: licenceDone,
+        card_later: Boolean(Number(r.card_later)) && r.licence_status === 'card_needed',
         trial_end: r.trial_end || null,
         amount_minor: LICENCE.amount_minor,
         trial_days: LICENCE.trial_days,
@@ -849,6 +925,47 @@ function goOnboardingRoutes({
     } catch (e) { fail(res, e, next); }
   });
 
+  /**
+   * The app's licence step (owner, 2026-11-26): the trial starts with no card,
+   * and nothing is paid in the app (App Store 3.1.1, Google Play's payments
+   * policy). The same subscription as the website's, so a card added later on
+   * go.vesopa.com/signup lands on it; without one Stripe cancels it when the
+   * trial ends. The welcome email and a reminder carry the card link.
+   */
+  // A few tries a venue in ten minutes is plenty: it makes one subscription.
+  const trialTries = new Map();
+  function trialLimited(office) {
+    const t = now();
+    const recent = (trialTries.get(office) || []).filter((at) => t - at < 10 * 60000);
+    recent.push(t);
+    trialTries.set(office, recent);
+    if (trialTries.size > 5000) trialTries.clear();
+    return recent.length > 10;
+  }
+
+  router.post('/go/onboarding/licence/trial', who, async (req, res, next) => {
+    try {
+      if (trialLimited(req.office)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
+      const row = await rowFor(req.office);
+      if (!row || !row.business_type) throw new OnboardingError(409, 'Tell us about the business first.');
+      if (!licenceOk(row)) {
+        const env = envOf(row, await stripeSettings.settingsFor(req.office));
+        const opts = optsOf(env);
+        let sub = row.subscription_id ? await client.retrieveLicence(row.subscription_id, opts).catch(() => null) : null;
+        if (sub && !['incomplete', 'trialing', 'active'].includes(sub.status)) sub = null;
+        if (!sub) {
+          const [[venue]] = await pool.query('SELECT name FROM offices WHERE contact_email = ?', [req.office]);
+          const customer = row.customer_id || (await client.createCustomer({ office: req.office, name: row.legal_name || (venue && venue.name) }, opts)).id;
+          const price = await client.licencePrice(opts);
+          sub = await client.createLicence({ customer, price, office: req.office }, opts);
+          await save(req.office, { customer_id: customer });
+        }
+        await save(req.office, { ...licenceFields(sub), card_later: 1 });
+      }
+      res.json(await status(req.office));
+    } catch (e) { fail(res, e, next); }
+  });
+
   // ---- 6. The owner's manager PIN, once everything else is done ----
 
   /**
@@ -995,6 +1112,9 @@ function goOnboardingRoutes({
       if (!row || (row.subscription_id && row.subscription_id !== obj.id)) return;
       await save(office, licenceFields(obj));
       broadcast({ type: 'go-onboarding' }, { office });
+      // A trial started in the app with no card: the reminder, once, when
+      // Stripe says it ends in three days.
+      if (type === 'customer.subscription.trial_will_end') await cardReminder(office);
       return;
     }
     if (type === 'setup_intent.succeeded') {
@@ -1011,6 +1131,41 @@ function goOnboardingRoutes({
       }
     }
   };
+
+  // ---- App trials with no card: the reminder and the end ----
+
+  /**
+   * Every few hours, the trials started in the app with no card (card_later):
+   * the reminder three days before the end, and once it has passed, Stripe's
+   * answer read again so a cancelled trial gives its Go seats back. Stripe's
+   * own events do the same where the webhook sends them, but the live
+   * back-office webhook (tool/stripe_kitchen_live.py) lists payment events
+   * only, so this does not wait for them.
+   */
+  router.sweepTrials = async () => {
+    await ensure();
+    const [rows] = await pool.query(
+      "SELECT office FROM go_onboarding WHERE card_later = 1 AND licence_status = 'card_needed'");
+    for (const { office } of rows) {
+      const row = await rowFor(office);
+      if (!row || !row.trial_end) continue;
+      const left = new Date(row.trial_end).getTime() - now();
+      if (left <= 3 * 86400000 && left > 0) await cardReminder(office);
+      if (left <= 0 && row.subscription_id) {
+        const env = envOf(row, await stripeSettings.settingsFor(office));
+        const sub = await client.retrieveLicence(row.subscription_id, optsOf(env)).catch(() => null);
+        if (sub) {
+          await save(office, licenceFields(sub));
+          await trialSeats(office, await rowFor(office));
+          broadcast({ type: 'go-onboarding' }, { office });
+        }
+      }
+    }
+  };
+  if (sweepEveryHours > 0) {
+    const timer = setInterval(() => router.sweepTrials().catch((e) => console.warn('[go_onboarding] trial sweep:', e.message)), sweepEveryHours * 3600000);
+    if (timer.unref) timer.unref();
+  }
 
   // ---- The caps (stripe.js asks before every live card payment) ----
 
@@ -1037,4 +1192,4 @@ function goOnboardingRoutes({
   return router;
 }
 
-module.exports = { welcomeEmail, stripeChecklist, goOnboardingRoutes, LIMITS, LICENCE, BUSINESS_TYPES, OnboardingError, defaultClient };
+module.exports = { welcomeEmail, cardReminderEmail, licenceOk, CARD_LINK, stripeChecklist, goOnboardingRoutes, LIMITS, LICENCE, BUSINESS_TYPES, OnboardingError, defaultClient };

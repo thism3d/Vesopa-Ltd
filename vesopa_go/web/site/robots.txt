@@ -1,3 +1,5 @@
 User-agent: *
 Allow: /
 Disallow: /preview/
+
+Sitemap: https://go.vesopa.com/sitemap.xml

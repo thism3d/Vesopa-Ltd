@@ -11,6 +11,10 @@ import 'link_screen_page.dart';
 import '../../data/api.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../config/constants.dart' show authIssuer;
+import '../../payments/payment_service.dart' show tapToPayOnThisPlatform;
 import '../../payments/stripe_tap.dart' show StripeTapToPay;
 import '../add_printers_tile.dart';
 import '../tap_to_pay_mark.dart';
@@ -38,6 +42,32 @@ class _MorePageState extends ConsumerState<MorePage> {
     ref.read(paymentsProvider).whyUnavailable().then((why) {
       if (mounted) setState(() => _tapStatus = why ?? 'Ready: cards, Apple Pay and Google Pay');
     });
+  }
+
+  /// Deleting the person's Vesopa account: what it means, then Vesopa Auth's
+  /// deletion page, where they sign in and confirm.
+  Future<void> _deleteAccount(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Delete your Vesopa account?'),
+        content: const Text('Your Vesopa account is the one you sign in with on every Vesopa app. '
+            'Deleting it removes your sign-in and your personal details. A venue\'s sales records are kept '
+            'for as long as the law requires. You confirm it on Vesopa\'s account page, which opens next.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Continue')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final opened = await launchUrl(Uri.parse('$authIssuer/delete-account'), mode: LaunchMode.externalApplication)
+        .catchError((_) => false);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Open auth.vesopa.com/delete-account in a browser to delete your Vesopa account.'),
+      ));
+    }
   }
 
   /// A refund, all or part, back to the card: a manager's PIN, always.
@@ -258,6 +288,14 @@ class _MorePageState extends ConsumerState<MorePage> {
         },
         child: Text('Sign this phone out of ${s.venue?.name ?? 'the venue'}', style: t.bodyMedium?.copyWith(color: Tp.danger)),
       ),
+      // Both stores ask that an account made in the app can be deleted from it
+      // (App Review 5.1.1(v); Google Play's account deletion policy). Vesopa
+      // Auth's own page does it, after the person signs in there.
+      if (!s.demo)
+        TextButton(
+          onPressed: () => _deleteAccount(context),
+          child: Text('Delete my Vesopa account', style: t.bodyMedium?.copyWith(color: Tp.danger)),
+        ),
       const AppVersionLine(),
     ]);
   }
@@ -286,6 +324,7 @@ class _TapToPayCardState extends ConsumerState<_TapToPayCard> {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final tablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+    if (!tapToPayOnThisPlatform) return const SizedBox.shrink();
     if (!_iPhone || tablet) {
       return Card(
         child: ListTile(

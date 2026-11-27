@@ -424,7 +424,10 @@
     // progress screen so that users don't see it as heavy tasks"). The page
     // follows the server's next step until a segment above is chosen.
     var order = ['business', 'identity', 'stripe', 'licence', 'pin'];
-    var cur = state.page != null ? state.page : (s.next ? Math.max(0, order.indexOf(s.next)) : 4);
+    // A trial started in the app has no card yet (licence.card_later): its
+    // emails link here with #licence, so that step opens first (2026-11-26).
+    var cardDue = !!(s.licence && s.licence.card_later);
+    var cur = state.page != null ? state.page : (s.next ? Math.max(0, order.indexOf(s.next)) : cardDue && location.hash === '#licence' ? 3 : 4);
     if (state.pane) cur = state.pane.kind === 'stripe' ? 2 : 3;
     var steps = [];
     h += progress(s, s.ready_to_use ? -1 : cur);
@@ -488,7 +491,8 @@
     // 4. Licence
     var lic = s.licence || {};
     var licOk = lic.status === 'trialing' || lic.status === 'active';
-    var licBody = lic.status === 'trialing' ? '<p>Free until ' + esc(dateOf(lic.trial_end)) + ', then ' + pounds(lic.amount_minor) + ' a month. Cancel any time.</p>'
+    var licBody = lic.card_later ? '<p>Your free trial runs until ' + esc(dateOf(lic.trial_end)) + '. To keep Vesopa Go after that, add a card: ' + pounds(lic.amount_minor || 2900) + ' a month, nothing taken until the trial ends. Cancel any time.</p>'
+      : lic.status === 'trialing' ? '<p>Free until ' + esc(dateOf(lic.trial_end)) + ', then ' + pounds(lic.amount_minor) + ' a month. Cancel any time.</p>'
       : lic.status === 'active' ? '<p>' + pounds(lic.amount_minor) + ' a month.</p>'
         : '<p>' + (lic.trial_days || 14) + ' days free, then ' + pounds(lic.amount_minor || 2900) + ' a month. Add a card now; nothing is taken until the free days end.</p>';
     if (state.pane && state.pane.kind === 'licence') licBody += '<div class="pane" id="payment-element"></div><p class="err" id="pane-error" role="alert"></p>';
@@ -496,9 +500,9 @@
     if (st.business && !licOk) {
       licAct = state.pane && state.pane.kind === 'licence'
         ? btn('licence-confirm', state.busy === 'licence-confirm' ? 'Saving…' : 'Save card and start free trial', true, !!state.busy)
-        : btn('licence', state.busy === 'licence' ? 'Opening…' : 'Add a card or wallet', s.next === 'licence', !!state.busy);
+        : btn('licence', state.busy === 'licence' ? 'Opening…' : 'Add a card or wallet', s.next === 'licence' || lic.card_later, !!state.busy);
     }
-    steps.push(step(4, 'Start your free trial', licOk ? 'done' : (lic.status === 'past_due' || lic.status === 'unpaid') ? 'problem' : 'todo', licOk ? 'Done' : 'To do', licBody, licAct, s.next === 'licence'));
+    steps.push(step(4, lic.card_later ? 'Add a card for your licence' : 'Start your free trial', licOk ? 'done' : (lic.status === 'past_due' || lic.status === 'unpaid') ? 'problem' : 'todo', licOk ? 'Done' : lic.card_later ? 'Trial running' : 'To do', licBody, licAct, s.next === 'licence' || (lic.card_later && cur === 3)));
 
     // 5. The owner's manager PIN, once everything else is done.
     var pinBody = s.owner_pin_set
