@@ -85,6 +85,10 @@
 	<string>Vesopa Go uses Bluetooth to connect to card readers.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Vesopa Go uses Bluetooth to connect to card readers.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Say what you want a kitchen screen or customer display to do, such as "show the last order" or "next advert", and Vesopa Go does it on the TV.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Vesopa Go listens only while you hold the microphone on the TV remote, to turn what you say into commands for the screen.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Vesopa Go scans QR codes and barcodes (tables, products, member cards, tickets), a manager can photograph a product for the menu, and when signing a venue up the owner photographs their ID and takes a selfie for Stripe's identity check.</string>
 </dict>

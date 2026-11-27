@@ -18,6 +18,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import 'theme.dart';
@@ -43,6 +44,10 @@ class GoDevice {
   }
 
   static bool _listening = false;
+
+  /// What the device says about itself (model, Android version, the name
+  /// set on it), for "About this screen" on the phone's remote.
+  static Map<String, Object?> details = const {};
 
   static bool _camera = true;
   static bool _nfc = true;
@@ -77,6 +82,13 @@ class GoDevice {
       _camera = info?['camera'] != false && !(_tv && info?['camera'] == null);
       _nfc = info?['nfcHardware'] != false && !(_tv && info?['nfcHardware'] == null);
       _touch = info?['touch'] != false && !(_tv && info?['touch'] == null);
+      details = {
+        'model': info?['model'],
+        'brand': info?['brand'],
+        'android': info?['release'],
+        'sdk': info?['sdk'],
+        'deviceName': info?['deviceName'],
+      };
     } catch (_) {
       _tv = false;
     }
@@ -94,8 +106,66 @@ class GoDevice {
   };
 
   static bool _noticeKey(KeyEvent event) {
-    if (!remote.value && event is KeyDownEvent && _remoteKeys.contains(event.logicalKey)) _useRemote();
-    return false;
+    if (event is! KeyDownEvent || !_remoteKeys.contains(event.logicalKey)) return false;
+    if (!remote.value) _useRemote();
+    // The screen switched off from the phone: any key wakes it, and does
+    // nothing else.
+    if (screenOff.value) {
+      screenOff.value = false;
+      return true;
+    }
+    // Nothing has the focus (just after a page or a sheet opened, or a switch
+    // of mode): the key goes nowhere, which is why the D-pad seemed dead
+    // (owner, 2026-11-27). The first key gives the focus to the first thing on
+    // the page instead.
+    return focusSomething();
+  }
+
+  /// The screen blanked by the phone's power key; a key or the phone wakes it.
+  static final screenOff = ValueNotifier<bool>(false);
+
+  /// When nothing on the top page has the focus, give it to its first item.
+  /// Answers whether it had to.
+  static bool focusSomething() {
+    final focus = FocusManager.instance.primaryFocus;
+    final hasItem = focus != null && focus is! FocusScopeNode && focus.context != null && focus.context!.mounted;
+    if (hasItem) return false;
+    final scope = topScope();
+    if (scope == null) return false;
+    final first = scope.traversalDescendants.where((n) => n.canRequestFocus && n.context != null && n is! FocusScopeNode).firstOrNull;
+    if (first == null) return false;
+    first.requestFocus();
+    final c = first.context;
+    if (c != null) Scrollable.ensureVisible(c, alignment: 0.5, duration: const Duration(milliseconds: 150));
+    return true;
+  }
+
+  /// The scope of the page on top (a sheet or dialog when one is open).
+  static FocusScopeNode? topScope() {
+    final focus = FocusManager.instance.primaryFocus;
+    var scope = focus?.nearestScope ?? FocusManager.instance.rootScope;
+    // Down to the deepest scope that has the focus (the open route's).
+    while (true) {
+      final next = scope.focusedChild;
+      if (next is FocusScopeNode && next != scope) {
+        scope = next;
+      } else {
+        break;
+      }
+    }
+    if (scope == FocusManager.instance.rootScope) {
+      // Nothing chosen yet: the last route's scope, which is the one on top.
+      FocusScopeNode? last;
+      void walk(FocusNode n) {
+        for (final c in n.children) {
+          if (c is FocusScopeNode && c.canRequestFocus && c.context != null) last = c;
+          walk(c);
+        }
+      }
+      walk(scope);
+      return last ?? scope;
+    }
+    return scope;
   }
 
   static void _useRemote() {
@@ -182,16 +252,157 @@ class TvRemote extends StatelessWidget {
   Widget build(BuildContext context) {
     // The same shape always (a widget that came and went would rebuild the
     // whole app under it); on Android the arrows move the focus or scroll.
-    if (!Platform.isAndroid) return child;
-    return Shortcuts(
-      shortcuts: _keys,
-      child: Actions(
-        actions: {
-          DirectionalFocusIntent: _MoveOrScroll(),
-        },
-        child: FocusTraversalGroup(policy: ReadingOrderTraversalPolicy(), child: child),
+    final inner = !Platform.isAndroid
+        ? child
+        : Shortcuts(
+            shortcuts: _keys,
+            child: Actions(
+              actions: {
+                DirectionalFocusIntent: _MoveOrScroll(),
+              },
+              child: FocusTraversalGroup(policy: ReadingOrderTraversalPolicy(), child: child),
+            ),
+          );
+    return Stack(fit: StackFit.expand, children: [
+      // On a TV, one layout for every set (owner, 2026-11-27: "maintaining
+      // the ratio properly ... same to watch from every TV").
+      GoDevice.isTv ? TvCanvas(child: inner) : inner,
+      // Where the remote is, drawn round whatever has the focus, whatever it
+      // is (owner, 2026-11-27: "box not highlighted properly").
+      const IgnorePointer(child: _FocusRing()),
+      // The phone's power key: the screen dark until a key or the phone.
+      ValueListenableBuilder<bool>(
+        valueListenable: GoDevice.screenOff,
+        builder: (_, off, _) => off
+            ? GestureDetector(onTap: () => GoDevice.screenOff.value = false, child: const ColoredBox(color: Colors.black))
+            : const SizedBox.shrink(),
+      ),
+    ]);
+  }
+}
+
+/// Every TV draws Go on the same canvas: 540 points high (1080p at 2×), as
+/// wide as the panel's own shape, scaled up evenly to its real pixels. A
+/// 720p, 1080p or 4K set, whatever density its maker chose, shows the same
+/// layout at the same proportions; a 21:9 or 4:3 panel gets a wider or
+/// narrower canvas rather than squashed boxes or black bars.
+class TvCanvas extends StatelessWidget {
+  const TvCanvas({super.key, required this.child});
+  final Widget child;
+
+  static const designHeight = 540.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final size = mq.size;
+    if (size.height <= 0 || (size.height - designHeight).abs() < 1) return child;
+    final scale = size.height / designHeight;
+    final canvas = Size(size.width / scale, designHeight);
+    return ClipRect(
+      child: FittedBox(
+        fit: BoxFit.fill,
+        alignment: Alignment.topLeft,
+        child: SizedBox.fromSize(
+          size: canvas,
+          child: MediaQuery(
+            data: mq.copyWith(
+              size: canvas,
+              devicePixelRatio: mq.devicePixelRatio * scale,
+              padding: mq.padding / scale,
+              viewPadding: mq.viewPadding / scale,
+              viewInsets: mq.viewInsets / scale,
+            ),
+            child: child,
+          ),
+        ),
       ),
     );
+  }
+}
+
+/// A thick ring in the venue's colour round whatever has the focus, while a
+/// remote is in use. It follows the focus as it moves and as lists scroll.
+class _FocusRing extends StatefulWidget {
+  const _FocusRing();
+  @override
+  State<_FocusRing> createState() => _FocusRingState();
+}
+
+class _FocusRingState extends State<_FocusRing> {
+  Rect? _rect;
+  bool _alive = true;
+  bool _queued = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Measured after each frame the app draws anyway (a list scrolled, a
+    // page changed) and when the focus moves; never a frame of its own unless
+    // the ring has to move, so the app still settles.
+    SchedulerBinding.instance.addPersistentFrameCallback((_) => _queue());
+    FocusManager.instance.addListener(_queue);
+    GoDevice.remote.addListener(_queue);
+  }
+
+  void _queue() {
+    if (!_alive || _queued) return;
+    _queued = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _queued = false;
+      if (_alive && mounted) _measure();
+    });
+  }
+
+  void _measure() {
+    Rect? r;
+    if (!GoDevice.remote.value) {
+      if (_rect != null) setState(() => _rect = null);
+      return;
+    }
+    final focus = FocusManager.instance.primaryFocus;
+    final c = focus?.context;
+    if (focus != null && focus is! FocusScopeNode && c != null && c.mounted) {
+      final box = c.findRenderObject();
+      final mine = context.findRenderObject();
+      if (box is RenderBox && box.attached && box.hasSize && mine is RenderBox && mine.attached) {
+        final topLeft = box.localToGlobal(Offset.zero, ancestor: mine);
+        r = topLeft & box.size;
+        // A field's focus node can be the whole page's: a box that fills the
+        // screen is not drawn.
+        if (r.width * r.height > mine.size.width * mine.size.height * 0.8) r = null;
+      }
+    }
+    if (r != _rect) setState(() => _rect = r);
+  }
+
+  @override
+  void dispose() {
+    _alive = false;
+    FocusManager.instance.removeListener(_queue);
+    GoDevice.remote.removeListener(_queue);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = _rect;
+    if (r == null) return const SizedBox.shrink();
+    return Stack(children: [
+      Positioned(
+        left: r.left - 5,
+        top: r.top - 5,
+        width: r.width + 10,
+        height: r.height + 10,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Tp.lime, width: 4),
+            boxShadow: [BoxShadow(color: Tp.lime.withValues(alpha: 0.45), blurRadius: 18)],
+          ),
+        ),
+      ),
+    ]);
   }
 }
 
@@ -207,6 +418,7 @@ class _MoveOrScroll extends Action<DirectionalFocusIntent> {
 
   @override
   void invoke(DirectionalFocusIntent intent) {
+    if (GoDevice.focusSomething()) return;
     final focus = primaryFocus;
     if (focus == null) return;
     if (focus.focusInDirection(intent.direction)) {
