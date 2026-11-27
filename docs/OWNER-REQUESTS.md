@@ -47,6 +47,11 @@ secrets only).
 - **Loughor RFC, from 2026-11-26:** publish the **Wear OS** app only, to
   open testing (`wear:beta`; Android - venue app, part `wear`). No new phone
   release. The owner promotes the watch app to the Wear OS release track.
+- **Loughor RFC Wear OS, from 2026-11-27 (overrides the two rules above for
+  the watch):** "Wear OS publish to internal testing for now", version 1.1.0:
+  Android - venue app, LoughorRFC, mode full, part `wear`, track `internal`
+  (goes to `wear:internal`). Nothing to Wear OS open testing or production
+  until the owner says so.
 - **Decisions:** "Go on, finish all the tasks. Full consent given. Do pick
   the best decisions." Ask the owner straight away when something is
   genuinely theirs to decide.
