@@ -80,6 +80,12 @@ secrets only).
   `wear_version_code` (Gradle -PwearVersionCode); empty keeps 1000000 + build.
   Play only offers a watch the highest versionCode across its tracks, so a
   bundle below 1000012 (already on Wear OS open testing) is superseded there.
+- **Loughor RFC watch code 10015 (owner, 2026-11-27, chosen over 100015 and
+  1000015):** kept in `LoughorRFC/venue.json` as `wear_version_code`, which
+  the build uses when the run gives none; uploaded to Wear OS open testing.
+  Remove or raise it before the next watch build: Play never takes a code
+  twice. Play already holds 1000013 (production) and 1000012 (open testing),
+  so a watch that has either does not move down to 10015.
 - **Decisions:** "Go on, finish all the tasks. Full consent given. Do pick
   the best decisions." Ask the owner straight away when something is
   genuinely theirs to decide.

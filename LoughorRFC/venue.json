@@ -9,6 +9,7 @@
   "app_store_sku": "LoughorRFC",
   "version": "1.1.1",
   "build": 1,
+  "wear_version_code": 10015,
   "colours": {
     "background": "#1238A8",
     "deep": "#071A52",
