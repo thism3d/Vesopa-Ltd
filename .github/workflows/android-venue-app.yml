@@ -248,6 +248,11 @@ jobs:
         env:
           WEAR_CODE: ${{ inputs.wear_version_code }}
         run: |
+          # The venue's own setting (venue.json "wear_version_code") when the
+          # run gives none (owner, 2026-11-27: the number kept in the project).
+          if [ -z "$WEAR_CODE" ]; then
+            WEAR_CODE=$(python3 -c "import json;print(json.load(open('../../../venue.json')).get('wear_version_code') or '')")
+          fi
           case "$WEAR_CODE" in *[!0-9]*) echo "::error::wear_version_code must be a number"; exit 1;; esac
           if [ -n "$WEAR_CODE" ]; then
             echo "Wear OS versionCode set by hand: $WEAR_CODE"
