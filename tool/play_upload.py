@@ -308,6 +308,16 @@ def main():
     if option("--promote"):
         code = option("--promote")
         edit = play.edit()
+        # "latest:<track>": the newest version code on that track (owner,
+        # 2026-11-27: the Wear OS open-testing build straight to production).
+        if code.startswith("latest:"):
+            src = code.split(":", 1)[1]
+            t = play.call("GET", f"{API}/{play.package}/edits/{edit}/tracks/{src}")
+            codes = [int(c) for r in t.get("releases", []) for c in r.get("versionCodes", [])]
+            if not codes:
+                sys.exit(f"   ! nothing on the {src} track")
+            code = str(max(codes))
+            print(f"   newest on {src}: version code {code}")
         seen = None
         for t in play.call("GET", f"{API}/{play.package}/edits/{edit}/tracks").get("tracks", []):
             for r in t.get("releases", []):
@@ -318,9 +328,12 @@ def main():
         source, r = seen
         rel = {"name": r.get("name") or code, "versionCodes": [code], "status": "completed",
                "releaseNotes": r.get("releaseNotes") or [{"language": p["language"], "text": p["release_notes"]}]}
+        # The track then holds only this release: an earlier one there (Play's
+        # "superseded by another version", or a halted first release) is
+        # replaced. Committing sends it to Google's review.
         play.call("PUT", f"{API}/{play.package}/edits/{edit}/tracks/{track}", {"track": track, "releases": [rel]})
         play.commit(edit)
-        print(f"   version code {code} ({rel['name']}) from {source} onto the {track} track")
+        print(f"   version code {code} ({rel['name']}) from {source} onto the {track} track, sent for review")
         return
     print(f"{p['title']} ({p['package']}) as {who}")
 

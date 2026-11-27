@@ -44,7 +44,7 @@ on:
       mode:
         description: full = build and upload with the listing; listing = only the words and pictures; build = bundles only; halt = pause what is out on the tracks named in track
         type: choice
-        options: [full, listing, build, halt, status]
+        options: [full, listing, build, halt, status, promote]
         default: full
       track:
         description: Play track (empty = play.json's); for halt, the tracks to pause, e.g. alpha,wear:beta
@@ -59,6 +59,10 @@ on:
         type: choice
         options: [all, apps, phone, wear]
         default: all
+      promote_from:
+        description: With mode promote, the version code to move onto 'track', or latest:<track> (e.g. latest:wear:beta); no build
+        required: false
+        default: ''
       draft:
         description: Leave the release as a draft to roll out by hand in Play Console
         type: boolean
@@ -116,7 +120,7 @@ jobs:
 
       - name: Next build number Play has not seen
         id: num
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         env:
           BUILD_INPUT: ${{ inputs.build }}
         run: |
@@ -155,7 +159,7 @@ jobs:
           echo "Building $version ($n); the watch bundle is versionCode $((1000000 + n))."
 
       - uses: actions/setup-java@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         with:
           distribution: temurin
           java-version: '17'
@@ -164,12 +168,12 @@ jobs:
       # 2026-11-19: "github workflows are taking too much time"). Written on
       # main, read everywhere.
       - uses: gradle/actions/setup-gradle@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - uses: subosito/flutter-action@v2
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         with:
           channel: stable
           flutter-version: 3.47.2
@@ -178,17 +182,17 @@ jobs:
       # The NDK the app's build.gradle.kts names, so the release can pack the
       # native libraries' debug symbols.
       - uses: actions/cache@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         id: ndk
         with:
           path: /usr/local/lib/android/sdk/ndk/28.2.13676358
           key: ndk-28.2.13676358
       - name: Android NDK
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && steps.ndk.outputs.cache-hit != 'true'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote' && steps.ndk.outputs.cache-hit != 'true'
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" > /dev/null
 
       - name: Upload key and Firebase file
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         env:
           KS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
           KSP: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -223,11 +227,11 @@ jobs:
           fi
 
       - name: Make the venue's project
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         run: python3 vesopa_loyalty/tool/make_venue_app.py "$VENUE"
 
       - name: Phone bundle
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         working-directory: ${{ inputs.venue }}/build/app
         run: |
           grep -q '^org.gradle.caching=' android/gradle.properties || echo 'org.gradle.caching=true' >> android/gradle.properties
@@ -235,12 +239,12 @@ jobs:
           flutter build appbundle --release --dart-define-from-file=venue_defines.json
 
       - name: Wear OS bundle
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         working-directory: ${{ inputs.venue }}/build/app/android
         run: ./gradlew --no-daemon :wear:bundleRelease
 
       - name: Gather the bundles
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         run: |
           out="$RUNNER_TEMP/android-builds"
           mkdir -p "$out"
@@ -250,7 +254,7 @@ jobs:
           ls -la "$out"
 
       - uses: actions/upload-artifact@v4
-        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt' && inputs.mode != 'status' && inputs.mode != 'promote'
         with:
           name: ${{ inputs.venue }}-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}
           path: ${{ runner.temp }}/android-builds/*.aab
@@ -262,7 +266,13 @@ jobs:
           TRACK: ${{ inputs.track }}
           PART: ${{ inputs.part }}
           DRAFT: ${{ inputs.draft }}
+          PROMOTE: ${{ inputs.promote_from }}
         run: |
+          if [ "$MODE" = "promote" ]; then
+            [ -n "$PROMOTE" ] && [ -n "$TRACK" ] || { echo "::error::promote needs promote_from and track, e.g. latest:wear:beta onto wear:production"; exit 1; }
+            "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$VENUE" --promote "$PROMOTE" --track "$TRACK" || exit 1
+            exec "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$VENUE" --status
+          fi
           if [ "$MODE" = "halt" ]; then
             [ -n "$TRACK" ] || { echo "::error::halt needs the tracks to pause in 'track', e.g. alpha,wear:beta"; exit 1; }
             exec "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$VENUE" --halt "$TRACK"
