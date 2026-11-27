@@ -79,6 +79,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="go.vesopa.com" android:pathPrefix="/link" />
             </intent-filter>
+            <!-- vesopago://link?c=CODE: the link page's own hand-off to Go when
+                 a browser opened it anyway (owner, 2026-11-27). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vesopago" android:host="link" />
+            </intent-filter>
         </activity>
         <!-- Where the Vesopa sign-in page answers (2026-11-16): Go's own
              address, com.vesopa.go:/oauth/callback, so Android brings Go back

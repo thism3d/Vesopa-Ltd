@@ -13,6 +13,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:ui' show FlutterView;
 
 import 'package:flutter/material.dart';
@@ -51,11 +52,13 @@ class GoRemote {
   static void receive(Map<String, dynamic> msg, {required String via}) {
     final to = '${msg['device_id'] ?? ''}';
     if (myId == null || to != myId) return;
-    final id = '${msg['id'] ?? ''}';
+    // One key may arrive three ways (this Wi-Fi, the live socket, the live
+    // poll): pressed once, by the phone's id for it, else the server's seq.
+    final id = '${msg['id'] ?? ''}'.isNotEmpty ? '${msg['id']}' : (msg['seq'] != null ? 'seq:${msg['seq']}' : '');
     if (id.isNotEmpty) {
       if (_seen.contains(id)) return;
       _seen.add(id);
-      if (_seen.length > 64) _seen.removeAt(0);
+      if (_seen.length > 128) _seen.removeAt(0);
     }
     lastKeyAt = DateTime.now();
     lastVia = via;
@@ -399,14 +402,26 @@ class ScreenMirror {
 /// While a screen is open: "I am here" to the back office every ten
 /// seconds, so the phone's remote can find it.
 class ScreenBeacon {
-  ScreenBeacon(this._hello);
+  /// [_hello] says this screen is here (every 10 s); [poll], when given, asks
+  /// the back office for the keys pressed after a seq (every 1.5 s), so keys
+  /// still arrive through Vesopa when the live socket is down (owner,
+  /// 2026-11-27: "fallback always go to the live server").
+  ScreenBeacon(this._hello, {this.poll});
 
   final Future<void> Function() _hello;
+  final Future<Map<String, dynamic>> Function(int after)? poll;
   Timer? _timer;
+  Timer? _keys;
+  int _after = -1;
+  bool _polling = false;
 
   void start() {
+    unawaited(LocalScreenServer.instance.start());
     unawaited(_beat());
     _timer = Timer.periodic(const Duration(seconds: 10), (_) => unawaited(_beat()));
+    if (poll != null && !ScreenMirror._underTest) {
+      _keys = Timer.periodic(const Duration(milliseconds: 1500), (_) => unawaited(_poll()));
+    }
   }
 
   Future<void> _beat() async {
@@ -417,7 +432,130 @@ class ScreenBeacon {
     }
   }
 
-  void stop() => _timer?.cancel();
+  @visibleForTesting
+  Future<void> pollOnce() => _poll();
+
+  Future<void> _poll() async {
+    if (_polling) return;
+    _polling = true;
+    try {
+      final r = await poll!(_after < 0 ? 0 : _after);
+      final seq = r['seq'] is num ? (r['seq'] as num).toInt() : null;
+      // The first answer only says where the queue is: keys pressed before
+      // this screen started are not replayed.
+      if (_after >= 0) {
+        for (final k in (r['keys'] as List? ?? const [])) {
+          if (k is Map) GoRemote.receive(Map<String, dynamic>.from(k), via: 'live');
+          final n = k is Map && k['seq'] is num ? (k['seq'] as num).toInt() : null;
+          if (n != null && n > _after) _after = n;
+        }
+      }
+      if (_after < 0 && seq != null) _after = seq;
+    } catch (_) {
+      // Offline for a moment: the next poll asks again.
+    } finally {
+      _polling = false;
+    }
+  }
+
+  void stop() {
+    _timer?.cancel();
+    _keys?.cancel();
+  }
 
   static bool get isTv => GoDevice.isTv;
+}
+
+/// This screen on the venue's own Wi-Fi, for the phone's remote (owner,
+/// 2026-11-27: "in the same WiFi it cannot be found yet ... local network
+/// first"). A small HTTP server on [port]: the phone, which has this screen's
+/// addresses and key from the back office's list, asks `/ping`, sends keys to
+/// `/key` and reads `/state`. Plain unicast to one address, which an iPad
+/// allows with the local network permission (broadcast needs an Apple
+/// entitlement, so the venue link's discovery cannot find a TV from an iPad).
+/// Only a request carrying this run's [key] is answered.
+class LocalScreenServer {
+  LocalScreenServer._();
+  static final instance = LocalScreenServer._();
+
+  static const port = 47870;
+
+  HttpServer? _server;
+  final String key = List.generate(16, (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+  List<String> _ips = const [];
+  bool _starting = false;
+
+  /// What the back office passes to the venue's phones, or null.
+  Map<String, Object?>? get info {
+    final s = _server;
+    if (s == null || _ips.isEmpty) return null;
+    return {'ips': _ips, 'port': s.port, 'key': key};
+  }
+
+  /// The port it answers on, once started.
+  int? get boundPort => _server?.port;
+
+  Future<void> start({@visibleForTesting bool force = false}) async {
+    if (_server != null || _starting || (ScreenMirror._underTest && !force)) return;
+    _starting = true;
+    try {
+      HttpServer server;
+      try {
+        server = await HttpServer.bind(InternetAddress.anyIPv4, port, shared: true);
+      } on SocketException {
+        server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
+      }
+      _server = server;
+      server.listen(_answer, onError: (Object _) {});
+      await _readIps();
+      Timer.periodic(const Duration(seconds: 30), (_) => unawaited(_readIps()));
+    } catch (_) {
+      // No local network (or not allowed): the back office carries the keys.
+    } finally {
+      _starting = false;
+    }
+  }
+
+  Future<void> _readIps() async {
+    try {
+      final list = await NetworkInterface.list(type: InternetAddressType.IPv4, includeLoopback: false);
+      _ips = [
+        for (final i in list)
+          for (final a in i.addresses)
+            if (!a.isLoopback && !a.isLinkLocal) a.address,
+      ].take(4).toList();
+    } catch (_) {}
+  }
+
+  Future<void> _answer(HttpRequest req) async {
+    final res = req.response;
+    try {
+      res.headers.set('Cache-Control', 'no-store');
+      res.headers.contentType = ContentType.json;
+      if (req.headers.value('x-go-key') != key) {
+        res.statusCode = HttpStatus.forbidden;
+        res.write('{"error":"key"}');
+        return;
+      }
+      final mirror = ScreenMirror.current;
+      switch ('${req.method} ${req.uri.path}') {
+        case 'GET /ping':
+          res.write(jsonEncode({'ok': true, 'device_id': GoRemote.myId, 'name': mirror?.name(), 'mode': mirror?.mode}));
+        case 'GET /state':
+          res.write(jsonEncode({'state': mirror?.snapshot()}));
+        case 'POST /key':
+          final body = await utf8.decoder.bind(req).join();
+          final msg = jsonDecode(body);
+          if (msg is Map) GoRemote.receive(Map<String, dynamic>.from(msg), via: 'local');
+          res.write('{"ok":true}');
+        default:
+          res.statusCode = HttpStatus.notFound;
+          res.write('{"error":"where"}');
+      }
+    } catch (_) {
+      res.statusCode = HttpStatus.badRequest;
+    } finally {
+      await res.close().catchError((Object _) {});
+    }
+  }
 }

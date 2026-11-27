@@ -430,7 +430,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     leading: Icon(Icons.connected_tv_rounded, color: d.online ? Tp.lime : null),
                     title: Text(d.name),
                     subtitle: Text(d.online ? "Showing this device's sales" : 'Connected, switched off just now'),
-                    trailing: TextButton(onPressed: () => hub.unpair(d.device), child: const Text('Disconnect')),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (c) => AlertDialog(
+                            title: Text('Disconnect ${d.name}?'),
+                            content: const Text('It stops showing this device\'s sales. A TV leaves the venue and shows its QR code again, ready to be connected.'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Disconnect')),
+                            ],
+                          ),
+                        );
+                        if (ok == true) hub.unpair(d.device);
+                      },
+                      child: const Text('Disconnect'),
+                    ),
                   ),
                 for (final r in hub.requests)
                   ListTile(

@@ -140,8 +140,12 @@ class TapApi {
   /// The terminal: "I am here", answered with the payment waiting for it.
   /// A TV or screen (Kitchen, Customer display): "I am here", for the remote
   /// on a phone or tablet (src/go_remote.js).
-  Future<Map<String, dynamic>> screenHello({required String deviceId, required String name, required String mode, bool live = true, bool tv = false}) =>
-      _send('POST', '/api/go/screen/hello', {'device_id': deviceId, 'name': name, 'mode': mode, 'live': live, 'tv': tv});
+  Future<Map<String, dynamic>> screenHello({required String deviceId, required String name, required String mode, bool live = true, bool tv = false, Map<String, Object?>? local}) =>
+      _send('POST', '/api/go/screen/hello', {'device_id': deviceId, 'name': name, 'mode': mode, 'live': live, 'tv': tv, 'local': ?local});
+
+  /// The keys pressed on this screen after [after], through the back office.
+  Future<Map<String, dynamic>> screenKeys(String deviceId, int after) =>
+      _send('GET', '/api/go/screen/keys?device_id=${Uri.encodeQueryComponent(deviceId)}&after=$after');
 
   /// The venue's screens awake now, for the remote.
   Future<Map<String, dynamic>> awakeScreens(String deviceId) =>

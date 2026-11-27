@@ -99,3 +99,28 @@ test('the mirror: a screen posts what it shows, the phone reads it and taps, typ
     ]);
   });
 });
+
+test('a screen whose live socket dropped asks for its keys; its local address goes to the phones', async () => {
+  await withServer(async (call) => {
+    const local = { ips: ['192.168.1.40', 'bad'], port: 47870, key: 'a'.repeat(32) };
+    const hi = await call('kitchen@x', 'POST', '/api/go/screen/hello', { device_id: 'tv1', name: 'Bar TV', mode: 'display', tv: true, live: false, local });
+    assert.equal(hi.status, 200);
+    const list = await call('kitchen@x', 'GET', '/api/go/screens?device_id=phone');
+    assert.deepEqual(list.body.screens[0].local, { ips: ['192.168.1.40'], port: 47870, key: 'a'.repeat(32) });
+    assert.equal(list.body.screens[0].live, false);
+
+    await call('kitchen@x', 'POST', '/api/go/screens/tv1/key', { key: 'next', id: 'k1' });
+    await call('kitchen@x', 'POST', '/api/go/screens/tv1/key', { key: 'ok', id: 'k2' });
+    const first = await call('kitchen@x', 'GET', '/api/go/screen/keys?device_id=tv1&after=0');
+    assert.deepEqual(first.body.keys.map((k) => [k.key, k.id]), [['next', 'k1'], ['ok', 'k2']]);
+    const later = await call('kitchen@x', 'GET', `/api/go/screen/keys?device_id=tv1&after=${first.body.keys[1].seq}`);
+    assert.deepEqual(later.body.keys, []);
+    // Another venue sees neither the screen nor its keys.
+    const other = await call('pub@y', 'GET', '/api/go/screen/keys?device_id=tv1&after=0');
+    assert.deepEqual(other.body.keys, []);
+    // A bad local address is not passed on.
+    await call('kitchen@x', 'POST', '/api/go/screen/hello', { device_id: 'tv2', name: 'TV 2', local: { ips: ['x'], port: 80, key: 'zz' } });
+    const again = await call('kitchen@x', 'GET', '/api/go/screens?device_id=phone');
+    assert.equal(again.body.screens.find((s) => s.device_id === 'tv2').local, null);
+  });
+});

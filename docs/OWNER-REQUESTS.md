@@ -191,6 +191,15 @@ secrets only).
 | Quit dialog on the TV; refresh cover when coming back | 1.2.75: Back on the first TV screen asks "Quit Vesopa Go?"; back from the background after 8 s or more, the Vesopa mark and a loading bar while the venue refreshes. Android does not let an app keep itself in the foreground |
 | Same layout on every TV (resolution and ratio) | 1.2.75: every TV draws on a 540-point-high canvas as wide as its panel's ratio, scaled evenly to its real pixels |
 
+## Vesopa Go screens: finding, QR and Disconnect, 2026-11-27 (Go 1.2.77)
+
+| Ask | Status |
+| --- | --- |
+| iPad: scanning the TV's QR opened the browser and no Connect prompt | The QR stays https://go.vesopa.com/link/?c= (opens Go directly where iOS uses the universal link). When a browser opens it anyway (iOS remembers "Open in Safari" for a site once chosen), the page now hands over at once to `vesopago://link?c=` (new URL scheme, iOS and Android), and Go asks "Connect this screen?". Site: Go - site, go, live |
+| Same Wi-Fi: TV not found; "No screens on" while the TV showed sales | Three causes fixed: (1) the phone hid a screen whose live socket was down, though Vesopa had heard from it; (2) the venue link's discovery needs a main till and UDP broadcast, which an iPad may not send without an Apple entitlement, so a Go-only venue never linked; (3) a TV with its socket down never got keys. Now: the TV runs a small server on the Wi-Fi (port 47870, a key per run) and tells Vesopa its address; the phone tries it directly (Local, unicast, iOS Local Network permission) and always sends through Vesopa too with the same id; the TV also asks Vesopa for its keys every 1.5 s (`GET /api/go/screen/keys`), so Live works with or without the socket; each key is pressed once |
+| Disconnect on the till does not bring the TV's QR back | Disconnect asks first, then a TV leaves the venue and shows its QR code to be connected again |
+| Hardware-level code, Bluetooth discovery | Not needed for this: plain sockets on both sides, the TV's volume already native. Bluetooth (BLE) discovery would need the TV to advertise, which many Android TVs cannot, plus Bluetooth permissions on every phone; proposed only if Wi-Fi + Vesopa still miss a TV |
+
 ## Pontardawe RFC (`PontardaweRFC/`)
 
 | Ask | Status |

@@ -47,6 +47,7 @@ import '../../ui/pages/scan_sheet.dart';
 import '../../ui/sounds.dart';
 import '../../ui/theme.dart';
 import '../../ui/tv.dart';
+import '../../ui/go_frame.dart' show goNavigator;
 import '../data/basket_feed.dart';
 import '../data/control.dart';
 import '../data/display_options.dart';
@@ -135,8 +136,9 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
             mode: 'display',
             live: session.live,
             tv: GoDevice.isTv,
+            local: LocalScreenServer.instance.info,
           );
-    })
+    }, poll: (after) => ref.read(apiProvider).screenKeys(ref.read(tapProvider.notifier).deviceId, after))
       ..start();
     final me = ref.read(tapProvider.notifier);
     _mirror = ScreenMirror(
@@ -247,6 +249,15 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
       ..onUnpaired = () async {
         final p = await SharedPreferences.getInstance();
         await p.remove('display.remote_pairing');
+        // A TV disconnected from the till goes back to its code (owner,
+        // 2026-11-27: "Disconnect is not showing the QR code back in the TV
+        // screen"): it leaves the venue, and the welcome screen of a TV shows
+        // the QR to connect it again.
+        if (GoDevice.isTv && mounted) {
+          await ref.read(tapProvider.notifier).forgetPhone();
+          goNavigator.currentState?.popUntil((r) => r.isFirst);
+          return;
+        }
         if (mounted) {
           setState(() {
             _paidTo = null;
