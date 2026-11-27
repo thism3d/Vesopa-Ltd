@@ -70,6 +70,11 @@ secrets only).
   built-in Kotlin. The watch bundle's only native library is Compose's
   prebuilt libandroidx.graphics.path.so (no symbols inside it); its symbols
   zip goes up with each release.
+- **Loughor RFC 1.1.1 Wear OS (owner, 2026-11-27):** "build the release aab
+  for wear os ... I'll upload myself the signed aab": Android - venue app,
+  LoughorRFC, mode `build` (signed with the upload key, nothing sent to
+  Play); the run's artifact holds `LoughorRFC-1.1.1-<n>-wear.aab` and its
+  symbols zip for the owner to upload in Play Console.
 - **Decisions:** "Go on, finish all the tasks. Full consent given. Do pick
   the best decisions." Ask the owner straight away when something is
   genuinely theirs to decide.
