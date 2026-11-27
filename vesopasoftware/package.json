@@ -29,5 +29,10 @@
     "mysql2": "^3.24.5",
     "nodemailer": "^10.6.1",
     "ws": "^8.23.0"
+  },
+  "overrides": {
+    "express-mysql-session": {
+      "mysql2": "$mysql2"
+    }
   }
 }

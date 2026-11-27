@@ -18,7 +18,11 @@
 
   var cfg = window.GO_SIGNUP || {};
   var API = String(cfg.api || 'https://backoffice.vesopaepos.com').replace(/\/+$/, '');
-  var REDIRECT = location.origin + '/signup/';
+  // Where Vesopa Auth sends the browser back: this page. Vesopa Passport
+  // (passport.vesopa.com/flow/, owner 2026-11-26) sets its own in its config.
+  var REDIRECT = location.origin + (cfg.redirect || '/signup/');
+  var INSTALL = cfg.install || '/install/';
+  var PASSPORT = !!cfg.passport;
   var app = document.getElementById('app');
 
   var store = {
@@ -373,8 +377,12 @@
     if (!store.get('token') && !state.signupToken) {
       h += step(0, 'Your Vesopa account', 'todo', 'To do',
         '<p>Sign in with Vesopa, or create a Vesopa account. Already have Vesopa Go? Sign in to finish your checks.</p>',
-        btn('signup', state.busy === 'signin' ? 'Opening Vesopa…' : 'Create a Vesopa account', true, state.busy === 'signin')
-        + btn('signin', 'I already have one', false, state.busy === 'signin'), true);
+        (PASSPORT
+          // Vesopa Passport: Connect with Vesopa first; a new account is a tap away.
+          ? btn('signin', state.busy === 'signin' ? 'Opening Vesopa…' : 'Connect with Vesopa', true, state.busy === 'signin')
+            + btn('signup', 'Create a Vesopa account', false, state.busy === 'signin')
+          : btn('signup', state.busy === 'signin' ? 'Opening Vesopa…' : 'Create a Vesopa account', true, state.busy === 'signin')
+            + btn('signin', 'I already have one', false, state.busy === 'signin')), true);
       app.innerHTML = h;
       return bind();
     }
@@ -410,7 +418,7 @@
         + '<p>' + (lic0.trial_end ? 'Your 14 days free run until ' + esc(dateOf(lic0.trial_end)) + '. We\'ve emailed you the details.' : 'Your venue is ready on Vesopa Go.') + '</p>'
         + '<div class="open"><span>EPOS</span><span>Kitchen</span><span>Display</span><span>Card terminal</span></div>'
         + ((s.pending || []).length ? '<p class="later">Still to finish: ' + (s.pending || []).map(function (p) { return p === 'identity' ? 'your identity' : 'the business and bank checks'; }).join(' and ') + '. Card payments stay limited until then.</p>' : '')
-        + '<p><a class="btn primary" href="/install/">Get Vesopa Go on your phone</a> <a class="btn ghost" href="https://backoffice.vesopaepos.com">Open the back office</a></p></section>';
+        + '<p><a class="btn primary" href="' + INSTALL + '">Get Vesopa Go on your phone</a> <a class="btn ghost" href="https://backoffice.vesopaepos.com">Open the back office</a></p></section>';
     }
     // One step at a time (owner, 2026-11-18: "only show specific tasks to each
     // progress screen so that users don't see it as heavy tasks"). The page
@@ -592,4 +600,9 @@
   // Back from a bank's card check (3-D Secure) on the licence card.
   if (params.get('setup_intent')) history.replaceState(null, '', REDIRECT);
   start.then(function () { return load(true); }).catch(fail);
+  // Vesopa Passport's "Open a new account": straight to making one.
+  if (PASSPORT && params.get('new') && !store.get('token') && !state.signupToken) {
+    history.replaceState(null, '', REDIRECT);
+    signIn(true);
+  }
 }());

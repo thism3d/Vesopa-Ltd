@@ -13,6 +13,8 @@
 ///     words need, scrolling when there are more than fit.
 library;
 
+import 'dart:math' as math;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -147,7 +149,7 @@ class KeyActions {
   final bool payEnabled;
   final String? payLabel;
 
-  Widget key(ScreenButton b, {double fontScale = 1, bool bar = false, bool compact = false, bool inline = false, VoidCallback? onDone}) {
+  Widget key(ScreenButton b, {double fontScale = 1, bool bar = false, bool compact = false, bool inline = false, bool iconOnly = false, VoidCallback? onDone}) {
     final product = b.pluId == null ? null : productsByPlu[b.pluId];
     return _Key(
       button: b,
@@ -159,6 +161,7 @@ class KeyActions {
       bar: bar,
       compact: compact,
       inline: inline,
+      iconOnly: iconOnly,
       onDone: onDone,
     );
   }
@@ -224,9 +227,23 @@ class ProgrammedGrid extends StatelessWidget {
     return LayoutBuilder(builder: (context, box) {
       final cell = (box.maxWidth - gap * (cols - 1)) / cols;
       const navHeight = 46.0;
-      final nav = Wrap(spacing: gap, runSpacing: gap, children: [
-        for (final b in split.nav) SizedBox(width: cell, height: navHeight, child: actions.key(b, inline: true)),
-      ]);
+      // Short and wide (a phone on its side, owner 2026-11-26): the page keys
+      // in one row that scrolls across, and the products wider than tall, so
+      // several rows of them are on screen at once.
+      final short = box.maxHeight < 360;
+      final nav = short
+          ? SizedBox(
+              height: navHeight,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: split.nav.length,
+                separatorBuilder: (_, _) => SizedBox(width: gap),
+                itemBuilder: (_, i) => SizedBox(width: math.max(cell * 0.8, 96), child: actions.key(split.nav[i], inline: true)),
+              ),
+            )
+          : Wrap(spacing: gap, runSpacing: gap, children: [
+              for (final b in split.nav) SizedBox(width: cell, height: navHeight, child: actions.key(b, inline: true)),
+            ]);
       // A key two columns wide on the till is two wide here too, up to a row.
       final products = SingleChildScrollView(
         padding: EdgeInsets.only(bottom: bottomPad),
@@ -234,17 +251,20 @@ class ProgrammedGrid extends StatelessWidget {
           for (final b in split.rest)
             SizedBox(
               width: cell * b.colSpan.clamp(1, cols) + gap * (b.colSpan.clamp(1, cols) - 1),
-              height: cell * 0.86,
+              height: short ? math.max(cell * 0.6, 64) : cell * 0.86,
               child: actions.key(b),
             ),
         ]),
       );
       if (split.nav.isEmpty) return products;
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: navHeight * 3 + gap * 2),
-          child: SingleChildScrollView(child: nav),
-        ),
+        if (short)
+          nav
+        else
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: navHeight * 3 + gap * 2),
+            child: SingleChildScrollView(child: nav),
+          ),
         SizedBox(height: gap),
         Expanded(child: products),
       ]);
@@ -290,7 +310,18 @@ class ProgrammedGrid extends StatelessWidget {
 }
 
 class ProgrammedStrip extends StatefulWidget {
-  const ProgrammedStrip({super.key, required this.bar, required this.actions, this.minKey = 104, this.gap = 8, this.inline = false});
+  const ProgrammedStrip({super.key, required this.bar, required this.actions, this.minKey = 104, this.gap = 8, this.inline = false, this.iconsOnly = false, this.onKeyDone, this.withoutPay = false});
+
+  /// Every key but Pay (Pay is shown elsewhere, as on a phone on its side).
+  final bool withoutPay;
+
+  /// After any key on it has done its work (a bar that tucks itself away).
+  final VoidCallback? onKeyDone;
+
+  /// A phone on its side (owner, 2026-11-26: "use icons only in the bottom
+  /// bar in iphone landscape"): every key as its icon, all in one row with no
+  /// arrow; the name on a long press and to VoiceOver. Pay keeps its words.
+  final bool iconsOnly;
 
   /// Slim keys, icon beside the name (the top bar).
   final bool inline;
@@ -341,12 +372,30 @@ class _ProgrammedStripState extends State<ProgrammedStrip> with SingleTickerProv
     if (keys.isEmpty) return const SizedBox.shrink();
     final gap = widget.gap;
     // Pay stays where the hand expects it: the right-hand end.
-    final pay = keys.where((k) => k.kind == ScreenButtonKind.function && k.functionKey == 'pay').firstOrNull;
-    final rest = [for (final k in keys) if (!identical(k, pay)) k];
+    final found = keys.where((k) => k.kind == ScreenButtonKind.function && k.functionKey == 'pay').firstOrNull;
+    final pay = widget.withoutPay ? null : found;
+    final rest = [for (final k in keys) if (!identical(k, found)) k];
     return LayoutBuilder(builder: (context, box) {
       int spans(Iterable<ScreenButton> ks) => ks.fold<int>(0, (n, b) => n + b.colSpan);
       final all = spans(keys);
       final room = box.maxWidth - gap * (keys.length - 1);
+      if (widget.iconsOnly) {
+        // Pay is the one with words, a little under two keys wide.
+        final payUnits = pay == null ? 0.0 : 1.8;
+        final unit = (box.maxWidth - gap * (rest.length - (pay == null ? 1 : 0))) / (spans(rest) + payUnits);
+        return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          for (var i = 0; i < rest.length; i++) ...[
+            if (i > 0) SizedBox(width: gap),
+            SizedBox(width: unit * rest[i].colSpan, child: widget.actions.key(rest[i], bar: true, iconOnly: true, onDone: widget.onKeyDone)),
+          ],
+          if (pay != null) ...[
+            SizedBox(width: gap),
+            // The same key as the rest, the same height and edge: its icon,
+            // and the amount to pay beside it (owner, 2026-11-26).
+            Expanded(child: widget.actions.key(pay, fontScale: 0.95, bar: true, compact: true)),
+          ],
+        ]);
+      }
       // 1. Everything at full size.
       if (room / all >= widget.minKey) return _row(keys, room / all, compact: false);
       // 2. Everything, narrower, as icon keys with a small name.
@@ -392,7 +441,7 @@ class _ProgrammedStripState extends State<ProgrammedStrip> with SingleTickerProv
   Widget _row(List<ScreenButton> keys, double unit, {required bool compact}) => Row(children: [
         for (var i = 0; i < keys.length; i++) ...[
           if (i > 0) SizedBox(width: widget.gap),
-          SizedBox(width: unit * keys[i].colSpan, child: widget.actions.key(keys[i], fontScale: compact ? 0.9 : 0.95, bar: true, compact: compact, inline: widget.inline)),
+          SizedBox(width: unit * keys[i].colSpan, child: widget.actions.key(keys[i], fontScale: compact ? 0.9 : 0.95, bar: true, compact: compact, inline: widget.inline, onDone: widget.onKeyDone)),
         ],
       ]);
 
@@ -470,8 +519,12 @@ class _Key extends StatelessWidget {
     this.bar = false,
     this.compact = false,
     this.inline = false,
+    this.iconOnly = false,
     this.onDone,
   });
+
+  /// Its icon alone (the name in a tooltip and to VoiceOver), when it has one.
+  final bool iconOnly;
 
   /// Narrow: a smaller icon and name, one line.
   final bool compact;
@@ -530,8 +583,16 @@ class _Key extends StatelessWidget {
         label = button.label ?? '';
     }
     final off = onTap == null && button.kind == ScreenButtonKind.function;
-    final fill = off ? context.goDisabledFill : (here ? Tp.lime.withValues(alpha: 0.28) : (button.fill ?? context.goCard));
-    final ink = off ? context.goDisabledInk : (button.ink ?? (button.fill == null ? context.goText : (fill.computeLuminance() > 0.5 ? Tp.onLime : Colors.white)));
+    // Pay, ready to take money, wears the device's own colour from Settings
+    // (owner, 2026-11-26: "Pay button should follow the theme color"), as
+    // every other key to press next does.
+    final payNow = !off && button.kind == ScreenButtonKind.function && button.functionKey == 'pay';
+    final fill = off
+        ? context.goDisabledFill
+        : (payNow ? Tp.lime : (here ? Tp.lime.withValues(alpha: 0.28) : (button.fill ?? context.goCard)));
+    final ink = off
+        ? context.goDisabledInk
+        : (payNow ? Tp.onLime : (button.ink ?? (button.fill == null ? context.goText : (fill.computeLuminance() > 0.5 ? Tp.onLime : Colors.white))));
 
     // The till's picture rule: the key's own picture, else the product's
     // back-office picture. A picture takes the whole key, and the name and
@@ -557,7 +618,8 @@ class _Key extends StatelessWidget {
       final icon = button.kind == ScreenButtonKind.function
           ? functionIcons[button.functionKey]
           : (button.kind == ScreenButtonKind.page ? Icons.grid_view_rounded : null);
-      return Opacity(
+      final bare = iconOnly && icon != null;
+      final keyWidget = Opacity(
         opacity: onTap != null || off ? 1 : 0.45,
         child: Material(
           color: fill,
@@ -571,7 +633,9 @@ class _Key extends StatelessWidget {
             onLongPress: onLong,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-              child: inline
+              child: bare
+                  ? Center(child: Icon(icon, size: 24, color: colour))
+                  : inline
                   ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       if (icon != null) ...[Icon(icon, size: 18, color: colour), const SizedBox(width: 6)],
                       Flexible(
@@ -597,6 +661,12 @@ class _Key extends StatelessWidget {
             ),
           ),
         ),
+      );
+      if (!bare) return keyWidget;
+      return Tooltip(
+        message: label,
+        triggerMode: TooltipTriggerMode.longPress,
+        child: Semantics(button: true, label: label, excludeSemantics: true, child: keyWidget),
       );
     }
 

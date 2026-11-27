@@ -20,8 +20,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../ui/go_frame.dart';
 import '../../ui/tv.dart';
 import '../../data/api.dart';
 import '../../data/session.dart';
@@ -58,7 +60,20 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
   final Set<String> _flash = {};
 
   ScreenBeacon? _beacon;
+  ScreenMirror? _mirror;
   bool _unlocked = false;
+
+  /// A new order fills the screen for this many seconds, with its chime
+  /// (owner, 2026-11-27; 0 is off). Settings, or the phone's remote.
+  int _popupSecs = 10;
+  Ticket? _popup;
+  Timer? _popupTimer;
+
+  /// The ticket opened in full by the phone or a voice command, which "mark
+  /// it done" then finishes.
+  Ticket? _shown;
+  final _tabs = FocusNode(debugLabel: 'kitchen tabs');
+  static const _popupKey = 'kitchen_popup_secs';
 
   @override
   void initState() {
@@ -78,6 +93,25 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
           );
     })
       ..start();
+    final session = ref.read(tapProvider.notifier);
+    _mirror = ScreenMirror(
+      deviceId: session.deviceId,
+      name: () => ref.read(tapProvider.notifier).terminalName,
+      mode: 'kitchen',
+      post: (state) => ref.read(apiProvider).screenState(session.deviceId, state),
+    )..start();
+    SharedPreferences.getInstance().then((p) {
+      final v = p.getInt(_popupKey);
+      if (v != null && mounted) setState(() => _popupSecs = v);
+    }).catchError((Object _) {});
+  }
+
+  Future<void> _setPopup(int secs) async {
+    setState(() => _popupSecs = secs.clamp(0, 120));
+    try {
+      await (await SharedPreferences.getInstance()).setInt(_popupKey, _popupSecs);
+    } catch (_) {}
+    _mirror?.changed();
   }
 
   /// Settings or a refresh from Vesopa Go on a phone; the arrows, OK and Back
@@ -95,6 +129,77 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
       unawaited(ref.read(kitchenSessionProvider.notifier).refreshProfile());
       return true;
     }
+    // The kitchen's own keys on the phone's remote (owner, 2026-11-26: "proper
+    // options" for a TV used as the Kitchen screen).
+    final onTop = ModalRoute.of(context)?.isCurrent ?? true;
+    final profile = ref.read(kitchenSessionProvider).value?.screen ?? ScreenProfile.allStations;
+    final board = ref.read(ticketBoardProvider.notifier);
+    // The new-order card on screen: OK or Back puts it away.
+    if (_popup != null && (key == 'ok' || key == 'back')) {
+      _closePopup();
+      return true;
+    }
+    if (key.startsWith('popup:')) {
+      unawaited(_setPopup(int.tryParse(key.substring(6)) ?? 10));
+      return true;
+    }
+    switch (key) {
+      case 'expand_last' || 'expand_first':
+        final open = ref.read(ticketBoardProvider).open(profile);
+        if (open.isEmpty) return true;
+        final pick = key == 'expand_first'
+            ? open.first
+            : open.reduce((a, b) => a.placedAt.isAfter(b.placedAt) ? a : b);
+        goNavigator.currentState?.popUntil((r) => r.isFirst);
+        _closePopup();
+        setState(() {
+          _tab = _Tab.open;
+          _shown = pick;
+        });
+        unawaited(showFullTicket(context, ticket: pick, profile: profile).whenComplete(() {
+          if (mounted && _shown?.id == pick.id) setState(() => _shown = null);
+        }));
+        return true;
+      case 'done_shown':
+        // The ticket on screen: the new-order card, the one opened in full,
+        // else the front of the queue.
+        final open = ref.read(ticketBoardProvider).open(profile);
+        final target = _popup ?? (_shown == null ? null : open.where((t) => t.id == _shown!.id).firstOrNull) ?? open.firstOrNull;
+        if (target != null) {
+          unawaited(board.bump(target));
+          HapticFeedback.mediumImpact();
+        }
+        _closePopup();
+        _shown = null;
+        goNavigator.currentState?.popUntil((r) => r.isFirst);
+        return true;
+      case 'back' when onTop && !_tabs.hasFocus:
+        // Back from the tickets goes up to the tabs, as on a TV app.
+        _tabs.requestFocus();
+        _tabs.nextFocus();
+        return true;
+      case 'bump':
+        // The ticket at the front of the queue (rushed first, then oldest).
+        final open = ref.read(ticketBoardProvider).open(profile);
+        if (open.isNotEmpty) {
+          unawaited(board.bump(open.first));
+          HapticFeedback.mediumImpact();
+        }
+        return true;
+      case 'recall':
+        // The ticket finished last comes back to the board.
+        final done = ref.read(ticketBoardProvider).completed(profile);
+        if (done.isNotEmpty) unawaited(board.recall(done.first));
+        return true;
+      case 'tickets' || 'finished' || 'orders':
+        if (onTop) {
+          setState(() => _tab = switch (key) { 'finished' => _Tab.done, 'orders' => _Tab.orders, _ => _Tab.open });
+        }
+        return true;
+      case 'board':
+        if (onTop) unawaited(_pickBoard());
+        return true;
+    }
     return false;
   }
 
@@ -102,6 +207,9 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
   void dispose() {
     GoRemote.forget(_remoteKey);
     _beacon?.stop();
+    _mirror?.stop();
+    _popupTimer?.cancel();
+    _tabs.dispose();
     WakelockPlus.disable().catchError((Object _) {});
     super.dispose();
   }
@@ -142,6 +250,11 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
     }
   }
 
+  void _closePopup() {
+    _popupTimer?.cancel();
+    if (_popup != null && mounted) setState(() => _popup = null);
+  }
+
   void _chime() {
     final s = ref.read(kitchenSessionProvider).value;
     if (s?.sound ?? true) GoSounds.play(ref.read(tapProvider).config.go, GoSound.kitchenReady);
@@ -153,6 +266,17 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
     unawaited(_autoPrint(t));
     if (!mounted) return;
     setState(() => _flash.add(t.id));
+    // The new order fills the screen for a moment, so it is seen from across
+    // the kitchen; OK or Back puts it away sooner.
+    if (_popupSecs > 0) {
+      _popupTimer?.cancel();
+      setState(() => _popup = t);
+      _popupTimer = Timer(Duration(seconds: _popupSecs), () {
+        if (mounted) setState(() => _popup = null);
+        _mirror?.changed();
+      });
+      _mirror?.changed();
+    }
     Timer(const Duration(seconds: 6), () {
       if (mounted) setState(() => _flash.remove(t.id));
     });
@@ -398,6 +522,21 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
                 onTap: () => go(_rename),
               ),
               const Divider(height: 1),
+              StatefulBuilder(
+                builder: (c2, set) => ListTile(
+                  leading: const Icon(Icons.notifications_active_rounded),
+                  title: const Text('New orders fill the screen'),
+                  subtitle: Text(_popupSecs == 0 ? 'Off' : 'For $_popupSecs seconds, with the chime. OK to change.'),
+                  trailing: const Icon(Icons.timer_rounded),
+                  onTap: () async {
+                    const steps = [0, 5, 10, 15, 20, 30, 60];
+                    final next = steps[(steps.indexOf(_popupSecs) + 1) % steps.length];
+                    await _setPopup(next < 0 ? 10 : next);
+                    set(() {});
+                  },
+                ),
+              ),
+              const Divider(height: 1),
               ListTile(
                 leading: const Icon(Icons.store_mall_directory_rounded),
                 title: const Text('Sites it cooks for'),
@@ -560,12 +699,16 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
             child: Theme(
               data: Tp.theme(Brightness.dark),
-              child: SegmentedButton<_Tab>(
+              child: Focus(
+                focusNode: _tabs,
+                skipTraversal: true,
+                child: SegmentedButton<_Tab>(
                 showSelectedIcon: false,
+                // Open | Closed | Phone orders (owner, 2026-11-27).
                 segments: [
                   ButtonSegment(value: _Tab.open, label: Text('Open ${open.length}')),
-                  ButtonSegment(value: _Tab.done, label: Text(phone ? 'Done' : 'Done ${done.length}')),
-                  ButtonSegment(value: _Tab.orders, label: Text(orders.any((o) => o.isWaiting) ? 'Orders •' : 'Orders')),
+                  ButtonSegment(value: _Tab.done, label: Text(phone ? 'Closed' : 'Closed ${done.length}')),
+                  ButtonSegment(value: _Tab.orders, label: Text(orders.any((o) => o.isWaiting) ? 'Phone orders •' : 'Phone orders')),
                 ],
                 selected: {_tab},
                 onSelectionChanged: (s) {
@@ -573,11 +716,81 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
                   setState(() => _tab = s.first);
                 },
               ),
+              ),
             ),
           ),
         ),
       ),
-      body: Theme(data: Tp.theme(Brightness.dark), child: SafeArea(top: false, child: body)),
+      body: Theme(
+        data: Tp.theme(Brightness.dark),
+        child: SafeArea(
+          top: false,
+          child: Stack(children: [
+            body,
+            if (_popup != null)
+              Positioned.fill(
+                child: _NewOrderCard(
+                  ticket: ref.watch(ticketBoardProvider).tickets.where((x) => x.id == _popup!.id).firstOrNull ?? _popup!,
+                  session: session ?? KitchenSession.empty,
+                  now: board.now,
+                  profile: profile,
+                  seconds: _popupSecs,
+                  onClose: _closePopup,
+                ),
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// A new order, filling the board for a few seconds (owner, 2026-11-27).
+class _NewOrderCard extends StatelessWidget {
+  const _NewOrderCard({required this.ticket, required this.session, required this.now, required this.profile, required this.seconds, required this.onClose});
+  final Ticket ticket;
+  final KitchenSession session;
+  final DateTime now;
+  final ScreenProfile profile;
+  final int seconds;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return GestureDetector(
+      onTap: onClose,
+      child: ColoredBox(
+        color: Colors.black.withValues(alpha: 0.86),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Row(children: [
+                  Icon(Icons.notifications_active_rounded, color: Tp.lime, size: 34),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text('New order', style: t.headlineMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w900))),
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 1, end: 0),
+                    duration: Duration(seconds: seconds),
+                    builder: (_, v, _) => SizedBox(
+                      width: 34,
+                      height: 34,
+                      child: CircularProgressIndicator(value: v, strokeWidth: 4, color: Tp.lime, backgroundColor: Colors.white12),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+                Flexible(child: SingleChildScrollView(child: _TicketCard(ticket: ticket, session: session, now: now, profile: profile, onDone: onClose))),
+                const SizedBox(height: 10),
+                Text('Press OK to close · say "mark it done" on Vesopa Go', textAlign: TextAlign.center, style: t.bodyMedium?.copyWith(color: Colors.white60)),
+              ]),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

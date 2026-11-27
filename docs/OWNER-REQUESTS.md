@@ -21,8 +21,17 @@ secrets only).
   as deep-link files are fine.
 - **Every workflow** runs from GitHub Actions, and everything is pushed to
   main through a pull request.
-- **iOS builds** use the newest Xcode, as Vesopa Go does: the `xcode-27`
-  runner, with the iOS 27 SDK that ITMS-90725 requires.
+- **iOS builds** use the newest **stable** Xcode, never a beta (owner,
+  2026-11-26: "App Store never publishes applications built with the beta
+  Xcode versions"): the `xcode-27` runner, with the iOS 27 SDK that
+  ITMS-90725 requires. go-ios.yml and ios-venue-app.yml pick only an Xcode
+  whose name has no beta/RC mark and whose build number is a release (no
+  trailing lowercase letter), and stop if there is none.
+- **Vesopa Go does everything** (owner, 2026-11-26): admin, managers,
+  clerks, customers and kitchen staff should be able to do all their work,
+  analytics included, in Vesopa Go without opening the back office.
+- **Vesopa Go releases** go to Play open testing (`beta`) for both the phone
+  and Android TV (`tv:beta`), and to TestFlight.
 - **Google Wallet** passes for every venue are issued by **Vesopa Software
   Ltd** (issuer `BCR2DN6D3LQ5NWRK`). The service account is
   `firebase-adminsdk-fbsvc@vesopa.iam.gserviceaccount.com`, an Admin in the
@@ -35,6 +44,9 @@ secrets only).
   open testing no need to submit to internal and closed testing from now
   on"): never upload or promote a Loughor build to `internal`, `alpha`,
   `wear:internal` or wear closed testing.
+- **Loughor RFC, from 2026-11-26:** publish the **Wear OS** app only, to
+  open testing (`wear:beta`; Android - venue app, part `wear`). No new phone
+  release. The owner promotes the watch app to the Wear OS release track.
 - **Decisions:** "Go on, finish all the tasks. Full consent given. Do pick
   the best decisions." Ask the owner straight away when something is
   genuinely theirs to decide.
@@ -119,8 +131,37 @@ secrets only).
 | Firebase iOS app (added by the owner): the build reads its GoogleService-Info.plist from Firebase | done: firebase_ios_app.py in ios-venue-app.yml |
 | TestFlight public link and Google Play link on loughorrfc.site and member.loughorrfc.site (owner, 2026-11-19) | TestFlight public link https://testflight.apple.com/join/tegkU2kN (made by the TestFlight step, group "Vesopa Testers") and Google Play open testing https://play.google.com/apps/testing/com.vesopaepos.loughorrfc: "Try it now" on loughorrfc.site, /app sends each phone to its test, the members' site's badges (venue_looks.js). The Play link works once the owner rolls out the first open-testing release |
 | Add to Google Wallet on iPhone and iPad (owner, 2026-11-19) | Loughor iOS 1.0.0 (4) on TestFlight and sent to Beta App Review for the external testers (build 2 was the last one approved). Android 1.0.0 (6) on open testing (beta, code 6) and wear:beta (code 1000006), completed 2026-11-20 after the owner re-enabled the paused open-testing track |
+| Social posts for Vesopa Software about the Loughor RFC app: Facebook, Instagram, Threads, LinkedIn, X, images made with Gemini (owner, 2026-11-25) | drafts ready for the owner to approve: `documents/social/loughor-rfc-app/` (one picture per network plus `captions.md`). Gemini (`gemini-3-pro-image`) made only the backgrounds, with no text, logos or crests; the crest is the club's own file and the phone shows the app's real Android store screenshot (the iPhone ones say "Apple Wallet is not available"). Rebuild with `make_posts.py`. Nothing posted: the owner posts them |
 | Store links: account deletion https://auth.vesopa.com/delete-account/loughor-rfc, privacy https://loughorrfc.site/app/privacy, terms and trader link https://loughorrfc.site/app/terms | in progress (the owner pastes into Play Console what its API cannot set) |
 | Firebase: SHA fingerprints, Apple and Web apps added by the owner | the builds use them |
+
+## Vesopa Go, 2026-11-26
+
+| Ask | Status |
+| --- | --- |
+| Connect a TV as "Kitchen Screen" from the phone, with proper options | Go 1.2.74: Control a screen shows "What this TV shows" (Kitchen screen / Customer display) after a manager's PIN; the back office's mode for that device changes (/api/go/mode/change) and the TV switches at once (remote key `mode`). Kitchen keys on the remote: Front ticket done, Recall the last done, Tickets / Done / Phone orders, Choose the board (go_remote.js KEYS) |
+| Colours in Settings not centred | Go 1.2.74: the colour title and swatches are centred |
+| iPhone (and Android) landscape sale page | Go 1.2.74: on a phone on its side the header folds to a tab at the top; the till's top keys and bottom keys fold behind tabs at the right (tap to slide out, they slide back after use); bottom keys are icons only; Pay floats at the bottom right in the Settings colour; sale column on the left, keys five across. Pay follows the Settings colour everywhere. Renders: vesopa_go/store_shots/iphone_sale_test.dart |
+| Stripe Identity now verified: use it, native SDKs on Android and iOS | Go's Account checks use Stripe's native Identity sheet (Android com.stripe:identity, iOS StripeIdentity), never a browser. The back office creates sessions on the live account with Vesopa Passport's verification flow `vf_1UfR3LHxEu3jD7p0LGkrD0AQ`, return URL https://passport.vesopa.com/flow (go_onboarding.js; GO_IDENTITY_FLOW in .env overrides, "none" turns it off) |
+| Live Stripe key for The Vesopa Kitchen in Vesopa Go | Back office - patch, target live, files `tool/go-stripe-live.js`, run `go-stripe-live`: the Kitchen's Stripe row to live (Vesopa's own account, a live Terminal location, the live webhook), its sandbox row kept in tmp/kitchen-stripe-sandbox.json (`--sandbox` puts it back); owners sent to step 3 while Identity was refused get the ID step back |
+| passport.vesopa.com: Vesopa Passport, "Connect with Vesopa", verification and account opening only, responsive | vesopa_go/web/passport (landing and /flow/, the sign-up steps), deployed by Go - site (site passport or both; vesopa_go/tool/passport_site.py adds the web domain as a panel user beside go.vesopa.com). go.vesopa.com/signup and Get started now send people there. Its sign-in return address is on Go's Vesopa Auth client (schema_030, applied by Go - server live) |
+| Go does everything: analytics without the back office | first step in 1.2.74: Reports > All reports runs every back-office report (any period, custom dates, any terminal) with the PIN checked on the server (/api/tap/reports). Next: Vesopa admin's view across venues, and the rest of the back office's screens |
+
+## Vesopa Go TV and remote, 2026-11-27
+
+| Ask | Status |
+| --- | --- |
+| Loughor RFC Wear OS straight to production (owner promotes nothing else); clear "superseded" | 2026-11-27 morning: the promote moved 1000008 "from wear:production onto wear:production", which changed nothing, so Play made no submission (Submission activity stopped at 9) and the "Initial" Wear OS production release stayed "Unavailable on Google Play". Fixed in tool/play_upload.py: a promote onto the track that already holds the code now stops and says to build a new one; a commit that Play keeps back says "NOT sent for review"; status (and every upload run) prints Google's own review state of each release (Play Publishing API releases.list: draft, in review, approved, published, rejected). Then a new Wear OS build (Android - venue app, LoughorRFC, full, part wear, track production) onto wear:production as a real new release for review |
+| Kitchen ↔ Customer display switch not immediate, TV freezes | Go 1.2.75: a mode change closes every sheet, dialog and page left over the old screen |
+| D-pad, settings and customer display options not working with the remote; focus box not visible | 1.2.75: the first key always gives the focus to the first item (nothing focused was why keys went nowhere); a thick ring in the venue's colour round whatever has focus; phone keys scroll it into view |
+| Kitchen: tabs easier (Open, Closed, other); new order sound and full screen 10 s, changeable | 1.2.75: Open / Closed / Phone orders; Back from the tickets goes up to the tabs; new order card for 10 s with the chime, set in Settings or from the phone (0, 5, 10, 15, 30 s) |
+| Phone remote like Google TV: TVs by name on the same Wi-Fi, Local or Live, Connected bar, several screens, D-pad and swipe pad, keyboard, mute, volume, power | 1.2.75: screens heard on the venue's network (Local) and through Vesopa (Live), merged; keys go both ways with one id; Connected bar across Go; the TV's own volume and mute (Android AudioManager); power blanks the screen |
+| Show what is on the TV in the phone, interactively; type into its fields | 1.2.75: the TV sends its page and every focusable item (label, kind, value, focused); the phone shows them as chips, tap presses, a text item opens the keyboard and types into it |
+| Colours/theme of the TV from the phone | 1.2.75: More > Colour on the screen, Day / Night |
+| Voice commands | 1.2.75: the remote's microphone (on-device speech). Kitchen: "show the last order", "show the oldest order", "mark it done" / "bump" / "it's ready", "recall", "show open / closed / phone orders", "choose the board", "pop up new orders for 15 seconds" / "pop up off". Customer display: "next advert", "previous advert", "keep this advert for 5 minutes" (seconds, minutes, hours), "resume adverts", "reload adverts". Any screen: "switch to kitchen / customer display", "volume up / down", "mute", "screen off", "wake up", "colour pink" (lime, volt, neon, mint, aqua, pink, pearl), "dark mode" / "light mode", "settings", "home", "back", "up/down/left/right", "OK", "type Pass two". Two at once with "and". "Hey Google, open Vesopa Go" opens the app by its name |
+| TV details on the phone (device id, resolution, name set on the TV, Android version) | 1.2.75: More > About this screen |
+| Quit dialog on the TV; refresh cover when coming back | 1.2.75: Back on the first TV screen asks "Quit Vesopa Go?"; back from the background after 8 s or more, the Vesopa mark and a loading bar while the venue refreshes. Android does not let an app keep itself in the foreground |
+| Same layout on every TV (resolution and ratio) | 1.2.75: every TV draws on a 540-point-high canvas as wide as its panel's ratio, scaled evenly to its real pixels |
 
 ## Pontardawe RFC (`PontardaweRFC/`)
 

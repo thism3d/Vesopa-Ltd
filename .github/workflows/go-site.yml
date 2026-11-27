@@ -6,6 +6,10 @@
 #   check   where the site lives and what it serves now; changes nothing
 #   live    back up the site's folder, upload, HTTPS if missing, check every page
 #
+# site: go (go.vesopa.com), passport (passport.vesopa.com, Vesopa Passport:
+# vesopa_go/tool/passport_site.py, which adds the web domain as a panel user
+# the first time), or both, Passport first.
+#
 # The repository and its logs are public: the run prints the domain, counts and
 # status codes only.
 
@@ -18,6 +22,11 @@ on:
         type: choice
         options: [check, live]
         default: check
+      site:
+        description: go.vesopa.com, passport.vesopa.com (Vesopa Passport), or both (Passport first)
+        type: choice
+        options: [both, go, passport]
+        default: both
 
 permissions:
   contents: read
@@ -43,7 +52,18 @@ jobs:
           printf 'Host *\n  StrictHostKeyChecking accept-new\n  ConnectTimeout 20\n  ServerAliveInterval 30\n  ControlMaster auto\n  ControlPath %s/cm-%%r@%%h\n  ControlPersist 30m\n' "$RUNNER_TEMP/ssh" > ~/.ssh/config
           printf '#!/bin/sh\nprintf "%%s\n" "$VESOPA_SSH_PASSWORD"\n' > "$RUNNER_TEMP/ssh/askpass"; chmod 700 "$RUNNER_TEMP/ssh/askpass"
 
+      # Vesopa Passport first: go.vesopa.com/signup sends visitors there.
+      - name: passport.vesopa.com (${{ inputs.mode }})
+        if: inputs.site != 'go'
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+          SSH_ASKPASS: ${{ runner.temp }}/ssh/askpass
+          SSH_ASKPASS_REQUIRE: force
+          DISPLAY: ':0'
+        run: python3 vesopa_go/tool/passport_site.py "${{ inputs.mode }}"
+
       - name: go.vesopa.com (${{ inputs.mode }})
+        if: inputs.site != 'passport'
         env:
           VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
           SSH_ASKPASS: ${{ runner.temp }}/ssh/askpass

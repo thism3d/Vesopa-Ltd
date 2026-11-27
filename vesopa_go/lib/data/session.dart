@@ -877,7 +877,8 @@ class TapSession extends Notifier<TapState> {
     final type = '${msg['type'] ?? ''}';
     if (type == 'go.remote') {
       // A key pressed on this screen from Vesopa Go on a phone or tablet.
-      if ('${msg['device_id'] ?? ''}' == deviceId) GoRemote.press('${msg['key'] ?? ''}');
+      // The same key may come over the venue's own network first (go_remote.dart).
+      if ('${msg['device_id'] ?? ''}' == deviceId) GoRemote.receive(msg, via: 'live');
       return;
     }
     if (type == 'qrpay.updated') {

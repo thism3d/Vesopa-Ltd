@@ -148,8 +148,17 @@ class TapApi {
       _send('GET', '/api/go/screens?device_id=${Uri.encodeQueryComponent(deviceId)}');
 
   /// Press a key on a screen: up, down, left, right, ok, back, next, previous, settings, refresh.
-  Future<Map<String, dynamic>> screenKey(String deviceId, String key) =>
-      _send('POST', '/api/go/screens/${Uri.encodeComponent(deviceId)}/key', {'key': key});
+  Future<Map<String, dynamic>> screenKey(String deviceId, String key, {String? id, int? index, String? text}) =>
+      _send('POST', '/api/go/screens/${Uri.encodeComponent(deviceId)}/key', {'key': key, 'id': ?id, 'index': ?index, 'text': ?text});
+
+  /// What a screen shows now, for the phone's mirror of it.
+  Future<Map<String, dynamic>> screenStateOf(String deviceId) =>
+      _send('GET', '/api/go/screens/${Uri.encodeComponent(deviceId)}/state');
+
+  /// This screen's state, for the phones controlling it.
+  Future<void> screenState(String deviceId, Map<String, Object?> state) async {
+    await _send('POST', '/api/go/screen/state', {'device_id': deviceId, 'state': state});
+  }
 
   Future<Map<String, dynamic>> terminalHello({required String deviceId, required String name, String? gateway, bool ready = true, String? why}) =>
       _send('POST', '/api/go/terminal/hello', {'device_id': deviceId, 'name': name, 'gateway': ?gateway, 'ready': ready, 'why': ?why});
@@ -544,6 +553,30 @@ class TapApi {
 
   /// Today across the venue: every till and device (vesopa_server tap.js).
   Future<Map<String, dynamic>> today() => _send('GET', '/api/tap/today');
+
+  /// Every back-office report (owner, 2026-11-26: "Vesopa Go should be
+  /// capable to do everything"): what can be run, and over what.
+  Future<Map<String, dynamic>> reportCatalogue() => _send('GET', '/api/tap/reports/catalogue');
+
+  /// One report, run by a member of staff whose PIN the server checks.
+  Future<Map<String, dynamic>> runReport({
+    required String report,
+    required String period,
+    String? from,
+    String? to,
+    String? terminal,
+    required int clerkId,
+    required String pin,
+  }) =>
+      _send('POST', '/api/tap/reports/run', {
+        'report': report,
+        'period': period,
+        'from': ?from,
+        'to': ?to,
+        'terminal': ?terminal,
+        'clerk_id': clerkId,
+        'pin': pin,
+      });
 
   /// The venue's banknote keys and their pictures (back office, as the till's).
   Future<List<dynamic>> cashNotes() async => (await _send('GET', '/till/denominations?office=$_o'))['items'] as List? ?? const [];

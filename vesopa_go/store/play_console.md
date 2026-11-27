@@ -42,7 +42,7 @@ Uploaded by the workflow; check it looks right.
 
 ## App content (Policy and programmes > App content)
 
-**Rewritten 2026-11-26 for Go 1.2.74.** The answers before this date predated
+**Rewritten 2026-11-26 for Go 1.2.76 (voice commands, 1.2.75, added 2026-11-27).** The answers before this date predated
 the in-app sign-up (1.2.65), Stripe (1.2.68) and the demo's return, and said
 the app used no location, which no longer matched the app. Google rejects an
 app whose answers do not match what it does, so type these in as they are.
@@ -116,6 +116,7 @@ processors, and Stripe as Vesopa's identity checker.
 - The camera scans QR codes and barcodes; no picture is kept or sent, except
   the photo ID and selfie that the owner takes in Stripe's identity check.
 - NFC reads staff cards, fobs and members' cards; ids are matched on the device.
+- The microphone (voice commands for a TV, 1.2.75) is used only while it is held, and speech is recognised on the device; no recording leaves the phone, so Audio is not collected.
 
 **Permissions declaration** (if Play asks):
 | Permission | Why |
@@ -125,6 +126,7 @@ processors, and Stripe as Vesopa's identity checker.
 | ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION | Tap to Pay on Android: Stripe's SDK needs the location while a card payment is taken (foreground only, never in the background) |
 | BLUETOOTH_SCAN, BLUETOOTH_CONNECT | Stripe card readers and receipt printers |
 | USE_BIOMETRIC | Fingerprint or face sign-in for staff |
+| RECORD_AUDIO | Voice commands for a kitchen screen or customer display, only while the microphone is held; recognised on the device |
 | INTERNET | The venue's back office, Vesopa sign-in and the payment provider |
 
 **Government apps:** No.

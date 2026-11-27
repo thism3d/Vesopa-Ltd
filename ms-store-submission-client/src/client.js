@@ -7,7 +7,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import archiver from "archiver";
+// archiver 8 exports its archive classes by name; it has no default export
+// (the 8.0 bump in #91 broke `import archiver from "archiver"`).
+import { ZipArchive } from "archiver";
 import { getAccessToken } from "./auth.js";
 
 const BASE_URL = "https://manage.devcenter.microsoft.com/v1.0/my/applications";
@@ -257,7 +259,7 @@ export class StoreSubmissionClient {
   _zipFiles(files, zipOutputPath) {
     return new Promise((resolve, reject) => {
       const output = fs.createWriteStream(zipOutputPath);
-      const archive = archiver("zip", { zlib: { level: 9 } });
+      const archive = new ZipArchive({ zlib: { level: 9 } });
 
       output.on("close", resolve);
       archive.on("error", reject);

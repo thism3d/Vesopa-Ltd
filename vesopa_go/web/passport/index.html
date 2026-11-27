@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vesopa Passport</title>
+<meta name="description" content="Vesopa Passport: open your Vesopa account and verify your identity securely with Stripe, in a few minutes, on your phone or computer.">
+<meta name="theme-color" content="#0b0d0a">
+<link rel="icon" href="/favicon.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<meta property="og:title" content="Vesopa Passport">
+<meta property="og:description" content="Open your Vesopa account and verify your identity securely with Stripe.">
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/passport.css?v=1">
+<script src="/js/accent.js?v=1"></script>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/go-mark.png" alt="">Vesopa <b>Passport</b></a>
+  <nav class="links"><a href="https://go.vesopa.com/">Vesopa Go</a><a href="https://go.vesopa.com/support">Support</a></nav>
+</div></header>
+
+<main>
+  <section class="pp-hero"><div class="wrap">
+    <div>
+      <p class="eyebrow">Verified with Stripe</p>
+      <h1>Your Vesopa <em>Passport</em>.</h1>
+      <p class="lead">Open your Vesopa account and prove it's you, once. Your ID and a quick selfie are checked by Stripe, then your business, its bank account and your card payments are switched on.</p>
+      <div class="pp-cta">
+        <a class="btn primary" href="/flow/">Connect with Vesopa</a>
+        <a class="btn ghost" href="/flow/?new=1">Open a new account</a>
+      </div>
+      <p class="pp-fine">About ten minutes. Have your passport, driving licence or ID card, and your business's bank details, ready.</p>
+    </div>
+    <div class="pp-card" aria-hidden="true">
+      <div class="top"><span>VESOPA PASSPORT</span><img src="/img/go-mark.png" alt=""></div>
+      <div class="mid"><div class="face"></div><div class="lines"><i></i><i></i><i></i></div></div>
+      <div class="seal"><b>✓</b> Identity verified by Stripe</div>
+    </div>
+  </div></section>
+
+  <section class="pp-sec"><div class="wrap">
+    <h2>Three steps</h2>
+    <ol class="pp-steps">
+      <li><h3>Connect with Vesopa</h3><p>Sign in with your Vesopa account, or open one. Tell us about your business.</p></li>
+      <li><h3>Verify your identity</h3><p>A photo of your ID and a live selfie, taken with your camera. On a computer without one, carry on with your phone.</p></li>
+      <li><h3>Connect your bank</h3><p>Your business, its owners and the account your takings are paid into, checked by Stripe.</p></li>
+    </ol>
+    <div class="pp-trust">
+      <div><span class="ic">✓</span><span><strong>Checked by Stripe</strong>Your ID, selfie and bank details go straight to Stripe, who are regulated to check them. Vesopa never stores them.</span></div>
+      <div><span class="ic">↺</span><span><strong>Stop and come back</strong>Every step is saved. Finish here, or in the Vesopa Go app under Account checks.</span></div>
+      <div><span class="ic">£</span><span><strong>Card payments switched on</strong>Until every check passes, card payments work with limits; afterwards, without.</span></div>
+    </div>
+  </div></section>
+</main>
+
+<footer class="bottom"><div class="wrap">
+  <span>© Vesopa Software Ltd · company number 17362206</span>
+  <a href="https://go.vesopa.com/privacy">Privacy</a><a href="https://go.vesopa.com/terms">Terms</a><a href="https://stripe.com/gb/privacy" rel="noopener">Stripe privacy</a>
+</div></footer>
+<script>
+  // Back from Stripe or Vesopa sign-in at the wrong address: on to the flow.
+  if (/[?&](code|state|verification_session)=/.test(location.search)) location.replace('/flow/' + location.search);
+</script>
+</body>
+</html>

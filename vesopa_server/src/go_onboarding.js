@@ -132,8 +132,39 @@ const today = () => {
 
 // ---- Stripe calls only this module makes ----------------------------------------
 
-/** Owner's ID and live selfie, on Vesopa's own account. */
-function createIdentitySession({ office, email, returnUrl }, opts = {}) {
+/**
+ * Vesopa Passport's verification flow on Vesopa's live Stripe account (owner,
+ * 2026-11-26, once Stripe had verified Vesopa for Identity): the ID, the live
+ * selfie and the checks are set in the Dashboard on the flow, so one place
+ * decides them for the app's native sheet and passport.vesopa.com alike.
+ * GO_IDENTITY_FLOW in .env changes it; "none" goes back to the settings below.
+ */
+const PASSPORT_FLOW = 'vf_1UfR3LHxEu3jD7p0LGkrD0AQ';
+const PASSPORT_RETURN = 'https://passport.vesopa.com/flow';
+const identityFlow = (env) => {
+  const set = String(process.env.GO_IDENTITY_FLOW || '').trim();
+  if (set.toLowerCase() === 'none') return null;
+  if (/^vf_[A-Za-z0-9]+$/.test(set)) return set;
+  // The flow lives on the live account; the sandbox has no such flow.
+  return env === 'live' ? PASSPORT_FLOW : null;
+};
+const noSuchFlow = (e) => e instanceof stripe.StripeError
+  && /verification_flow|verification flow/i.test(String(e.message || '')) && (e.status === 400 || e.status === 404);
+
+/** Owner's ID and live selfie, on Vesopa's own account: by the flow when there is one. */
+function createIdentitySession({ office, email, returnUrl, flow }, opts = {}) {
+  if (flow) {
+    return stripe.call('POST', '/v1/identity/verification_sessions', {
+      ...opts,
+      body: {
+        verification_flow: flow,
+        provided_details: email ? { email } : undefined,
+        client_reference_id: office ? String(office).slice(0, 200) : undefined,
+        metadata: { office, purpose: 'vesopa_go_owner' },
+        return_url: returnUrl || PASSPORT_RETURN,
+      },
+    });
+  }
   return stripe.call('POST', '/v1/identity/verification_sessions', {
     ...opts,
     body: {
@@ -148,7 +179,7 @@ function createIdentitySession({ office, email, returnUrl }, opts = {}) {
       },
       provided_details: email ? { email } : undefined,
       metadata: { office, purpose: 'vesopa_go_owner' },
-      return_url: returnUrl || undefined,
+      return_url: returnUrl || PASSPORT_RETURN,
     },
   });
 }
@@ -731,8 +762,17 @@ function goOnboardingRoutes({
       }
       if (!s) {
         const returnUrl = /^https:\/\//.test(String((req.body || {}).return_url || '')) ? req.body.return_url : null;
+        const flow = identityFlow(env);
         try {
-          s = await client.createIdentitySession({ office: req.office, email: req.office, returnUrl }, opts);
+          try {
+            s = await client.createIdentitySession({ office: req.office, email: req.office, returnUrl, flow }, opts);
+          } catch (e) {
+            // A flow switched off or removed in the Dashboard: the ID check
+            // still runs, with the settings it had before the flow.
+            if (!flow || !noSuchFlow(e)) throw e;
+            console.warn(`[go_onboarding] verification flow ${flow} refused on the ${env} account; using the built-in check:`, e.message);
+            s = await client.createIdentitySession({ office: req.office, email: req.office, returnUrl }, opts);
+          }
         } catch (e) {
           if (!(e instanceof stripe.StripeError) || !identityRefused(e)) throw e;
           console.warn(`[go_onboarding] Stripe refused Identity on the ${env} account; ${req.office} is checked in step 3:`, e.message);
@@ -981,9 +1021,11 @@ function goOnboardingRoutes({
     try {
       const b = req.body || {};
       const redirect = String(b.redirect_uri || '');
-      if (!/^https:\/\/(go\.vesopa\.com|go\.vesopaepos\.com|staging\.go\.vesopa\.com)\/signup\/?$/.test(redirect)
+      // go.vesopa.com/signup, and Vesopa Passport (owner, 2026-11-26), where
+      // verification and account opening now live.
+      if (!/^https:\/\/((go\.vesopa\.com|go\.vesopaepos\.com|staging\.go\.vesopa\.com)\/signup|passport\.vesopa\.com\/flow)\/?$/.test(redirect)
         && !(process.env.NODE_ENV === 'test' && /^http:\/\/127\.0\.0\.1/.test(redirect))) {
-        throw new OnboardingError(400, 'That sign-in did not come from go.vesopa.com.');
+        throw new OnboardingError(400, 'That sign-in did not come from Vesopa Passport.');
       }
       const c = goClient && goClient();
       if (!c || !c.clientId) throw new OnboardingError(503, 'Continue with Vesopa is not switched on for Vesopa Go yet.');

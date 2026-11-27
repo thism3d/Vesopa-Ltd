@@ -108,6 +108,7 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
   Timer? _hintTimer;
   bool _inSettings = false;
   bool _unlocked = false;
+  ScreenMirror? _mirror;
   ScreenBeacon? _beacon;
 
   @override
@@ -137,6 +138,13 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
           );
     })
       ..start();
+    final me = ref.read(tapProvider.notifier);
+    _mirror = ScreenMirror(
+      deviceId: me.deviceId,
+      name: () => ref.read(tapProvider.notifier).terminalName,
+      mode: 'display',
+      post: (state) => ref.read(apiProvider).screenState(me.deviceId, state),
+    )..start();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _start();
       // On a TV, say once what the remote does.
@@ -150,9 +158,11 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
     final onTop = ModalRoute.of(context)?.isCurrent ?? true;
     switch (key) {
       case 'next':
+        _slides.currentState?.hold(0);
         _slides.currentState?.next();
         return true;
       case 'previous':
+        _slides.currentState?.hold(0);
         _slides.currentState?.previous();
         return true;
       case 'left' || 'right' when onTop && _keys.hasPrimaryFocus:
@@ -170,6 +180,10 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
         unawaited(_loadAdverts());
         return true;
     }
+    if (key.startsWith('hold:')) {
+      _slides.currentState?.hold(int.tryParse(key.substring(5)) ?? 0);
+      return true;
+    }
     return false;
   }
 
@@ -177,6 +191,7 @@ class _DisplayModePageState extends ConsumerState<DisplayModePage> {
   void dispose() {
     GoRemote.forget(_remoteKey);
     _beacon?.stop();
+    _mirror?.stop();
     _tick?.cancel();
     _status?.cancel();
     _hintTimer?.cancel();
@@ -1329,6 +1344,7 @@ class _SlidesState extends State<_Slides> {
   @override
   void dispose() {
     _timer?.cancel();
+    _hold?.cancel();
     _video?.dispose();
     super.dispose();
   }
@@ -1370,6 +1386,26 @@ class _SlidesState extends State<_Slides> {
   void previous() => _previous();
   void next() => _next();
 
+  /// Keep the advert on screen for [minutes] (a voice command or the
+  /// phone's remote, owner 2026-11-27); 0 lets the adverts run again.
+  Timer? _hold;
+  bool get held => _hold?.isActive ?? false;
+  void hold(int minutes) {
+    _hold?.cancel();
+    _hold = null;
+    if (minutes <= 0) {
+      _next();
+      return;
+    }
+    _timer?.cancel();
+    unawaited(_video?.setLooping(true));
+    _hold = Timer(Duration(minutes: minutes.clamp(1, 240)), () {
+      _hold = null;
+      unawaited(_video?.setLooping(false));
+      _next();
+    });
+  }
+
   void _previous() {
     if (!mounted) return;
     _timer?.cancel();
@@ -1381,6 +1417,11 @@ class _SlidesState extends State<_Slides> {
   void _next() {
     if (!mounted) return;
     _timer?.cancel();
+    // A held advert stays until its time is up (or the phone moves it on).
+    if (held) {
+      _video?.seekTo(Duration.zero);
+      return;
+    }
     setState(() => _i = (_i + 1) % max(1, widget.adverts.length));
     _show();
   }
