@@ -21,8 +21,17 @@ secrets only).
   as deep-link files are fine.
 - **Every workflow** runs from GitHub Actions, and everything is pushed to
   main through a pull request.
-- **iOS builds** use the newest Xcode, as Vesopa Go does: the `xcode-27`
-  runner, with the iOS 27 SDK that ITMS-90725 requires.
+- **iOS builds** use the newest **stable** Xcode, never a beta (owner,
+  2026-11-26: "App Store never publishes applications built with the beta
+  Xcode versions"): the `xcode-27` runner, with the iOS 27 SDK that
+  ITMS-90725 requires. go-ios.yml and ios-venue-app.yml pick only an Xcode
+  whose name has no beta/RC mark and whose build number is a release (no
+  trailing lowercase letter), and stop if there is none.
+- **Vesopa Go does everything** (owner, 2026-11-26): admin, managers,
+  clerks, customers and kitchen staff should be able to do all their work,
+  analytics included, in Vesopa Go without opening the back office.
+- **Vesopa Go releases** go to Play open testing (`beta`) for both the phone
+  and Android TV (`tv:beta`), and to TestFlight.
 - **Google Wallet** passes for every venue are issued by **Vesopa Software
   Ltd** (issuer `BCR2DN6D3LQ5NWRK`). The service account is
   `firebase-adminsdk-fbsvc@vesopa.iam.gserviceaccount.com`, an Admin in the
@@ -35,6 +44,9 @@ secrets only).
   open testing no need to submit to internal and closed testing from now
   on"): never upload or promote a Loughor build to `internal`, `alpha`,
   `wear:internal` or wear closed testing.
+- **Loughor RFC, from 2026-11-26:** publish the **Wear OS** app only, to
+  open testing (`wear:beta`; Android - venue app, part `wear`). No new phone
+  release. The owner promotes the watch app to the Wear OS release track.
 - **Decisions:** "Go on, finish all the tasks. Full consent given. Do pick
   the best decisions." Ask the owner straight away when something is
   genuinely theirs to decide.
@@ -117,6 +129,18 @@ secrets only).
 | Add to Google Wallet on iPhone and iPad (owner, 2026-11-19) | Loughor iOS 1.0.0 (4) on TestFlight and sent to Beta App Review for the external testers (build 2 was the last one approved). Android 1.0.0 (6) on open testing (beta, code 6) and wear:beta (code 1000006), completed 2026-11-20 after the owner re-enabled the paused open-testing track |
 | Store links: account deletion https://auth.vesopa.com/delete-account/loughor-rfc, privacy https://loughorrfc.site/app/privacy, terms and trader link https://loughorrfc.site/app/terms | in progress (the owner pastes into Play Console what its API cannot set) |
 | Firebase: SHA fingerprints, Apple and Web apps added by the owner | the builds use them |
+
+## Vesopa Go, 2026-11-26
+
+| Ask | Status |
+| --- | --- |
+| Connect a TV as "Kitchen Screen" from the phone, with proper options | Go 1.2.74: Control a screen shows "What this TV shows" (Kitchen screen / Customer display) after a manager's PIN; the back office's mode for that device changes (/api/go/mode/change) and the TV switches at once (remote key `mode`). Kitchen keys on the remote: Front ticket done, Recall the last done, Tickets / Done / Phone orders, Choose the board (go_remote.js KEYS) |
+| Colours in Settings not centred | Go 1.2.74: the colour title and swatches are centred |
+| iPhone (and Android) landscape sale page | Go 1.2.74: on a phone on its side the header folds to a tab at the top; the till's top keys and bottom keys fold behind tabs at the right (tap to slide out, they slide back after use); bottom keys are icons only; Pay floats at the bottom right in the Settings colour; sale column on the left, keys five across. Pay follows the Settings colour everywhere. Renders: vesopa_go/store_shots/iphone_sale_test.dart |
+| Stripe Identity now verified: use it, native SDKs on Android and iOS | Go's Account checks use Stripe's native Identity sheet (Android com.stripe:identity, iOS StripeIdentity), never a browser. The back office creates sessions on the live account with Vesopa Passport's verification flow `vf_1UfR3LHxEu3jD7p0LGkrD0AQ`, return URL https://passport.vesopa.com/flow (go_onboarding.js; GO_IDENTITY_FLOW in .env overrides, "none" turns it off) |
+| Live Stripe key for The Vesopa Kitchen in Vesopa Go | Back office - patch, target live, files `tool/go-stripe-live.js`, run `go-stripe-live`: the Kitchen's Stripe row to live (Vesopa's own account, a live Terminal location, the live webhook), its sandbox row kept in tmp/kitchen-stripe-sandbox.json (`--sandbox` puts it back); owners sent to step 3 while Identity was refused get the ID step back |
+| passport.vesopa.com: Vesopa Passport, "Connect with Vesopa", verification and account opening only, responsive | vesopa_go/web/passport (landing and /flow/, the sign-up steps), deployed by Go - site (site passport or both; vesopa_go/tool/passport_site.py adds the web domain as a panel user beside go.vesopa.com). go.vesopa.com/signup and Get started now send people there. Its sign-in return address is on Go's Vesopa Auth client (schema_030, applied by Go - server live) |
+| Go does everything: analytics without the back office | first step in 1.2.74: Reports > All reports runs every back-office report (any period, custom dates, any terminal) with the PIN checked on the server (/api/tap/reports). Next: Vesopa admin's view across venues, and the rest of the back office's screens |
 
 ## Pontardawe RFC (`PontardaweRFC/`)
 
