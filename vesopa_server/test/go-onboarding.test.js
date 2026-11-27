@@ -91,7 +91,7 @@ function fakeStripe(state) {
     },
     onboarding: {
       createIdentitySession: async (a, opts) => {
-        calls.push(['identity', a.office, opts && opts.key]);
+        calls.push(['identity', a.office, opts && opts.key, a.flow, a.returnUrl]);
         if (state.refuseIdentity) {
           throw new stripe.StripeError(400, 'invalid_request_error',
             'For more information on Stripe Identity supported use-cases and locations, please see https://docs.stripe.com/identity/use-cases.');
@@ -185,6 +185,7 @@ function signed(event) {
     ok(r.status === 201 && r.body.id === 'vs_1' && r.body.ephemeral_key_secret === 'ek_test_1', 'identity session for the app');
     // On the live account, where native SDKs and Synthetic Identity Protection are on.
     ok(r.body.publishable_key === 'pk_live_fake' && fake.calls.find((c) => c[0] === 'identity')[2] === 'sk_live_fake', 'identity checked on live Stripe');
+    ok(fake.calls.find((c) => c[0] === 'identity')[3] === 'vf_1UfR3LHxEu3jD7p0LGkrD0AQ', 'by Vesopa Passport\'s verification flow');
     ok(pool.tables.go_onboarding.get(OFFICE).identity_env === 'live', 'identity mode remembered');
 
     // Stripe: the account is made with what we know, and Stripe becomes the provider.
@@ -339,6 +340,8 @@ function signed(event) {
       createVenue: async (v) => { pool3.offices.set(v.email, { name: v.venueName, contact_email: v.email }); return { email: v.email, name: v.venueName }; },
     }));
     ok((await call(s3, 'POST', '/api/go/onboarding/web/exchange', { body: { code: 'c', code_verifier: 'v', redirect_uri: 'https://evil.example/signup/' } })).status === 400, 'only go.vesopa.com may exchange');
+    ok((await call(s3, 'POST', '/api/go/onboarding/web/exchange', { body: { code: 'c', code_verifier: 'v', redirect_uri: 'https://passport.vesopa.com.evil.example/flow' } })).status === 400, 'not a look-alike of Vesopa Passport');
+    ok((await call(s3, 'POST', '/api/go/onboarding/web/exchange', { body: { code: 'c', code_verifier: 'v', redirect_uri: 'https://passport.vesopa.com/flow' } })).status !== 400, 'Vesopa Passport may exchange');
     r = await call(s3, 'POST', '/api/go/onboarding/web/exchange', { body: { code: 'c', code_verifier: 'v', redirect_uri: 'https://go.vesopa.com/signup/' } });
     ok(r.status === 200 && r.body.signup_token && r.body.email === 'fresh@venue.test', 'new email: sign-up token');
     ok(issued[0][0] === 'https://auth.example/oauth/token' && /client_id=go-client/.test(issued[0][1]) && /code_verifier=v/.test(issued[0][1]), 'exchanged with PKCE');
