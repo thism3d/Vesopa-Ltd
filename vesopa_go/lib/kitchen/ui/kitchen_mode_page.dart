@@ -90,8 +90,9 @@ class _KitchenModePageState extends ConsumerState<KitchenModePage> {
             mode: 'kitchen',
             live: session.live,
             tv: GoDevice.isTv,
+            local: LocalScreenServer.instance.info,
           );
-    })
+    }, poll: (after) => ref.read(apiProvider).screenKeys(ref.read(tapProvider.notifier).deviceId, after))
       ..start();
     final session = ref.read(tapProvider.notifier);
     _mirror = ScreenMirror(

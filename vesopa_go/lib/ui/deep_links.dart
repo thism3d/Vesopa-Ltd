@@ -49,7 +49,12 @@ class _GoLinksState extends ConsumerState<GoLinks> {
   }
 
   void _open(Uri uri) {
-    if (uri.host != 'go.vesopa.com' || !uri.path.startsWith('/link')) return;
+    // https://go.vesopa.com/link/?c=CODE (the QR, a universal link), or
+    // vesopago://link?c=CODE (the web page handing over when a browser opened
+    // the QR anyway: iPad camera, or Safari chosen once for the site).
+    final https = uri.host == 'go.vesopa.com' && uri.path.startsWith('/link');
+    final own = uri.scheme == 'vesopago' && uri.host == 'link';
+    if (!https && !own) return;
     final code = linkCodeFrom(uri.toString());
     if (code == null) return;
     _waiting = code;

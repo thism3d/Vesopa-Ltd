@@ -20,6 +20,10 @@
   <p>This is the code on your new screen or TV:</p>
   <p class="link-code" id="code" aria-live="polite">&nbsp;</p>
 
+  <p class="link-get" id="open-app" hidden>
+    <a class="btn primary" id="open-app-link" href="#">Open in Vesopa Go</a>
+  </p>
+
   <h2>With Vesopa Go</h2>
   <p>On a phone or tablet with <strong>Vesopa Go</strong> signed in to your venue, scanning the screen's code with the camera opens Vesopa Go straight at <strong>Connect this screen</strong>. If you are reading this page, Vesopa Go is not on this device yet:</p>
   <p class="link-get">
@@ -48,6 +52,18 @@
     var el = document.getElementById('code');
     if (raw.length === 8) {
       el.textContent = raw.slice(0, 4) + ' ' + raw.slice(4);
+      // Opened in a browser on a phone or tablet (the iPad's camera, or Safari
+      // chosen once for this site): hand straight over to Vesopa Go, which
+      // asks "Connect this screen?" (owner, 2026-11-27). The button does the
+      // same if the browser asks first or Go is not installed.
+      var app = 'vesopago://link?c=' + raw;
+      var mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      document.getElementById('open-app-link').href = app;
+      if (mobile) {
+        document.getElementById('open-app').hidden = false;
+        location.href = app;
+      }
     } else {
       el.textContent = 'On the screen';
       el.className += ' link-none';

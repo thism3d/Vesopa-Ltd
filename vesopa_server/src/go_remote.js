@@ -27,6 +27,16 @@
  *
  * Every route takes a terminal token and works only inside that venue. Kept
  * in memory: who is awake is re-learnt within seconds of a restart.
+ *
+ * 2026-11-27 (owner: "fallback always go to the live server with Ping live
+ * either in local and live"): every key is also queued for its screen, and
+ * the screen asks for new ones every second or two
+ *     GET  /api/go/screen/keys?device_id=&after=SEQ
+ * so a screen whose live socket has dropped still gets them; it presses each
+ * once (by the phone's id for it, or the seq). And a screen says where it can
+ * be reached on the venue's own Wi-Fi (`local`: its addresses, port and a key
+ * for that run), which the phones of the same venue get in the list and try
+ * first ("Local"), with this server as the way when that does not answer.
  */
 
 const express = require('express');
@@ -54,6 +64,18 @@ const SETTING = /^(theme|appearance|popup|hold):[a-z0-9_-]{1,16}$/;
 const okKey = (k) => KEYS.has(k) || SETTING.test(k);
 const MODES = new Set(['kitchen', 'display', 'epos', 'terminal']);
 const clamp = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+const QUEUE = 50;
+const IPV4 = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+
+/** The screen's own address on the venue's network, as it says it. */
+function localOf(v) {
+  if (!v || typeof v !== 'object') return null;
+  const ips = (Array.isArray(v.ips) ? v.ips : []).map((x) => clamp(x, 15)).filter((x) => IPV4.test(x)).slice(0, 4);
+  const port = Number(v.port);
+  const key = clamp(v.key, 64);
+  if (!ips.length || !Number.isInteger(port) || port < 1024 || port > 65535 || !/^[a-f0-9]{16,64}$/.test(key)) return null;
+  return { ips, port, key };
+}
 
 function goRemoteRoutes({ secret, broadcast, now = () => Date.now() }) {
   const router = express.Router();
@@ -78,13 +100,25 @@ function goRemoteRoutes({ secret, broadcast, now = () => Date.now() }) {
     screensOf(req.office).set(id, {
       state: was ? was.state : undefined,
       stateAt: was ? was.stateAt : undefined,
+      keys: was ? was.keys : [],
+      local: localOf(body.local),
       name: clamp(body.name, 80) || 'Screen',
       mode: MODES.has(mode) ? mode : 'display',
       live: body.live !== false,
       tv: body.tv === true,
       seen: now(),
     });
-    res.json({ ok: true });
+    res.json({ ok: true, seq });
+  });
+
+  /** The keys pressed on this screen after `after` (its last seq), oldest first. */
+  router.get('/api/go/screen/keys', terminal, (req, res) => {
+    const screen = screensOf(req.office).get(clamp(req.query.device_id, 64));
+    res.set('Cache-Control', 'no-store');
+    if (!screen) return res.json({ keys: [], seq });
+    screen.seen = now();
+    const after = Number(req.query.after) || 0;
+    res.json({ keys: screen.keys.filter((k) => k.seq > after), seq });
   });
 
   /**
@@ -117,7 +151,7 @@ function goRemoteRoutes({ secret, broadcast, now = () => Date.now() }) {
     const mine = clamp(req.query.device_id, 64);
     const list = [...screensOf(req.office)]
       .filter(([id, s]) => id !== mine && t - s.seen <= ALIVE_MS)
-      .map(([id, s]) => ({ device_id: id, name: s.name, mode: s.mode, live: s.live, tv: s.tv }))
+      .map(([id, s]) => ({ device_id: id, name: s.name, mode: s.mode, live: s.live, tv: s.tv, local: s.local || null }))
       .sort((a, b) => a.name.localeCompare(b.name));
     res.json({ screens: list });
   });
@@ -140,6 +174,8 @@ function goRemoteRoutes({ secret, broadcast, now = () => Date.now() }) {
     const kid = clamp(body.id, 40);
     if (kid) msg.id = kid;
     broadcast(msg, { office: req.office });
+    screen.keys.push(msg);
+    if (screen.keys.length > QUEUE) screen.keys.splice(0, screen.keys.length - QUEUE);
     res.json({ ok: true, seq });
   });
 

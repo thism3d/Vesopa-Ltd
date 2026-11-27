@@ -78,7 +78,18 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Vesopa Go prints receipts on your venue's receipt printer over the local network.</string>
+	<string>Vesopa Go finds and controls your venue's TVs and screens on the same Wi-Fi, and prints receipts on your venue's receipt printer.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.vesopa.go.link</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>vesopago</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Vesopa Go needs your location to take card payments with Tap to Pay on iPhone.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
